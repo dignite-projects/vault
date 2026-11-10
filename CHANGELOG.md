@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own workspace in `modules/vault.extract/angular/`. The solution is now `Dignite.Vault.slnx`. All Angular
   workspaces are npm workspaces of the root `package.json`: run `npm install` once at the repository root, not
   inside `angular/`.
+- **ABP Framework `10.7.1`** (was `10.7.0`) and LeptonX Lite `5.7.1` (was `5.7.0`), on both sides: every `Volo.Abp.*`
+  package and every `@abp/ng.*` package.
+- **abp-modules `10.7.6`** (was `10.7.1`), on both sides: `Dignite.Abp.FlexFields.*`, `Dignite.Abp.AspNetCore.Mcp`,
+  `Dignite.Abp.Notifications.*`, `Dignite.NotificationCenter.*` and `@dignite/ng.flex-fields`,
+  `@dignite/ng.flex-fields-ckeditor`, `@dignite/ng.notification-center`. What reaches Vault Extract:
+  - MCP tool results are no longer `\u`-escaped. Non-ASCII text (Japanese, Chinese) and `<`, `>`, `&` reach the MCP
+    client as written, so a document body or a title is several times shorter for the model. The parsed JSON is
+    unchanged, so a client that parses it needs no change. `PromptBoundary` still encodes `<` inside the content it
+    wraps, so the `<document>` / `<field>` boundary holds as before.
+  - A rich-text (CKEditor) field keeps `mailto:` and `tel:` links; before, they lost their `href`.
+  - The CKEditor `Full` toolbar has left, center and right alignment for HTML fields.
 
 ## [0.6.0] - 2026-10-29
 
