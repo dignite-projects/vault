@@ -15,8 +15,8 @@ PaddleOCR runs as a local Docker sidecar. `PP-StructureV3` runs on CPU and emits
 
 The OCR providers are mutually exclusive, and the shipped host enables [Vision-LLM](ocr-vision-llm.md). To switch to PaddleOCR:
 
-1. Reference `Dignite.Vault.Extract.Ocr.PaddleOcr` instead of the current provider (in this repository, swap the commented `<ProjectReference>` lines in `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj`).
-2. In the host module's `[DependsOn]`, replace `VaultExtractVisionLlmOcrModule` with `VaultExtractPaddleOcrModule`.
+1. Reference `Dignite.Vault.Parse.Ocr.PaddleOcr` instead of the current provider (in this repository, swap the commented `<ProjectReference>` lines in `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj`).
+2. In the host module's `[DependsOn]`, replace `VaultParseVisionLlmOcrModule` with `VaultParsePaddleOcrModule`.
 3. Remove the keyed vision `IChatClient` registration from `ConfigureAI`; it fails at startup without `Vault:Extract:VisionOcrModelId`. See [AI Provider](../configuration/ai-provider.md).
 4. Start the sidecar and configure its endpoint (below).
 

@@ -19,13 +19,15 @@
     <PropertyGroup Label="NuGet package metadata">
         <Authors>Dignite</Authors>
         <Company>Dignite</Company>
-        <Product>Dignite Vault Extract</Product>
+        <!-- A module sets its own Product / PackageTags in its Directory.Build.props (vault.parse does);
+             these are the Extract defaults. -->
+        <Product Condition="'$(Product)' == ''">Dignite Vault Extract</Product>
         <Copyright>© Dignite</Copyright>
         <PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/dignite-projects/vault</PackageProjectUrl>
         <RepositoryUrl>https://github.com/dignite-projects/vault</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageTags>abp;extract;document-processing;ocr;markdown;mcp</PackageTags>
+        <PackageTags Condition="'$(PackageTags)' == ''">abp;extract;document-processing;ocr;markdown;mcp</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
     </PropertyGroup>

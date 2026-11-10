@@ -2,6 +2,7 @@ using Dignite.Abp.Notifications;
 using Dignite.Vault.Extract.Abstractions;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Notifications;
+using Dignite.Vault.Parse;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.Application;
 using Volo.Abp.BackgroundJobs;
@@ -13,6 +14,7 @@ namespace Dignite.Vault.Extract;
 
 [DependsOn(
     typeof(VaultExtractAbstractionsModule),
+    typeof(VaultParseAbstractionsModule),
     typeof(VaultExtractDomainModule),
     typeof(VaultExtractApplicationContractsModule),
     typeof(AbpDddApplicationModule),

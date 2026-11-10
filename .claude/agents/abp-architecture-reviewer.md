@@ -77,7 +77,7 @@ Search for these hard violations:
 
 ### 2.5 Module Development
 
-Apply this to the reusable core modules such as `Dignite.Vault.Extract.Parse` and `Dignite.Vault.Extract.Ocr.*`:
+Apply this to the reusable core modules such as `Dignite.Vault.Parse` and `Dignite.Vault.Parse.Ocr.*`:
 
 - **All public/protected methods must be `virtual`**. This is an ABP module extensibility requirement. Grep `^\s*public\s+(?:async\s+)?(?!virtual\s|override\s|static\s)` to find non-virtual methods.
 - **Do not configure middleware in `*Module.cs`**; only the host (`src/`) may do that.

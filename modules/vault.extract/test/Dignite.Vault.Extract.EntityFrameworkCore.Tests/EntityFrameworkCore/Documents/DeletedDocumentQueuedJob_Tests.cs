@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dignite.Vault.Extract.Abstractions.Parse;
+using Dignite.Vault.Parse;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.Pipelines;

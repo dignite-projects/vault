@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Parse</RootNamespace>
+    <Description>Contracts of Dignite Vault Parse: ITextExtractor with its context and result, the native-payload envelope and the image-OCR Markdown markup. Depends only on Volo.Abp.Core, so a consumer of extracted Markdown can reference it without pulling in the orchestrator or any provider.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.Core" />
+  </ItemGroup>
+
+</Project>

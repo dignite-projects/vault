@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Parse.ElBrunoMarkItDown</RootNamespace>
+    <Description>Markdown text provider for Dignite Vault Extract based on ElBruno.MarkItDotNet, converting digital documents (PDF, Word, Excel, HTML, plain text, CSV/TSV, RTF, EPUB and more) to Markdown.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dignite.Vault.Parse.Tests" />
+    <PackageReference Include="Volo.Abp.Core" />
+    <PackageReference Include="ElBruno.MarkItDotNet" />
+    <PackageReference Include="ElBruno.MarkItDotNet.Excel" />
+    <PackageReference Include="UTF.Unknown" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dignite.Vault.Parse\Dignite.Vault.Parse.csproj" />
+  </ItemGroup>
+
+</Project>

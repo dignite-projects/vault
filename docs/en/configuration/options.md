@@ -17,11 +17,11 @@ Sections bound from `appsettings.json` (or any other configuration source; envir
 | --- | --- | --- | --- |
 | `Vault:Extract` | none (read by the host) | Host | LLM endpoint, key and model ids. [AI Provider](ai-provider.md#provider-wiring-extract) |
 | `Vault:ExtractBehavior` | `VaultExtractBehaviorOptions` | `Dignite.Vault.Extract.Application` | Prompt language and the size ceilings of every LLM call. [AI Provider](ai-provider.md#cross-cutting-llm-behavior-extractbehavior) |
-| `VisionLlmOcr` | `VisionLlmOcrOptions` | `Dignite.Vault.Extract.Ocr.VisionLlm` | Output cap, image downscaling, PDF page cap, repetition guards. [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md#configuration-visionllmocr) |
-| `PaddleOcr` | `PaddleOcrOptions` | `Dignite.Vault.Extract.Ocr.PaddleOcr` | Sidecar endpoint, model, languages, timeout. [PaddleOCR](../text-extraction/ocr-paddleocr.md#configuration-paddleocr) |
-| `AzureDocumentIntelligence` | `AzureDocumentIntelligenceOptions` | `Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence` | Endpoint and key. [Azure Document Intelligence](../text-extraction/ocr-azure-document-intelligence.md) |
-| `PdfExtractor` | `PdfExtractorOptions` | `Dignite.Vault.Extract.Parse.Pdf` | Embedded-image limits, scan-layer detection, table reconstruction. [Text Extraction](../text-extraction/text-extraction.md#extractor-options) |
-| `OpenXmlExtractor` | `OpenXmlExtractorOptions` | `Dignite.Vault.Extract.Parse.OpenXml` | Embedded-image limits, speaker notes. [Text Extraction](../text-extraction/text-extraction.md#extractor-options) |
+| `VisionLlmOcr` | `VisionLlmOcrOptions` | `Dignite.Vault.Parse.Ocr.VisionLlm` | Output cap, image downscaling, PDF page cap, repetition guards. [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md#configuration-visionllmocr) |
+| `PaddleOcr` | `PaddleOcrOptions` | `Dignite.Vault.Parse.Ocr.PaddleOcr` | Sidecar endpoint, model, languages, timeout. [PaddleOCR](../text-extraction/ocr-paddleocr.md#configuration-paddleocr) |
+| `AzureDocumentIntelligence` | `AzureDocumentIntelligenceOptions` | `Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence` | Endpoint and key. [Azure Document Intelligence](../text-extraction/ocr-azure-document-intelligence.md) |
+| `PdfExtractor` | `PdfExtractorOptions` | `Dignite.Vault.Parse.Pdf` | Embedded-image limits, scan-layer detection, table reconstruction. [Text Extraction](../text-extraction/text-extraction.md#extractor-options) |
+| `OpenXmlExtractor` | `OpenXmlExtractorOptions` | `Dignite.Vault.Parse.OpenXml` | Embedded-image limits, speaker notes. [Text Extraction](../text-extraction/text-extraction.md#extractor-options) |
 | `Mcp:RateLimit` | `McpRateLimiterOptions` (bound by the host) | `Dignite.Vault.Extract.Mcp` | Per-IP rate limit of `/mcp`. [MCP Server](../egress/mcp-server.md#rate-limiting) |
 | `Mcp:ForwardedClientIp` | `McpForwardedClientIpOptions` (bound by the host) | `Dignite.Vault.Extract.Mcp` | Trusted reverse proxies. [MCP Server](../egress/mcp-server.md#reverse-proxy-client-ips) |
 | `OpenIddict:Applications:VaultExtract_Mcp` | none (read by the host's seeder) | Host | The preset MCP OAuth client and its redirect URIs. [MCP Server](../egress/mcp-server.md#registered-callbacks) |

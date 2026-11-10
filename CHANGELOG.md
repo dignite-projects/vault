@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (NuGet): the text-extraction stack is its own product, Vault Parse (#716, phase 2).** It moved to
+  `modules/vault.parse/` and its packages, namespaces and module classes are renamed. Configuration is unchanged:
+  the `VisionLlmOcr`, `PdfExtractor`, `OpenXmlExtractor`, `PaddleOcr` and `AzureDocumentIntelligence` sections keep
+  their names, as do the keyed vision chat client (`"extract-vision-ocr"`) and every Extract error code. Migration for
+  a host: swap the package references and the `[DependsOn]` types, and replace the `using` lines.
+
+  | Before | After |
+  | --- | --- |
+  | `Dignite.Vault.Extract.Abstractions` (namespace `…Abstractions.Parse`: `ITextExtractor`, `TextExtractionContext`, `TextExtractionResult`, `NativePayload`, `ImageOcrMarkup`) | `Dignite.Vault.Parse.Abstractions` (namespace `Dignite.Vault.Parse`). `Dignite.Vault.Extract.Abstractions` keeps the ETOs |
+  | `Dignite.Vault.Extract.Parse` / `VaultExtractParseModule` | `Dignite.Vault.Parse` / `VaultParseModule` |
+  | `Dignite.Vault.Extract.Parse.Pdf` / `VaultExtractParsePdfModule` | `Dignite.Vault.Parse.Pdf` / `VaultParsePdfModule` |
+  | `Dignite.Vault.Extract.Parse.OpenXml` / `VaultExtractParseOpenXmlModule` | `Dignite.Vault.Parse.OpenXml` / `VaultParseOpenXmlModule` |
+  | `Dignite.Vault.Extract.Parse.ElBrunoMarkItDown` / `VaultExtractParseElBrunoMarkItDownModule` | `Dignite.Vault.Parse.ElBrunoMarkItDown` / `VaultParseElBrunoMarkItDownModule` |
+  | `Dignite.Vault.Extract.Ocr` / `VaultExtractOcrModule` | `Dignite.Vault.Parse.Ocr` / `VaultParseOcrModule` |
+  | `Dignite.Vault.Extract.Ocr.VisionLlm` / `VaultExtractVisionLlmOcrModule` | `Dignite.Vault.Parse.Ocr.VisionLlm` / `VaultParseVisionLlmOcrModule` |
+  | `Dignite.Vault.Extract.Ocr.PaddleOcr` / `VaultExtractPaddleOcrModule` | `Dignite.Vault.Parse.Ocr.PaddleOcr` / `VaultParsePaddleOcrModule` |
+  | `Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence` / `VaultExtractAzureDocumentIntelligenceModule` | `Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence` / `VaultParseAzureDocumentIntelligenceModule` |
+
+  Namespaces follow the package names (`Dignite.Vault.Extract.Parse.*` → `Dignite.Vault.Parse.*`,
+  `Dignite.Vault.Extract.Ocr.*` → `Dignite.Vault.Parse.Ocr.*`). `Dignite.Vault.Extract.Application` now depends on
+  `Dignite.Vault.Parse.Abstractions` only, never on the orchestrator. The old package IDs get no further releases and
+  are marked deprecated on nuget.org, pointing at their replacements. Vault Parse shares the repository version.
+- **Module dependency rules are checked in CI** (`etc/scripts/check-module-references.mjs`): `vault.parse` references
+  nothing else in the repository, `vault.extract` never references `vault.index`, and `vault.index` may reach Extract
+  only through `Abstractions` / `Application.Contracts` / `HttpApi.Client`.
+
 - **Repository layout (#716, phase 1)** — no change for package consumers: every NuGet PackageId, namespace and
   npm package name is the same. For contributors: the module moved from `core/` to `modules/vault.extract/`, the
   host from `host/src` to `src/Dignite.Vault.Extract.Host/`, `host/etc` to `etc/`, and the Angular library to its

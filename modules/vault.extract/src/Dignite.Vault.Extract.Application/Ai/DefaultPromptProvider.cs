@@ -1,4 +1,4 @@
-using Dignite.Vault.Extract.Abstractions.Parse;
+using Dignite.Vault.Parse;
 using Dignite.Vault.Extract.Documents;
 using Volo.Abp.DependencyInjection;
 

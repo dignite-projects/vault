@@ -15,7 +15,7 @@ Recommended for production workloads where data is allowed to leave the network 
 
 1. Create an Azure AI Document Intelligence resource (F0 for trial, S0 for production).
 2. Copy the **Endpoint** and **API Key**.
-3. In the host module's `[DependsOn]`, replace `VaultExtractVisionLlmOcrModule` (the shipped default) with `VaultExtractAzureDocumentIntelligenceModule`, and reference `Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence` instead (in this repository, swap the commented `<ProjectReference>` lines in `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj`). Remove the keyed vision `IChatClient` registration from `ConfigureAI` too: it fails at startup without `Vault:Extract:VisionOcrModelId`.
+3. In the host module's `[DependsOn]`, replace `VaultParseVisionLlmOcrModule` (the shipped default) with `VaultParseAzureDocumentIntelligenceModule`, and reference `Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence` instead (in this repository, swap the commented `<ProjectReference>` lines in `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj`). Remove the keyed vision `IChatClient` registration from `ConfigureAI` too: it fails at startup without `Vault:Extract:VisionOcrModelId`.
 4. Add the endpoint and key to `src/Dignite.Vault.Extract.Host/appsettings.secrets.json`, `appsettings.Production.json` or environment variables:
 
 ```json
@@ -25,7 +25,7 @@ Recommended for production workloads where data is allowed to leave the network 
 }
 ```
 
-`VaultExtractAzureDocumentIntelligenceModule` binds the `AzureDocumentIntelligence` section.
+`VaultParseAzureDocumentIntelligenceModule` binds the `AzureDocumentIntelligence` section.
 
 Dignite Vault Extract fixes the Azure model to `prebuilt-layout` and does not expose it as a config option — it emits the structured Markdown that Markdown-first requires. `prebuilt-read` (plain text only) and business prebuilts (invoice / contract) are intentionally not channel-layer OCR options.
 

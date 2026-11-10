@@ -10,11 +10,11 @@ using Dignite.Vault.Extract.Mcp.Authentication;
 using Dignite.Abp.Notifications.SignalR;
 using Dignite.NotificationCenter;
 using Dignite.NotificationCenter.EntityFrameworkCore;
-using Dignite.Vault.Extract.Ocr.VisionLlm;
-using Dignite.Vault.Extract.Parse;
-using Dignite.Vault.Extract.Parse.ElBrunoMarkItDown;
-using Dignite.Vault.Extract.Parse.OpenXml;
-using Dignite.Vault.Extract.Parse.Pdf;
+using Dignite.Vault.Parse.Ocr.VisionLlm;
+using Dignite.Vault.Parse;
+using Dignite.Vault.Parse.ElBrunoMarkItDown;
+using Dignite.Vault.Parse.OpenXml;
+using Dignite.Vault.Parse.Pdf;
 using Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore;
 using OpenAI;
@@ -149,13 +149,13 @@ namespace Dignite.Vault.Extract.Host;
     typeof(AbpNotificationCenterEntityFrameworkCoreModule),
 
     // Extract infrastructure modules
-    typeof(VaultExtractParseModule),
-    typeof(VaultExtractParsePdfModule),             // PdfPig: digital-PDF text layer + embedded-image transcription (#301). Claims .pdf; coexists with ElBruno (catch-all). Omitting it makes .pdf fall back to ElBruno.
-    typeof(VaultExtractParseOpenXmlModule),         // OpenXML: PPTX (slide text/notes, #307) + DOCX (headings/tables/lists/inline formatting/hyperlinks/text boxes, #308), each with charts/tables + embedded-image transcription. Claims .pptx and .docx. REQUIRED for .pptx (ElBruno has no PresentationML converter -> empty Markdown, no OCR fallback since .pptx != .pdf); .docx degrades gracefully to ElBruno if this module is omitted.
-    typeof(VaultExtractParseElBrunoMarkItDownModule),
-    typeof(VaultExtractVisionLlmOcrModule)                  // Vision-LLM OCR for photos, receipts, and image PDFs; current default OCR provider (#259). IOcrProvider implementations are mutually exclusive: when switching providers, update the .csproj ProjectReference and ConfigureAI keyed vision IChatClient together. See docs/en/text-extraction/ocr-vision-llm.md.
-                                                            // typeof(VaultExtractPaddleOcrModule),                 // Local PaddleOCR sidecar (free CPU, PP-StructureV3); to switch back, uncomment this, comment VisionLlm, and restore its .csproj ProjectReference
-                                                            // typeof(VaultExtractAzureDocumentIntelligenceModule), // Cloud option (higher accuracy); when switching, also comment / enable the matching ProjectReference in .csproj
+    typeof(VaultParseModule),
+    typeof(VaultParsePdfModule),             // PdfPig: digital-PDF text layer + embedded-image transcription (#301). Claims .pdf; coexists with ElBruno (catch-all). Omitting it makes .pdf fall back to ElBruno.
+    typeof(VaultParseOpenXmlModule),         // OpenXML: PPTX (slide text/notes, #307) + DOCX (headings/tables/lists/inline formatting/hyperlinks/text boxes, #308), each with charts/tables + embedded-image transcription. Claims .pptx and .docx. REQUIRED for .pptx (ElBruno has no PresentationML converter -> empty Markdown, no OCR fallback since .pptx != .pdf); .docx degrades gracefully to ElBruno if this module is omitted.
+    typeof(VaultParseElBrunoMarkItDownModule),
+    typeof(VaultParseVisionLlmOcrModule)                  // Vision-LLM OCR for photos, receipts, and image PDFs; current default OCR provider (#259). IOcrProvider implementations are mutually exclusive: when switching providers, update the .csproj ProjectReference and ConfigureAI keyed vision IChatClient together. See docs/en/text-extraction/ocr-vision-llm.md.
+                                                            // typeof(VaultParsePaddleOcrModule),                 // Local PaddleOCR sidecar (free CPU, PP-StructureV3); to switch back, uncomment this, comment VisionLlm, and restore its .csproj ProjectReference
+                                                            // typeof(VaultParseAzureDocumentIntelligenceModule), // Cloud option (higher accuracy); when switching, also comment / enable the matching ProjectReference in .csproj
 )]
 public class VaultExtractHostModule : AbpModule
 {
