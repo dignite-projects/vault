@@ -7,6 +7,9 @@
     "TargetDotnetFramework": "net10.0"
   },
   "modules": {
+    "Dignite.Vault.Parse": {
+      "path": "modules/vault.parse/Dignite.Vault.Parse.abpmdl"
+    },
     "Dignite.Vault.Extract": {
       "path": "modules/vault.extract/Dignite.Vault.Extract.abpmdl"
     },

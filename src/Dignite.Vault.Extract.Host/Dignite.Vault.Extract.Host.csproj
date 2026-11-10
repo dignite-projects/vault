@@ -107,25 +107,25 @@
     <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Mcp\Dignite.Vault.Extract.Mcp.csproj" />
     <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Application\Dignite.Vault.Extract.Application.csproj" />
     <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.EntityFrameworkCore\Dignite.Vault.Extract.EntityFrameworkCore.csproj" />
-    <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Parse\Dignite.Vault.Extract.Parse.csproj" />
+    <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse\Dignite.Vault.Parse.csproj" />
     <!-- PDF Markdown provider (PdfPig): digital-PDF text layer + embedded-image transcription via the
          host-selected IOcrProvider (#301). Coexists with ElBruno; claims .pdf. Omit it and .pdf falls
          back to ElBruno. -->
-    <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Parse.Pdf\Dignite.Vault.Extract.Parse.Pdf.csproj" />
+    <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.Pdf\Dignite.Vault.Parse.Pdf.csproj" />
     <!-- OpenXML Markdown provider: PPTX slide text / charts / tables / speaker notes + embedded-image
          transcription via the host-selected IOcrProvider (#307). Claims .pptx. REQUIRED for .pptx text:
          ElBruno (catch-all) has no PresentationML converter, so without this module .pptx yields empty
          Markdown (no OCR fallback). Shared stack for the later DOCX phase (#308). -->
-    <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Parse.OpenXml\Dignite.Vault.Extract.Parse.OpenXml.csproj" />
-    <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Parse.ElBrunoMarkItDown\Dignite.Vault.Extract.Parse.ElBrunoMarkItDown.csproj" />
+    <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.OpenXml\Dignite.Vault.Parse.OpenXml.csproj" />
+    <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.ElBrunoMarkItDown\Dignite.Vault.Parse.ElBrunoMarkItDown.csproj" />
     <!-- OCR provider — IOcrProvider implementations are mutually exclusive; enable only one.
          Current default: VisionLlm (photos / thermal receipts / image-only PDFs, #259).
          When switching back to local PaddleOCR or Azure, update both ExtractHostModule [DependsOn]
          and the ConfigureAI keyed client wiring. See docs/en/text-extraction/ocr-vision-llm.md. Linux containers also
          require SkiaSharp.NativeAssets.Linux + libfontconfig1 (see the Linux deployment section). -->
-    <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Ocr.VisionLlm\Dignite.Vault.Extract.Ocr.VisionLlm.csproj" />
-    <!-- <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Ocr.PaddleOcr\Dignite.Vault.Extract.Ocr.PaddleOcr.csproj" /> -->
-    <!-- <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence\Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence.csproj" /> -->
+    <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.Ocr.VisionLlm\Dignite.Vault.Parse.Ocr.VisionLlm.csproj" />
+    <!-- <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.Ocr.PaddleOcr\Dignite.Vault.Parse.Ocr.PaddleOcr.csproj" /> -->
+    <!-- <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence\Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence.csproj" /> -->
   </ItemGroup>
 
   <!-- The default OCR provider is VisionLlm (see the ProjectReference above). It rasterizes PDF pages

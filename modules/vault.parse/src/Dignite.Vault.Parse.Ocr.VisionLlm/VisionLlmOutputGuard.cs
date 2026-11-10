@@ -1,0 +1,366 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace Dignite.Vault.Parse.Ocr.VisionLlm;
+
+/// <summary>
+/// Output sanitation for the vision-LLM OCR provider: a repetition-loop <b>detector</b>
+/// (<see cref="LooksLikeRepetitionLoop"/>, discard on a trip), a code-fence <b>stripper</b>
+/// (<see cref="StripCodeFences"/>, unwrap in place), a LaTeX-table <b>converter</b>
+/// (<see cref="ConvertLatexTables"/>, rewrite to GitHub-Flavored Markdown), a layout-annotation
+/// <b>stripper</b> (<see cref="StripLayoutAnnotations"/>, drop HTML comments), and a no-content-refusal
+/// <b>detector</b> (<see cref="LooksLikeNoContentRefusal"/>, normalize to empty).
+/// <para>
+/// Traditional OCR can only mis-read characters; a vision LLM driven in chat mode can additionally fall
+/// into a repetition loop that fills the token budget with the same line/phrase over and over (the
+/// PaddleOCR-VL chat-mode death loop in issue #259 is the reference example). As a "trusted digitization
+/// channel" Extract must never persist such output, so the provider runs every model response through
+/// this guard and discards (returns empty Markdown) on a trip.
+/// </para>
+/// <para>
+/// Three complementary heuristics, all with deliberately conservative thresholds (the goal is to let real
+/// OCR output through — including dense tables and receipts with repeated amounts — and only catch
+/// egregious loops):
+/// <list type="number">
+///   <item>A non-empty line repeated too many times <b>consecutively</b> (multi-line loop).</item>
+///   <item>A low distinct-line ratio over a large body (interleaved multi-line loop).</item>
+///   <item>A single content-heavy line that is a short unit repeated many times (a no-newline char- or
+///         phrase-level loop, which the line-based heuristics miss). Punctuation-only lines such as
+///         Markdown table separators / horizontal rules are excluded so wide tables are not flagged.</item>
+/// </list>
+/// </para>
+/// </summary>
+public static class VisionLlmOutputGuard
+{
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="markdown"/> looks like a repetition loop.
+    /// </summary>
+    /// <param name="markdown">The model's transcription output.</param>
+    /// <param name="maxConsecutiveRepeatedLines">Trip when a non-empty line appears this many times in a row (i.e. this many identical consecutive lines). Values below 2 are treated as 2 — the strictest meaningful setting — never as "disabled".</param>
+    /// <param name="minDistinctLineRatio">Trip if distinct/total non-empty line ratio drops below this (over a large enough body).</param>
+    /// <param name="minLinesForRatioCheck">Minimum non-empty line count before the distinct-ratio heuristic applies.</param>
+    /// <param name="minLengthForSegmentCheck">Minimum length of a single line before the short-period heuristic inspects it.</param>
+    /// <param name="maxRepeatedSegmentLength">Largest repeating-unit (period) length the short-period heuristic treats as a loop.</param>
+    /// <param name="minRepeatedSegmentRepeats">Minimum number of times the unit must tile the line to trip the short-period heuristic.</param>
+    public static bool LooksLikeRepetitionLoop(
+        string? markdown,
+        int maxConsecutiveRepeatedLines,
+        double minDistinctLineRatio,
+        int minLinesForRatioCheck,
+        int minLengthForSegmentCheck,
+        int maxRepeatedSegmentLength,
+        int minRepeatedSegmentRepeats)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            return false;
+        }
+
+        var lines = markdown
+            .Replace("\r\n", "\n")
+            .Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .ToList();
+
+        if (lines.Count == 0)
+        {
+            return false;
+        }
+
+        // Heuristic 1: a single non-empty line repeated too many times consecutively.
+        // Floor the threshold at 2 so a misconfigured "1" (or 0/negative) becomes the strictest setting
+        // rather than silently disabling the check. To effectively disable it, set a very large value.
+        var consecutiveThreshold = Math.Max(2, maxConsecutiveRepeatedLines);
+        var run = 1;
+        for (var i = 1; i < lines.Count; i++)
+        {
+            if (lines[i] == lines[i - 1])
+            {
+                run++;
+                if (run >= consecutiveThreshold)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                run = 1;
+            }
+        }
+
+        // Heuristic 2: low distinct-line ratio over a large enough body (catches interleaved loops).
+        if (lines.Count >= minLinesForRatioCheck)
+        {
+            var distinct = lines.Distinct().Count();
+            var ratio = (double)distinct / lines.Count;
+            if (ratio < minDistinctLineRatio)
+            {
+                return true;
+            }
+        }
+
+        // Heuristic 3: a single content-heavy line that is a short unit repeated many times — catches
+        // no-newline char-level ("0000…") and phrase-level ("ありがとう…") loops the line heuristics miss.
+        foreach (var line in lines)
+        {
+            if (line.Length < minLengthForSegmentCheck || !IsMajorityAlphanumeric(line))
+            {
+                continue;
+            }
+
+            var period = SmallestRepeatingPeriod(line);
+            if (period > 0 && period <= maxRepeatedSegmentLength && line.Length / period >= minRepeatedSegmentRepeats)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Removes Markdown code-fence delimiter lines from a vision-LLM transcription, keeping the fenced
+    /// content in place.
+    /// <para>
+    /// The OCR system prompt forbids wrapping the output in a code fence, but a chat vision LLM still
+    /// sometimes wraps all — or, worse, only <b>part</b> — of its Markdown in a <c>```markdown</c> fence
+    /// anyway (#448: a passbook page whose table and footnotes were fenced while the header above them was
+    /// not, so the whole fenced block rendered as literal <c>&lt;pre&gt;&lt;code&gt;</c> and the table never
+    /// became a GFM table — it showed as raw pipes). An OCR'd business document (receipt / passbook /
+    /// invoice / contract / form) never legitimately contains a fenced code block, so dropping every fence
+    /// delimiter line is safe and unwraps the content — handling a whole-output fence, a partial fence, and
+    /// an unmatched (never-closed) fence uniformly. Only the delimiter lines are removed; the content
+    /// between them is preserved verbatim.
+    /// </para>
+    /// </summary>
+    public static string StripCodeFences(string? markdown)
+    {
+        if (string.IsNullOrEmpty(markdown))
+        {
+            return string.Empty;
+        }
+
+        // Fast path: no fence character at all (the overwhelming majority of transcriptions), so return the
+        // input untouched — including its original line endings.
+        if (markdown.IndexOf('`') < 0 && markdown.IndexOf('~') < 0)
+        {
+            return markdown;
+        }
+
+        // Split on '\n' only; a kept line keeps any trailing '\r', so original line endings survive.
+        var kept = markdown.Split('\n').Where(line => !IsCodeFenceLine(line));
+        return string.Join("\n", kept);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="line"/> is a Markdown code-fence delimiter: a run of at least three back-ticks
+    /// or three tildes at the start (leading indent tolerated), optionally followed by an info string that
+    /// contains no back-tick — so an inline <c>```code```</c> span sitting on its own line is not mistaken
+    /// for a fence.
+    /// </summary>
+    private static bool IsCodeFenceLine(string line)
+    {
+        var s = line.AsSpan().Trim();
+        if (s.Length < 3)
+        {
+            return false;
+        }
+
+        var marker = s[0];
+        if (marker != '`' && marker != '~')
+        {
+            return false;
+        }
+
+        var run = 0;
+        while (run < s.Length && s[run] == marker)
+        {
+            run++;
+        }
+
+        return run >= 3 && s[run..].IndexOf('`') < 0;
+    }
+
+    private static readonly Regex LatexTabularRegex = new(
+        @"\\begin\{tabular\}\{[^}]*\}(?<body>.*?)\\end\{tabular\}",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    private static readonly Regex LatexTextCommandRegex = new(
+        @"\\text(?:bf|it)\{(?<inner>[^{}]*)\}",
+        RegexOptions.Compiled);
+
+    private static readonly Regex HtmlCommentRegex = new(
+        @"<!--.*?-->",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Rewrites LaTeX <c>\begin{tabular}...\end{tabular}</c> blocks into GitHub-Flavored Markdown tables.
+    /// <para>
+    /// The OCR system prompt requires GFM tables and explicitly forbids LaTeX table markup, but a vision
+    /// LLM trained heavily on academic document datasets still reaches for <c>\begin{tabular}</c> /
+    /// <c>\hline</c> / <c>\\</c> for line-item tables regardless — observed on Qwen3-VL and not fixed by
+    /// strengthening the prompt further. As with <see cref="StripCodeFences"/> (#448), the reliable fix is a
+    /// deterministic rewrite rather than another round of prompt wording. <c>\textbf{...}</c> / <c>\textit{...}</c>
+    /// wrapping inside a cell is unwrapped to its inner text; any other LaTeX inside a cell passes through
+    /// verbatim (rare, and safer than trying to strip commands we have not observed).
+    /// </para>
+    /// </summary>
+    public static string ConvertLatexTables(string? markdown)
+    {
+        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf("tabular", StringComparison.Ordinal) < 0)
+        {
+            return markdown ?? string.Empty;
+        }
+
+        return LatexTabularRegex.Replace(markdown, match => RenderMarkdownTable(match.Groups["body"].Value));
+    }
+
+    /// <summary>
+    /// Drops HTML comments (e.g. a leaked internal bounding-box annotation like
+    /// <c>&lt;!-- Table (48, 238, 952, 391) --&gt;</c>) from a vision-LLM transcription. An OCR'd business
+    /// document never legitimately contains an HTML comment, so removing every occurrence is safe.
+    /// </summary>
+    public static string StripLayoutAnnotations(string? markdown)
+    {
+        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf("<!--", StringComparison.Ordinal) < 0)
+        {
+            return markdown ?? string.Empty;
+        }
+
+        return HtmlCommentRegex.Replace(markdown, string.Empty);
+    }
+
+    // Matches the model explaining, in English prose, that it found nothing to transcribe — e.g. "There is no
+    // readable text in the image to transcribe.", "No text detected in this image.", "The image contains no
+    // text.", "I cannot find any text in this image.". Anchored at the start (^) so a real transcription that
+    // merely CONTAINS the word "text" partway through is never matched; combined with the caller's length gate
+    // (a refusal is one short sentence — a real transcription this short would need to independently look like
+    // one of these specific phrasings, which no legitimate receipt/form/table content does).
+    private static readonly Regex NoContentRefusalPattern = new(
+        // Every alternative requires the "text" noun-phrase to follow the negation — "there is no" / "no" alone
+        // would also match the opening of real content ("There is no outstanding balance.", "There is no
+        // signature on this page."), silently wiping a genuine short transcription instead of a refusal.
+        @"^(there\s+(is|are|was|were)\s+no\s+(readable|visible|legible|discernible)?\s*text|" +
+        @"no\s+(readable|visible|legible|discernible)?\s*text|" +
+        @"the\s+image\s+(contains|has|shows)\s+no\s+(readable|visible|legible)?\s*text|" +
+        @"(i\s+)?(cannot|can't|could\s+not|couldn't|do\s+not|don't|unable\s+to)\s+(see|find|detect|identify|make\s+out)\s+(any\s+)?(readable\s+|visible\s+|legible\s+)?text|" +
+        @"(there\s+is\s+)?nothing\s+to\s+transcribe|" +
+        @"no\s+text\s+(is\s+|was\s+)?(visible|detected|found|present|readable))",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Whether <paramref name="text"/> looks like the model explaining — in violation of the system prompt's
+    /// "If the image contains no readable text, output nothing at all" / "no commentary, no explanations" rules
+    /// — that it found no text, rather than actually transcribing any. Mirrors the reasoning behind
+    /// <see cref="StripCodeFences"/> / <see cref="ConvertLatexTables"/>: prompt wording alone does not reliably
+    /// hold, so a deterministic guard normalizes the violation. <c>OcrResult.Markdown</c>'s contract is "empty
+    /// string when the provider recognizes no content" — left unnormalized, this sentence would instead be
+    /// treated as real transcribed content: inlined into the document's Markdown as a figure's transcription,
+    /// and handed to the sub-document segmentation pass as if it were a meaningful standalone span.
+    /// </summary>
+    /// <param name="text">The already-trimmed model output (after the other guards have run).</param>
+    /// <param name="maxRefusalLength">Only a short response is checked — a genuine transcription of any
+    /// length can legitimately contain isolated words like "text", but a refusal is always one short sentence,
+    /// so gating on length keeps this from ever matching real (longer) transcribed content.</param>
+    public static bool LooksLikeNoContentRefusal(string text, int maxRefusalLength)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Length > maxRefusalLength)
+        {
+            return false;
+        }
+
+        return NoContentRefusalPattern.IsMatch(text.Trim());
+    }
+
+    private static string RenderMarkdownTable(string tabularBody)
+    {
+        var rowTexts = tabularBody
+            .Replace("\\hline", string.Empty)
+            .Split(new[] { "\\\\" }, StringSplitOptions.None)
+            .Select(r => r.Trim())
+            .Where(r => r.Length > 0)
+            .ToList();
+
+        if (rowTexts.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var rows = rowTexts.Select(r => r.Split('&').Select(CleanTableCell).ToArray()).ToList();
+        var columnCount = rows.Max(r => r.Length);
+
+        var sb = new StringBuilder();
+        AppendMarkdownRow(sb, rows[0], columnCount);
+        sb.Append('|').Append(string.Concat(Enumerable.Repeat("---|", columnCount))).Append('\n');
+        for (var i = 1; i < rows.Count; i++)
+        {
+            AppendMarkdownRow(sb, rows[i], columnCount);
+        }
+
+        return sb.ToString().TrimEnd('\n');
+    }
+
+    private static void AppendMarkdownRow(StringBuilder sb, string[] cells, int columnCount)
+    {
+        sb.Append("| ");
+        for (var i = 0; i < columnCount; i++)
+        {
+            sb.Append(i < cells.Length ? cells[i] : string.Empty).Append(" | ");
+        }
+
+        sb.Length -= 1; // drop the trailing extra space, keep the final "|"
+        sb.Append('\n');
+    }
+
+    private static string CleanTableCell(string cell)
+    {
+        var unwrapped = LatexTextCommandRegex.Replace(cell.Trim(), "${inner}");
+        return unwrapped.Replace("|", "\\|").Trim();
+    }
+
+    // Majority letters/digits → real content. Excludes Markdown table separators ("|---|---|"),
+    // horizontal rules ("------"), and dotted leaders ("……") which are punctuation-only and legitimate.
+    private static bool IsMajorityAlphanumeric(string line)
+    {
+        var alnum = 0;
+        foreach (var c in line)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                alnum++;
+            }
+        }
+
+        return alnum * 2 > line.Length;
+    }
+
+    // Smallest repeating period via the KMP failure function. For a string that is a unit repeated k
+    // times the result is the unit length (e.g. "abab" → 2, "0000" → 1). For non-repetitive text the
+    // period approaches the full length, so callers gate on (length / period >= minRepeats).
+    private static int SmallestRepeatingPeriod(string s)
+    {
+        var n = s.Length;
+        var fail = new int[n];
+        for (var i = 1; i < n; i++)
+        {
+            var j = fail[i - 1];
+            while (j > 0 && s[i] != s[j])
+            {
+                j = fail[j - 1];
+            }
+
+            if (s[i] == s[j])
+            {
+                j++;
+            }
+
+            fail[i] = j;
+        }
+
+        return n - fail[n - 1];
+    }
+}

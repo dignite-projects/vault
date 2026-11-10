@@ -39,7 +39,7 @@ dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Domain.Tests
 dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Application.Tests
 dotnet test modules/vault.extract/test/Dignite.Vault.Extract.EntityFrameworkCore.Tests
 dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Mcp.Tests
-dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Ocr.VisionLlm.Tests
+dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Ocr.VisionLlm.Tests
 ```
 
 ### Frontend (Vitest)

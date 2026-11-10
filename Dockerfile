@@ -37,6 +37,8 @@ WORKDIR /src
 # angular/ workspace (node_modules, dist) has no place in a .NET image. Each module's own
 # Directory.Build.props comes along because restore reads it.
 COPY common.props Directory.Packages.props Dignite.Vault.slnx NuGet.Config ./
+COPY modules/vault.parse/Directory.Build.props modules/vault.parse/
+COPY modules/vault.parse/src/ modules/vault.parse/src/
 COPY modules/vault.extract/Directory.Build.props modules/vault.extract/
 COPY modules/vault.extract/src/ modules/vault.extract/src/
 COPY src/ src/

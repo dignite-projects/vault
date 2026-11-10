@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Dignite.Vault.Extract.Abstractions.Parse;
+using Dignite.Vault.Parse;
 
 namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 

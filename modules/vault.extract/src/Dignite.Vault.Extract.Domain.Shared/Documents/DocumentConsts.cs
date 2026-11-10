@@ -37,7 +37,7 @@ public static class DocumentConsts
             [".tsv"] = ContentTypes("text/tab-separated-values", "text/tsv"),
             [".txt"] = ContentTypes("text/plain"),
             [".docx"] = ContentTypes("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-            // .pptx extraction requires the OpenXml module (VaultExtractParseOpenXmlModule): ElBruno has no
+            // .pptx extraction requires the OpenXml module (VaultParseOpenXmlModule): ElBruno has no
             // PresentationML converter, so with that module absent a .pptx degrades to an empty document rather
             // than graceful text (unlike .docx, which the ElBruno catch-all can still convert).
             [".pptx"] = ContentTypes("application/vnd.openxmlformats-officedocument.presentationml.presentation"),

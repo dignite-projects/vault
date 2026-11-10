@@ -25,7 +25,7 @@ Contract obligations regardless of structure:
 
 **Markdown-first is an engineering default, not a creed.** Out-of-band signals (coordinates, confidence, page metadata, form key-value structure, stamp positions) are **orthogonal** to Markdown. When future needs arise — citation highlighting on the source PDF, stamp localization, form key-value extraction, page-aware QA — they belong as **named, optional, strongly-typed** fields on `TextExtractionResult` (e.g. `IReadOnlyList<PageBlock>? PageBlocks`) or as a separate extractor interface orthogonal to `ITextExtractor`. **Forbidden**: stuffing such signals back into the Markdown string, or adding a `Dictionary<string, object>` extension slot. Each new out-of-band signal needs its own Issue — it's an architecture decision, not a quiet field addition.
 
-Source contract: [`ITextExtractor`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.extract/src/Dignite.Vault.Extract.Abstractions/Parse/ITextExtractor.cs), [`IMarkdownTextProvider`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.extract/src/Dignite.Vault.Extract.Parse/IMarkdownTextProvider.cs).
+Source contract: [`ITextExtractor`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.parse/src/Dignite.Vault.Parse.Abstractions/ITextExtractor.cs), [`IMarkdownTextProvider`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.parse/src/Dignite.Vault.Parse/IMarkdownTextProvider.cs).
 
 ## Two Extraction Paths
 
@@ -54,9 +54,9 @@ The image/scan path is dispatched by file kind. The digital path is dispatched *
 
 | Provider | Owns | Notes |
 |---|---|---|
-| **PdfExtractor** (`Dignite.Vault.Extract.Parse.Pdf`, PdfPig) | `.pdf` | Extracts the digital text layer **and** embedded raster images. Each image is transcribed through the host-selected `IOcrProvider` and inlined into the Markdown at its reading position (#301), so embedded figures are no longer silently dropped. Vector-only graphics are an accepted blind spot (`GetImages()` does not see them). |
-| **OpenXmlExtractor** (`Dignite.Vault.Extract.Parse.OpenXml`, OpenXML SDK) | `.pptx`, `.docx` | Owns the whole PowerPoint / Word pass: rebuilds structure (PPTX slide text, plus speaker notes when `IncludeSpeakerNotes` is on, #307; DOCX headings / tables / lists / inline formatting / hyperlinks / text boxes, #308) **and** transcribes embedded raster images through the host-selected `IOcrProvider`, renders `ChartPart` backing data as Markdown tables, inlining everything at reading position. EMF/WMF vector images are an accepted blind spot. |
-| **ElBruno MarkItDown** (`Dignite.Vault.Extract.Parse.ElBrunoMarkItDown`) | catch-all (XLSX via its Excel plugin; HTML / TXT / CSV / TSV / RTF / EPUB; also `.docx` when the OpenXml module is absent, and `.pdf` when the Pdf module is absent) | Default fallback; enabled by the host module. XLSX conversion emits each non-empty worksheet as Markdown tables. |
+| **PdfExtractor** (`Dignite.Vault.Parse.Pdf`, PdfPig) | `.pdf` | Extracts the digital text layer **and** embedded raster images. Each image is transcribed through the host-selected `IOcrProvider` and inlined into the Markdown at its reading position (#301), so embedded figures are no longer silently dropped. Vector-only graphics are an accepted blind spot (`GetImages()` does not see them). |
+| **OpenXmlExtractor** (`Dignite.Vault.Parse.OpenXml`, OpenXML SDK) | `.pptx`, `.docx` | Owns the whole PowerPoint / Word pass: rebuilds structure (PPTX slide text, plus speaker notes when `IncludeSpeakerNotes` is on, #307; DOCX headings / tables / lists / inline formatting / hyperlinks / text boxes, #308) **and** transcribes embedded raster images through the host-selected `IOcrProvider`, renders `ChartPart` backing data as Markdown tables, inlining everything at reading position. EMF/WMF vector images are an accepted blind spot. |
+| **ElBruno MarkItDown** (`Dignite.Vault.Parse.ElBrunoMarkItDown`) | catch-all (XLSX via its Excel plugin; HTML / TXT / CSV / TSV / RTF / EPUB; also `.docx` when the OpenXml module is absent, and `.pdf` when the Pdf module is absent) | Default fallback; enabled by the host module. XLSX conversion emits each non-empty worksheet as Markdown tables. |
 
 **XLSX resource boundary (#471).** An XLSX is a compressed ZIP package, so the 20 MiB upload limit alone does not bound the memory or CPU required to open it. Before ClosedXML materializes the workbook, the ElBruno provider drains every archive entry through a shared expanded-byte budget and rejects packages exceeding the entry, worksheet, or cell caps. The resulting Markdown has a separate character cap. A limit violation fails the parse run explicitly; it is never persisted as a successful empty extraction.
 
@@ -97,7 +97,7 @@ These apply regardless of which provider is wired:
 
 The digital-document providers bound their work with options bound from configuration.
 
-**`PdfExtractor`** (`PdfExtractorOptions`, package `Dignite.Vault.Extract.Parse.Pdf`):
+**`PdfExtractor`** (`PdfExtractorOptions`, package `Dignite.Vault.Parse.Pdf`):
 
 | Key | Default | Description |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ The digital-document providers bound their work with options bound from configur
 | `FullPageScanMinInvisibleTextRatio` | `0.6` | Share of invisible (`Tr 3`) text that confirms a scan layer on its own |
 | `ReconstructTables` | `true` | Rebuild detected grids as Markdown tables |
 
-**`OpenXmlExtractor`** (`OpenXmlExtractorOptions`, package `Dignite.Vault.Extract.Parse.OpenXml`):
+**`OpenXmlExtractor`** (`OpenXmlExtractorOptions`, package `Dignite.Vault.Parse.OpenXml`):
 
 | Key | Default | Description |
 | --- | --- | --- |
@@ -123,11 +123,11 @@ The digital-document providers bound their work with options bound from configur
 
 Implement `IOcrProvider` (for image/scan input) or `IMarkdownTextProvider` (for files with a digital text layer). Both contracts are documented in their source files; both demand Markdown output. A Markdown provider also declares which extensions it owns via `CanHandle(extension)` + `Priority` (use a non-negative priority for a specialized provider; the catch-all fallback sits at `MarkdownProviderPriorities.Fallback`).
 
-The provider lives in its own module project (`Dignite.Vault.Extract.Ocr.<Vendor>` or `Dignite.Vault.Extract.Parse.<Vendor>`) and is enabled by the host through `[DependsOn(...)]`. Markdown providers coexist (dispatched per file by extension), so adding one does not displace the others.
+The provider lives in its own module project (`Dignite.Vault.Parse.Ocr.<Vendor>` or `Dignite.Vault.Parse.<Vendor>`) and is enabled by the host through `[DependsOn(...)]`. Markdown providers coexist (dispatched per file by extension), so adding one does not displace the others.
 
 **Markdown-first responsibility is on the provider, not the orchestrator.** The `OcrResult` and `TextExtractionResult` types expose only a `Markdown` field — there is no parallel `RawText` channel. If the underlying OCR engine returns plain text only (e.g. PaddleOCR PP-OCRv4), the provider itself must wrap paragraphs into flat Markdown (typically `string.Join("\n\n", paragraphs)`). Returning empty Markdown when the engine produced text is a contract violation. Custom OCR providers should expose their model choice through provider/host configuration, not through Dignite Vault Extract core profile codes.
 
-Custom OCR provider projects only need to reference `Dignite.Vault.Extract.Ocr` — they do not need (and should not pull in) `Dignite.Vault.Extract.Parse` or `Dignite.Vault.Extract.Abstractions`.
+Custom OCR provider projects only need to reference `Dignite.Vault.Parse.Ocr` — they do not need (and should not pull in) `Dignite.Vault.Parse` or `Dignite.Vault.Parse.Abstractions`.
 
 ## See Also
 

@@ -75,7 +75,7 @@ The title-generator client can run on a smaller, cheaper model than the structur
 | --- | --- | --- |
 | `VaultExtractConsts.TitleGeneratorChatClientKey` (`"extract-title-generator"`) | `Dignite.Vault.Extract.Application` | Always |
 | `VaultExtractConsts.StructuredChatClientKey` (`"extract-structured"`) | `Dignite.Vault.Extract.Application` | Always |
-| `VisionLlmOcrConsts.VisionChatClientKey` (`"extract-vision-ocr"`) | `Dignite.Vault.Extract.Ocr.VisionLlm` | Only with the Vision-LLM OCR provider |
+| `VisionLlmOcrConsts.VisionChatClientKey` (`"extract-vision-ocr"`) | `Dignite.Vault.Parse.Ocr.VisionLlm` | Only with the Vision-LLM OCR provider |
 
 The vision key lives in the OCR provider project, not in `VaultExtractConsts`: an OCR provider sits below the Application layer and must not depend on it.
 

@@ -1,0 +1,8 @@
+<Project>
+    <PropertyGroup>
+        <AbpProjectType>module</AbpProjectType>
+        <!-- Read by common.props, which only falls back to the Extract values when these are unset. -->
+        <Product>Dignite Vault Parse</Product>
+        <PackageTags>abp;parse;document-processing;ocr;markdown;markitdown</PackageTags>
+    </PropertyGroup>
+</Project>
