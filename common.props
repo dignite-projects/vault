@@ -22,8 +22,8 @@
         <Product>Dignite Vault Extract</Product>
         <Copyright>© Dignite</Copyright>
         <PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
-        <PackageProjectUrl>https://github.com/dignite-projects/vault-extract</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/dignite-projects/vault-extract</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/dignite-projects/vault</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/dignite-projects/vault</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageTags>abp;extract;document-processing;ocr;markdown;mcp</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
