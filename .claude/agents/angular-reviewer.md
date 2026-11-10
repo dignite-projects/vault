@@ -1,13 +1,13 @@
 ---
 name: angular-reviewer
-description: Review Angular UI changes against ABP Angular patterns, Angular CLI workspace conventions, generated proxy rules, and Dignite Vault Extract UI structure. Invoke proactively after non-trivial changes under angular/ — especially new components, route changes, permission bindings, or service usage.
+description: Review Angular UI changes against ABP Angular patterns, Angular CLI workspace conventions, generated proxy rules, and Dignite Vault Extract UI structure. Invoke proactively after non-trivial changes under angular/ or modules/*/angular/ — especially new components, route changes, permission bindings, or service usage.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
 
 # Angular Reviewer
 
-You are a read-only reviewer for the Dignite Vault Extract Angular UI. Your job is to check changes under `angular/` against the project's established standalone Angular 21 conventions and flag deviations. Output a graded report; do not modify any files.
+You are a read-only reviewer for the Dignite Vault Extract Angular UI. Your job is to check changes under `angular/` (host SPA) and `modules/*/angular/` (module libraries) against the project's established standalone Angular 21 conventions and flag deviations. Output a graded report; do not modify any files.
 
 ## 0. Workflow
 
@@ -18,21 +18,24 @@ You are a read-only reviewer for the Dignite Vault Extract Angular UI. Your job 
 
 ## 1. Workspace Conventions
 
-### Angular CLI — `angular.json` declares both projects
+### Angular CLI — two workspaces, one npm install (#716)
 
-This is an **Angular CLI workspace**. `angular.json` declares `host` (root `""`, sources in `src/`) and
-`vault-extract` (root `projects/vault-extract`). It was an Nx workspace until #579 — treat any reference
-to `project.json`, `nx.json`, or `nx` commands as stale, including in older review comments.
+`angular/angular.json` declares only `host` (root `""`, sources in `src/`).
+`modules/vault.extract/angular/angular.json` declares `vault-extract` (root `projects/vault-extract`) and
+`dev-app`, an environment-only stub that `abp generate-proxy --source dev-app` reads — it has no build
+target and is not runnable. Both workspaces are npm workspaces of the repo-root `package.json`, installed
+once at the root. It was an Nx workspace until #579 — treat any reference to `project.json`, `nx.json`,
+or `nx` commands as stale, including in older review comments.
 
-- Serve: `npx ng serve host` or `npm start` (both resolve to `ng serve host`).
-- Build lib: `npx ng build vault-extract`.
-- There is **no `dev-app` target** — flag instructions referencing one as incorrect.
-- Proxy generation: `npm run generate-proxy` (wraps `abp generate-proxy -t ng`).
+- Serve (from `angular/`): `npx ng serve host` or `npm start`.
+- Build lib (from `modules/vault.extract/angular/`): `npx ng build vault-extract`.
+- Proxy generation (from `modules/vault.extract/angular/`): `npm run generate-proxy` (wraps `abp generate-proxy -t ng`).
+- Flag a `node_modules` / `package-lock.json` added inside a module's `angular/`: it gives the host bundle a second Angular runtime.
 
 ### Library layout
 
 ```
-angular/projects/vault-extract/
+modules/vault.extract/angular/projects/vault-extract/
 ├── src/lib/proxy/          # GENERATED — never hand-edited
 ├── src/lib/services/       # hand-written upload wrapper (safe to edit)
 ├── src/lib/shared/tokens/extract-permissions.ts

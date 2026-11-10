@@ -39,68 +39,68 @@ jobs:
       # never for packages published by a sibling repo in the same org (abp-modules/flex-fields is where
       # Dignite.Abp.FlexFields.* actually ships from). A real PAT with the read:packages scope is
       # required, stored as the PACKAGES_READ_TOKEN repository secret.
-      - name: Restore core
-        run: dotnet restore Dignite.Vault.Extract.slnx
+      - name: Restore solution
+        run: dotnet restore Dignite.Vault.slnx
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
-      - name: Build core
-        run: dotnet build Dignite.Vault.Extract.slnx --no-restore --configuration Release
+      - name: Build solution
+        run: dotnet build Dignite.Vault.slnx --no-restore --configuration Release
 
       - name: Restore host
-        run: dotnet restore host/src/Dignite.Vault.Extract.Host.csproj
+        run: dotnet restore src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
       - name: Build host
-        run: dotnet build host/src/Dignite.Vault.Extract.Host.csproj --no-restore --configuration Release
+        run: dotnet build src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj --no-restore --configuration Release
 
       - name: Run domain tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Domain.Tests/Dignite.Vault.Extract.Domain.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Domain.Tests/Dignite.Vault.Extract.Domain.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run application tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Application.Tests/Dignite.Vault.Extract.Application.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Application.Tests/Dignite.Vault.Extract.Application.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # SQLite in-memory (ExtractEntityFrameworkCoreTestModule); no external database dependency.
       - name: Run EF Core tests
-        run: dotnet test core/test/Dignite.Vault.Extract.EntityFrameworkCore.Tests/Dignite.Vault.Extract.EntityFrameworkCore.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.EntityFrameworkCore.Tests/Dignite.Vault.Extract.EntityFrameworkCore.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # TestBase + NSubstitute mocks (no DB / no LLM); includes MCP inputSchema regression guards
       # generated under the Autofac container, plus the #278 MCP-discovery authorization guard
       # (a minimal ASP.NET TestServer; no ABP host / DB / OpenIddict).
       - name: Run MCP tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Mcp.Tests/Dignite.Vault.Extract.Mcp.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Mcp.Tests/Dignite.Vault.Extract.Mcp.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # Real ABP permission pipeline (PermissionManagement Domain+EF on in-memory SQLite, NO AddAlwaysAllowAuthorization):
       # proves the MCP egress's fail-closed CheckPolicyAsync gate denies an ungranted principal (#516).
       - name: Run MCP integration tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Mcp.Integration.Tests/Dignite.Vault.Extract.Mcp.Integration.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Mcp.Integration.Tests/Dignite.Vault.Extract.Mcp.Integration.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # Pure unit tests: mocked IChatClient + IPdfRasterizer; no native PDFium or external LLM dependency.
       - name: Run OCR VisionLlm tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Ocr.VisionLlm.Tests/Dignite.Vault.Extract.Ocr.VisionLlm.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Ocr.VisionLlm.Tests/Dignite.Vault.Extract.Ocr.VisionLlm.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # The text-extraction stack the host actually wires (VaultExtractHostModule): the Parse orchestrator
       # plus the managed PdfPig / OpenXML providers. Pure in-memory fixtures; no native or external dependency.
       # Deliberately absent: Ocr.PaddleOcr.Tests and Ocr.AzureDocumentIntelligence.Tests - both providers are
       # commented out in the host, so their tests gate nothing that ships. Add them when a provider is enabled.
       - name: Run Parse tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Parse.Tests/Dignite.Vault.Extract.Parse.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Parse.Tests/Dignite.Vault.Extract.Parse.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run Parse PDF tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Parse.Pdf.Tests/Dignite.Vault.Extract.Parse.Pdf.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Parse.Pdf.Tests/Dignite.Vault.Extract.Parse.Pdf.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run Parse OpenXml tests
-        run: dotnet test core/test/Dignite.Vault.Extract.Parse.OpenXml.Tests/Dignite.Vault.Extract.Parse.OpenXml.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Parse.OpenXml.Tests/Dignite.Vault.Extract.Parse.OpenXml.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run FlexFields tests
-        run: dotnet test core/test/Dignite.Vault.Extract.FlexFields.Tests/Dignite.Vault.Extract.FlexFields.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.FlexFields.Tests/Dignite.Vault.Extract.FlexFields.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run HttpApi tests
-        run: dotnet test core/test/Dignite.Vault.Extract.HttpApi.Tests/Dignite.Vault.Extract.HttpApi.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.HttpApi.Tests/Dignite.Vault.Extract.HttpApi.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Build Docker image
-        run: docker build -f host/Dockerfile -t vault-extract-api:${{ github.sha }} --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN .
+        run: docker build -f Dockerfile -t vault-extract-api:${{ github.sha }} --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN .
         if: github.event_name == 'push'
         env:
           DOCKER_BUILDKIT: 1
@@ -118,41 +118,54 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: angular/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      # angular/.npmrc routes @dignite-projects:* to GitHub Packages and reads the credential from
-      # GITHUB_PACKAGES_TOKEN (npm's own ${VAR} substitution, not a GitHub Actions expression) -
-      # same cross-repo access boundary as the .NET restore above, so it needs the same real PAT.
+      # One install for every Angular workspace: the root package.json lists angular/ (host SPA) and
+      # each modules/*/angular workspace as npm workspaces, so they share a single node_modules at the
+      # repo root. That is what keeps the host bundle on one copy of Angular - see the
+      # single-Angular check below. The token is unused while the root .npmrc names no private
+      # registry; it stays for a pin that needs GitHub Packages again.
       - name: Install dependencies
         run: npm ci
-        working-directory: angular
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
       - name: Build extract library
         run: npx ng build vault-extract --configuration production
-        working-directory: angular
+        working-directory: modules/vault.extract/angular
 
       # ng-packagr externalises every bare specifier it does not bundle but never checks that the
       # emitted externals are declared, so a published bundle can import a package its own
       # package.json omits - #577's failure mode. Nothing else in this job would notice.
       - name: Check published dependency declarations
         run: npm run check:package-deps
-        working-directory: angular
+        working-directory: modules/vault.extract/angular
 
+      # The host compiles the module libraries from source (tsconfig paths into modules/*/angular);
+      # --stats-json writes the esbuild metafile the next step reads.
       - name: Build host application
-        run: npx ng build host --configuration production
+        run: npx ng build host --configuration production --stats-json
         working-directory: angular
 
-      - name: Lint
-        run: npx ng lint vault-extract && npx ng lint host
+      # Fails if the host bundle resolved a framework package (@angular/*, @abp/*, rxjs, ...) from
+      # more than one node_modules - a second runtime that breaks DI only in the browser.
+      - name: Check single framework copy
+        run: npm run check:single-angular
+        working-directory: angular
+
+      - name: Lint library
+        run: npx ng lint vault-extract
+        working-directory: modules/vault.extract/angular
+
+      - name: Lint host
+        run: npx ng lint host
         working-directory: angular
 
       # All specs live in the library; the host app has none. Runs through the Angular CLI
       # test target, which uses the @angular/build:unit-test builder with the vitest runner.
       - name: Unit tests
         run: npx ng test vault-extract --watch=false
-        working-directory: angular
+        working-directory: modules/vault.extract/angular
 
       # Verifies the frontend .local image still builds (COPY paths do not regress). The ng build host
       # step above has already produced dist/host/browser; this step only packages and does not push.

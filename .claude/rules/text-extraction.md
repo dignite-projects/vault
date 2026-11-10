@@ -1,11 +1,11 @@
 ---
 description: "Dignite Vault Extract text-extraction stack: three-layer contract + multi-provider topology, provenance archiving (#210), Markdown-first engineering guidance"
 paths:
-  - "core/src/**/*Parse*/**/*.cs"
-  - "core/src/**/*Ocr*/**/*.cs"
-  - "core/src/**/*Extractor*.cs"
-  - "core/src/**/*MarkItDown*/**/*.cs"
-  - "core/src/**/*Markdown*.cs"
+  - "modules/vault.extract/src/**/*Parse*/**/*.cs"
+  - "modules/vault.extract/src/**/*Ocr*/**/*.cs"
+  - "modules/vault.extract/src/**/*Extractor*.cs"
+  - "modules/vault.extract/src/**/*MarkItDown*/**/*.cs"
+  - "modules/vault.extract/src/**/*Markdown*.cs"
 ---
 
 # Text-Extraction Stack (Dignite Vault Extract)

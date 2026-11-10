@@ -1,9 +1,9 @@
 ---
 description: "Dignite Vault Extract egress event contracts: multi-stage event table, lifecycle events, Ready gate, at-least-once + EventTime idempotency delivery semantics"
 paths:
-  - "core/src/**/*Eto.cs"
-  - "core/src/**/*EventHandler*.cs"
-  - "core/src/**/*IntegrationEvent*.cs"
+  - "modules/vault.extract/src/**/*Eto.cs"
+  - "modules/vault.extract/src/**/*EventHandler*.cs"
+  - "modules/vault.extract/src/**/*IntegrationEvent*.cs"
 ---
 
 # Egress Event Contract Details (Dignite Vault Extract)

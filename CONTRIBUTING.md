@@ -28,27 +28,29 @@ git config core.hooksPath .githooks
 All backend test projects are part of the root solution:
 
 ```bash
-dotnet test Dignite.Vault.Extract.slnx
+dotnet test Dignite.Vault.slnx
 ```
 
 Or run individual projects:
 
 ```bash
-# Core
-dotnet test core/test/Dignite.Vault.Extract.Domain.Tests
-dotnet test core/test/Dignite.Vault.Extract.Application.Tests
-dotnet test core/test/Dignite.Vault.Extract.EntityFrameworkCore.Tests
-dotnet test core/test/Dignite.Vault.Extract.Mcp.Tests
-dotnet test core/test/Dignite.Vault.Extract.Ocr.VisionLlm.Tests
+# Vault Extract module
+dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Domain.Tests
+dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Application.Tests
+dotnet test modules/vault.extract/test/Dignite.Vault.Extract.EntityFrameworkCore.Tests
+dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Mcp.Tests
+dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Ocr.VisionLlm.Tests
 ```
 
 ### Frontend (Vitest)
 
 ```bash
-cd angular
-npm install
-npm test          # ng test vault-extract
-npm run lint
+npm install                       # at the repo root - one install for every Angular workspace
+cd modules/vault.extract/angular
+npm test                          # ng test vault-extract
+npm run lint                      # ng lint vault-extract
+cd ../../../angular
+npm run lint                      # ng lint host
 ```
 
 ## Code conventions
@@ -121,7 +123,7 @@ The project follows three-part [Semantic Versioning](https://semver.org/) (`MAJO
 | `<Version>` in [`common.props`](./common.props) | 3-segment SemVer | The NuGet package version and the value a `v*` tag must match. **This is the release version.** |
 | `<AssemblyVersion>` | 4-segment | Keep coarse and stable (e.g. `0.1.0.0`); do not move it for every `MINOR`/`PATCH`, to avoid assembly-binding churn. The 4-segment `1.0.0.0` form belongs here — never as a package version or tag. |
 | `<FileVersion>` | 4-segment | Diagnostic only; CI may stamp it from a build number or commit count. |
-| `version` in [`angular/projects/vault-extract/package.json`](./angular/projects/vault-extract/package.json) | 3-segment SemVer | The npm package version. **Keep it in lockstep with `<Version>`** as a single product version, until the backend and frontend release cadences genuinely diverge. |
+| `version` in [`modules/vault.extract/angular/projects/vault-extract/package.json`](./modules/vault.extract/angular/projects/vault-extract/package.json) | 3-segment SemVer | The npm package version. **Keep it in lockstep with `<Version>`** as a single product version, until the backend and frontend release cadences genuinely diverge. |
 
 ### Cutting a release
 

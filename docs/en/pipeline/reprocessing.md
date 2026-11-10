@@ -11,7 +11,7 @@ When you change a **classification prompt** (a `DocumentType`'s `Description`, `
 
 The forward pipeline is `upload → text-extraction → classification → field-extraction → Ready`. Batch reprocessing re-runs from the **classification** or **field-extraction** stage. A single document can also be **re-parsed** from its original file, which re-runs the whole pipeline for it; batch re-OCR is out of scope (see below).
 
-**Judgment stays with the operator.** Config changes do **not** cascade automatically — Dignite Vault Extract never guesses whether you meant a change to apply to existing documents. You trigger reprocessing explicitly, choose its scope, and accept its cost. This page covers the feature; for orchestration code see `core/src/Dignite.Vault.Extract.Application/Documents/Pipelines/Reprocessing/` and `.../FieldExtraction/`.
+**Judgment stays with the operator.** Config changes do **not** cascade automatically — Dignite Vault Extract never guesses whether you meant a change to apply to existing documents. You trigger reprocessing explicitly, choose its scope, and accept its cost. This page covers the feature; for orchestration code see `modules/vault.extract/src/Dignite.Vault.Extract.Application/Documents/Pipelines/Reprocessing/` and `.../FieldExtraction/`.
 
 ## Four Entry Points
 

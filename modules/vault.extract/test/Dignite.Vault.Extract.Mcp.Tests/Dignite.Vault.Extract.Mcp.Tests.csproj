@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.test.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Extract</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DocumentSearchTool compiles through ModelContextProtocol.AspNetCore and Microsoft.AspNetCore.Authorization.
+         The FrameworkReference is transitive through ProjectReference, but is declared explicitly here so the
+         test host resolves the shared framework. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- #422: the migrated #278 discovery regression guard spins up a minimal ASP.NET pipeline
+         (TestServer) to mirror the host MCP wiring without an ABP host / DB / OpenIddict. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dignite.Vault.Extract.Mcp\Dignite.Vault.Extract.Mcp.csproj" />
+    <ProjectReference Include="..\Dignite.Vault.Extract.TestBase\Dignite.Vault.Extract.TestBase.csproj" />
+    <!-- #564: only for constructing the real IVaultExtractFieldTypeRegistry directly (see
+         DocumentTypeResourcesTestModule / DocumentTypeToolsTestModule) - not an ABP module dependency, so
+         it does not pull Application's own module/EF Core registration into these lightweight tests. -->
+    <ProjectReference Include="..\..\src\Dignite.Vault.Extract.Application\Dignite.Vault.Extract.Application.csproj" />
+  </ItemGroup>
+
+</Project>

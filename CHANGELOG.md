@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Repository layout (#716, phase 1)** — no change for package consumers: every NuGet PackageId, namespace and
+  npm package name is the same. For contributors: the module moved from `core/` to `modules/vault.extract/`, the
+  host from `host/src` to `src/Dignite.Vault.Extract.Host/`, `host/etc` to `etc/`, and the Angular library to its
+  own workspace in `modules/vault.extract/angular/`. The solution is now `Dignite.Vault.slnx`. All Angular
+  workspaces are npm workspaces of the root `package.json`: run `npm install` once at the repository root, not
+  inside `angular/`.
+
 ## [0.6.0] - 2026-10-29
 
 ### Changed

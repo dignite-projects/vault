@@ -113,7 +113,7 @@ dotnet ef database update
 For this repository's host:
 
 ```bash
-dotnet run --project host/src -- --migrate-database
+dotnet run --project src/Dignite.Vault.Extract.Host -- --migrate-database
 ```
 
 This applies the schema migration, then migrates the host layer and every tenant layer, then

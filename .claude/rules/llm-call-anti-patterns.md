@@ -1,13 +1,13 @@
 ---
 description: "Dignite Vault Extract internal LLM call-site anti-patterns: fail-closed security gate / PromptBoundary / compile-time-constant descriptions / MCP schema collection-parameter pitfall"
 paths:
-  - "core/src/**/*Workflow*.cs"
-  - "core/src/**/Pipelines/**/*.cs"
-  - "core/src/**/*Extraction*.cs"
-  - "core/src/**/*Mcp*/**/*.cs"
-  - "core/src/**/*Prompt*.cs"
-  - "core/src/**/*ChatClient*.cs"
-  - "core/src/**/*VisionLlm*/**/*.cs"
+  - "modules/vault.extract/src/**/*Workflow*.cs"
+  - "modules/vault.extract/src/**/Pipelines/**/*.cs"
+  - "modules/vault.extract/src/**/*Extraction*.cs"
+  - "modules/vault.extract/src/**/*Mcp*/**/*.cs"
+  - "modules/vault.extract/src/**/*Prompt*.cs"
+  - "modules/vault.extract/src/**/*ChatClient*.cs"
+  - "modules/vault.extract/src/**/*VisionLlm*/**/*.cs"
 ---
 
 # LLM call anti-patterns
@@ -35,7 +35,7 @@ var messages = new List<ChatMessage>
 var response = await _chatClient.GetResponseAsync(messages, new ChatOptions { ResponseFormat = ChatResponseFormat.Json }, ct);
 ```
 
-Reference implementations: `DocumentClassificationWorkflow.cs`, `FieldExtractionWorkflow.cs` (under `core/src/Dignite.Vault.Extract.Application/Documents/Pipelines/`).
+Reference implementations: `DocumentClassificationWorkflow.cs`, `FieldExtractionWorkflow.cs` (under `modules/vault.extract/src/Dignite.Vault.Extract.Application/Documents/Pipelines/`).
 
 ---
 

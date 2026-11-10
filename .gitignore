@@ -4,7 +4,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
 # FileSystem blob storage (test host runtime data)
-host/src/App_Data/
+src/Dignite.Vault.Extract.Host/App_Data/
 
 # User-specific files
 *.rsuser
@@ -447,13 +447,16 @@ appsettings.Production.json
 appsettings.Staging.json
 
 # Node.js artifacts from benchmark embedding generation script
-core/test/**/Benchmarks/package.json
-core/test/**/Benchmarks/package-lock.json
+modules/vault.extract/test/**/Benchmarks/package.json
+modules/vault.extract/test/**/Benchmarks/package-lock.json
 
 # Benchmark dataset (desensitized real data - not committed)
-core/test/Dignite.Vault.Extract.Application.Tests/Benchmarks/rag-gold-dataset.json
-# Angular NX monorepo Node.js files are tracked
+modules/vault.extract/test/Dignite.Vault.Extract.Application.Tests/Benchmarks/rag-gold-dataset.json
+# npm workspaces (repo root + angular/ + modules/*/angular): manifests and the single lockfile are tracked
+!/package.json
+!/package-lock.json
 !angular/package.json
-!angular/package-lock.json
 !angular/tsconfig.base.json
+!modules/*/angular/package.json
+!modules/*/angular/tsconfig.base.json
 

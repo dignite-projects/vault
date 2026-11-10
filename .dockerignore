@@ -1,0 +1,14 @@
+# Build context of the repo-root Dockerfile (host API image). It COPYs only common.props,
+# Directory.Packages.props, Dignite.Vault.slnx, NuGet.Config, modules/*/src and src/, and builds
+# inside the image, so local build output, npm installs and secrets have no business in the context.
+# (angular/Dockerfile.local and etc/docker build from their own context directories; this file does
+# not apply to them.)
+**/node_modules
+**/bin
+**/obj
+**/dist
+**/.angular
+**/appsettings.secrets.json
+.git
+.vs
+artifacts

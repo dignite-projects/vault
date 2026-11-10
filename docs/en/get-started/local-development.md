@@ -22,7 +22,7 @@ This guide runs the Vault Extract repository on a developer machine: the .NET ho
 
 ## Backend Configuration
 
-Create `host/src/appsettings.secrets.json`. The host loads it last (ABP's `AddAppSettingsSecretsJson()`), the file is git-ignored, and `dotnet publish` leaves it out. Keep real credentials there or in environment variables, never in the committed `appsettings.json` or `appsettings.Development.json`.
+Create `src/Dignite.Vault.Extract.Host/appsettings.secrets.json`. The host loads it last (ABP's `AddAppSettingsSecretsJson()`), the file is git-ignored, and `dotnet publish` leaves it out. Keep real credentials there or in environment variables, never in the committed `appsettings.json` or `appsettings.Development.json`.
 
 An LLM provider is **required**. The host fails at startup while `Vault:Extract` is unconfigured, because classification and field extraction have no non-LLM fallback (the committed `appsettings.json` ships a `"YOUR_API_KEY"` placeholder, which the startup check rejects). A minimal configuration:
 
@@ -57,21 +57,21 @@ An LLM provider is **required**. The host fails at startup while `Vault:Extract`
 Install the client-side libraries once after cloning, and again when they change:
 
 ```bash
-cd host/src
+cd src/Dignite.Vault.Extract.Host
 abp install-libs
 ```
 
 Create the database schema and seed the initial data. The command migrates, prints `Migration completed.` and exits; run it again after pulling a change that adds a migration:
 
 ```bash
-cd host/src
+cd src/Dignite.Vault.Extract.Host
 dotnet run --migrate-database
 ```
 
 Then start the host:
 
 ```bash
-cd host/src
+cd src/Dignite.Vault.Extract.Host
 dotnet run
 ```
 
@@ -81,13 +81,15 @@ The API listens on `https://localhost:44348`; Swagger UI is at `https://localhos
 
 ## Running the Angular UI
 
-The Angular workspace lives in the repository-root `angular/` directory (Angular CLI). The `host` application consumes the `vault-extract` library project from source:
+There are two Angular CLI workspaces: the host SPA in the repository-root `angular/`, and the `vault-extract` library in `modules/vault.extract/angular/`. The host compiles the library from source (`tsconfig.base.json` `paths`). Both are npm workspaces of the root `package.json`, so a single `npm install` at the repository root installs them together into one `node_modules`:
 
 ```bash
-cd angular
 npm install
+cd angular
 npm start
 ```
+
+> Do not run `npm install` inside a module's `angular/` folder on its own. A second `node_modules` there makes the host bundle a second copy of Angular for the library code, which breaks dependency injection at runtime only. CI fails the build when that happens (`npm run check:single-angular`).
 
 The SPA is served at `http://localhost:4200`. The operator UI is under **Vault Extract** in the main menu (`/vault-extract/...`).
 
@@ -100,7 +102,7 @@ Default credentials, seeded by `--migrate-database`:
 
 ## Optional Sidecars (Docker)
 
-`host/docker-compose.yml` defines two sidecars, neither needed by the default configuration:
+`docker-compose.yml` defines two sidecars, neither needed by the default configuration:
 
 | Service | Port | Purpose | Profile |
 | --- | --- | --- | --- |
@@ -108,33 +110,32 @@ Default credentials, seeded by `--migrate-database`:
 | **aspire-dashboard** | 18888 (UI), 4317 (OTLP gRPC) | Local OpenTelemetry backend at `http://localhost:18888` | `observability` |
 
 ```bash
-cd host
 docker compose up -d paddleocr
 docker compose --profile observability up -d aspire-dashboard
 ```
 
 PaddleOCR answers `{"status":"success"}` on `http://localhost:8866/ping` once ready; its first start downloads about 600 MB of model weights. The committed `appsettings.Development.json` already turns the OpenTelemetry export on (`OpenTelemetry:Enabled`), pointed at this dashboard; see [Observability](../deployment/observability.md). Stop the sidecars with `docker compose down`.
 
-> If your machine can run a SQL Server container, the deployment layout in `host/etc/docker/docker-compose.yml` starts SQL Server, the API and the SPA together. For day-to-day iteration, `dotnet run` against a local SQL Server is faster.
+> If your machine can run a SQL Server container, the deployment layout in `etc/docker/docker-compose.yml` starts SQL Server, the API and the SPA together. For day-to-day iteration, `dotnet run` against a local SQL Server is faster.
 
 ## Regenerating the HTTP Client Proxies
 
 After adding or changing an API endpoint, regenerate the Angular proxies. The host must be running:
 
 ```bash
-cd angular
+cd modules/vault.extract/angular
 npm run generate-proxy
 ```
 
-This runs `abp generate-proxy -t ng` against `https://localhost:44348` and rewrites the files under `angular/projects/vault-extract/src/lib/proxy/`. Commit the regenerated files together with the API change.
+This runs `abp generate-proxy -t ng` against `https://localhost:44348` and rewrites the files under `modules/vault.extract/angular/projects/vault-extract/src/lib/proxy/`. Commit the regenerated files together with the API change.
 
 ## Running the Tests
 
 ```bash
-dotnet test core/test/Dignite.Vault.Extract.Application.Tests/Dignite.Vault.Extract.Application.Tests.csproj
+dotnet test modules/vault.extract/test/Dignite.Vault.Extract.Application.Tests/Dignite.Vault.Extract.Application.Tests.csproj
 ```
 
-The core test projects are ABP integration tests over in-memory SQLite; each project under `core/test/` runs on its own, and the whole core suite takes about a minute. The Angular library's tests run from `angular/`:
+The core test projects are ABP integration tests over in-memory SQLite; each project under `modules/vault.extract/test/` runs on its own, and the whole core suite takes about a minute. The Angular library's tests run from `modules/vault.extract/angular/`:
 
 ```bash
 npx ng test vault-extract --watch=false
@@ -144,7 +145,7 @@ npx ng test vault-extract --watch=false
 
 ### The Host Stops at Startup with "Extract requires an LLM provider"
 
-`Vault:Extract:Endpoint`, `ApiKey` or `ChatModelId` is missing, or `ApiKey` is still `YOUR_API_KEY`. Check that `appsettings.secrets.json` sits in `host/src` next to `appsettings.json`. A message about `VisionOcrModelId` means the vision model id is missing.
+`Vault:Extract:Endpoint`, `ApiKey` or `ChatModelId` is missing, or `ApiKey` is still `YOUR_API_KEY`. Check that `appsettings.secrets.json` sits in `src/Dignite.Vault.Extract.Host` next to `appsettings.json`. A message about `VisionOcrModelId` means the vision model id is missing.
 
 ### Images Come Back with Empty Markdown
 

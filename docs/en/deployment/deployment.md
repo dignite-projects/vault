@@ -106,7 +106,7 @@ The host enables exactly **one** OCR provider ([comparison](../text-extraction/t
 - **PaddleOCR**: a local Docker sidecar on CPU; data never leaves the network. See [PaddleOCR](../text-extraction/ocr-paddleocr.md).
 - **Azure Document Intelligence**: a cloud service for workloads whose data may leave the network. See [Azure Document Intelligence](../text-extraction/ocr-azure-document-intelligence.md).
 
-Switching means changing the provider module in `VaultExtractHostModule`'s `[DependsOn]` together with the matching `<ProjectReference>` in `host/src/Dignite.Vault.Extract.Host.csproj`. Switching to or from Vision-LLM also adds or removes the keyed vision `IChatClient` registration in `ConfigureAI`.
+Switching means changing the provider module in `VaultExtractHostModule`'s `[DependsOn]` together with the matching `<ProjectReference>` in `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj`. Switching to or from Vision-LLM also adds or removes the keyed vision `IChatClient` registration in `ConfigureAI`.
 
 ## AI Provider
 
@@ -118,7 +118,7 @@ The host configures ABP's transactional outbox and inbox on its `DbContext`, but
 
 ## Docker
 
-The Compose layout in `host/etc/docker/docker-compose.yml` defines:
+The Compose layout in `etc/docker/docker-compose.yml` defines:
 
 - `vault-extract-web`: the Angular SPA
 - `vault-extract-api`: the ASP.NET Core host, with the `vault-extract_appdata` volume for original files
@@ -127,19 +127,19 @@ The Compose layout in `host/etc/docker/docker-compose.yml` defines:
 
 ```bash
 # Build images locally
-cd host/etc/build
+cd etc/build
 ./build-images-locally.ps1
 
 # Start the stack
-cd host/etc/docker
+cd etc/docker
 ./run-docker.ps1
 
 # Stop containers
-cd host/etc/docker
+cd etc/docker
 ./stop-docker.ps1
 ```
 
-For day-to-day development without image builds, see [Local Development](../get-started/local-development.md): it runs the host with `dotnet run` and starts only the sidecars from `host/docker-compose.yml`.
+For day-to-day development without image builds, see [Local Development](../get-started/local-development.md): it runs the host with `dotnet run` and starts only the sidecars from `docker-compose.yml`.
 
 ## Reverse Proxy
 
@@ -182,14 +182,14 @@ The MCP endpoint's rate limiter also needs to know about the proxy; see [Reverse
 
 ## Migrations
 
-EF Core migrations live under `host/src/Migrations/`. Apply them, and seed the initial data (the `admin` user, the `DocumentManager` and `Viewer` operator roles in the Host and in each tenant, and the OpenIddict clients), by running the host once with `--migrate-database`:
+EF Core migrations live under `src/Dignite.Vault.Extract.Host/Migrations/`. Apply them, and seed the initial data (the `admin` user, the `DocumentManager` and `Viewer` operator roles in the Host and in each tenant, and the OpenIddict clients), by running the host once with `--migrate-database`:
 
 ```bash
-cd host/src
+cd src/Dignite.Vault.Extract.Host
 dotnet run --migrate-database
 ```
 
-The process migrates, prints `Migration completed.` and exits; start the host normally afterwards. `host/migrate-database.ps1` runs the same command, and the Compose layout's `db-migrator` service does the same in a container. There is no separate DbMigrator project.
+The process migrates, prints `Migration completed.` and exits; start the host normally afterwards. `migrate-database.ps1` runs the same command, and the Compose layout's `db-migrator` service does the same in a container. There is no separate DbMigrator project.
 
 Releases that need more than a schema migration say so in `CHANGELOG.md`. The 0.3.x → 0.5.x field-storage change has its own runbook: [Field Architecture v2 → v3 Migration](field-architecture-v3-migration.md).
 

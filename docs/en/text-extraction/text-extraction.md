@@ -25,7 +25,7 @@ Contract obligations regardless of structure:
 
 **Markdown-first is an engineering default, not a creed.** Out-of-band signals (coordinates, confidence, page metadata, form key-value structure, stamp positions) are **orthogonal** to Markdown. When future needs arise — citation highlighting on the source PDF, stamp localization, form key-value extraction, page-aware QA — they belong as **named, optional, strongly-typed** fields on `TextExtractionResult` (e.g. `IReadOnlyList<PageBlock>? PageBlocks`) or as a separate extractor interface orthogonal to `ITextExtractor`. **Forbidden**: stuffing such signals back into the Markdown string, or adding a `Dictionary<string, object>` extension slot. Each new out-of-band signal needs its own Issue — it's an architecture decision, not a quiet field addition.
 
-Source contract: [`ITextExtractor`](https://github.com/dignite-projects/vault-extract/blob/main/core/src/Dignite.Vault.Extract.Abstractions/Parse/ITextExtractor.cs), [`IMarkdownTextProvider`](https://github.com/dignite-projects/vault-extract/blob/main/core/src/Dignite.Vault.Extract.Parse/IMarkdownTextProvider.cs).
+Source contract: [`ITextExtractor`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.extract/src/Dignite.Vault.Extract.Abstractions/Parse/ITextExtractor.cs), [`IMarkdownTextProvider`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.extract/src/Dignite.Vault.Extract.Parse/IMarkdownTextProvider.cs).
 
 ## Two Extraction Paths
 
@@ -70,7 +70,7 @@ The image/scan path is dispatched by file kind. The digital path is dispatched *
 
 ## OCR — Choosing a Provider
 
-Dignite Vault Extract ships three OCR providers. Enable **one** in the host module's `[DependsOn]` (in this repository, `host/src/VaultExtractHostModule.cs`, together with the matching `<ProjectReference>`) based on the deployment scenario — `IOcrProvider` has a single registration, so the providers are mutually exclusive. The shipped host enables **Vision-LLM**.
+Dignite Vault Extract ships three OCR providers. Enable **one** in the host module's `[DependsOn]` (in this repository, `src/Dignite.Vault.Extract.Host/VaultExtractHostModule.cs`, together with the matching `<ProjectReference>`) based on the deployment scenario — `IOcrProvider` has a single registration, so the providers are mutually exclusive. The shipped host enables **Vision-LLM**.
 
 | | [Vision-LLM](ocr-vision-llm.md) (shipped default) | [PaddleOCR](ocr-paddleocr.md) | [Azure Document Intelligence](ocr-azure-document-intelligence.md) |
 |---|---|---|---|

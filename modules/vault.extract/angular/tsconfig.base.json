@@ -1,0 +1,27 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "outDir": "./dist/out-tsc",
+    "sourceMap": true,
+    "declaration": false,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "importHelpers": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022", "dom", "esnext.disposable"],
+    "useDefineForClassFields": false,
+    "strict": true,
+    "paths": {
+      "@dignite/ng.vault-extract": ["./projects/vault-extract/src/public-api.ts"],
+      "@dignite/ng.vault-extract/documents": ["./projects/vault-extract/documents/src/public-api.ts"],
+      "@dignite/ng.vault-extract/config": ["./projects/vault-extract/config/src/public-api.ts"]
+    }
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictTemplates": true
+  }
+}
