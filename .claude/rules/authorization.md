@@ -1,11 +1,11 @@
 ---
 description: "Authorization in Vault Extract: the documents domain's access-rule table (no [Authorize]), and the ABP-default pattern for everything else"
 paths:
-  - "core/src/**/*Permission*.cs"
-  - "core/src/**/*AppService*.cs"
-  - "core/src/**/*Controller*.cs"
-  - "core/src/**/DocumentAccess*.cs"
-  - "host/src/**/*Controller*.cs"
+  - "modules/vault.extract/src/**/*Permission*.cs"
+  - "modules/vault.extract/src/**/*AppService*.cs"
+  - "modules/vault.extract/src/**/*Controller*.cs"
+  - "modules/vault.extract/src/**/DocumentAccess*.cs"
+  - "src/**/*Controller*.cs"
 ---
 
 # Authorization

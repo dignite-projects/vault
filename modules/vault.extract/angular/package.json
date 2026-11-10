@@ -1,0 +1,12 @@
+{
+  "name": "vault-extract-angular",
+  "private": true,
+  "scripts": {
+    "build": "ng build vault-extract && npm run check:package-deps",
+    "check:package-deps": "node build/check-package-deps.mjs dist/vault-extract",
+    "test": "ng test vault-extract --watch=false",
+    "test:watch": "ng test vault-extract",
+    "lint": "ng lint vault-extract",
+    "generate-proxy": "abp generate-proxy -t ng -m vault-extract --api-name Default --source dev-app --target vault-extract --url https://localhost:44348"
+  }
+}

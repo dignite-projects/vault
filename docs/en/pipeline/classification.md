@@ -11,7 +11,7 @@ When a document finishes [text extraction](../text-extraction/text-extraction.md
 
 The resulting type decides the next stage — field extraction for that type's fields, in the document's own layer — and is broadcast as `DocumentClassifiedEto` (carrying `DocumentTypeCode`) so downstream consumers can follow along. Classification also decides whether the document is a **container** of several documents, or embeds standalone documents, which are then split into [sub-documents](../documents/sub-documents.md).
 
-This page covers the classification pipeline as a *feature*: how it works, how to tune it, and what happens when the LLM is unhappy. For low-level orchestration code see `core/src/Dignite.Vault.Extract.Application/Documents/Pipelines/Classification/`.
+This page covers the classification pipeline as a *feature*: how it works, how to tune it, and what happens when the LLM is unhappy. For low-level orchestration code see `modules/vault.extract/src/Dignite.Vault.Extract.Application/Documents/Pipelines/Classification/`.
 
 ## How It Works
 

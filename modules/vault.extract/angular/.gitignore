@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+dist/
+out-tsc/
+
+# Angular
+.angular/
+*.ngc.json
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+coverage/

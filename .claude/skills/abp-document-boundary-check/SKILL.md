@@ -51,8 +51,8 @@ Any field name or property meaning that only applies to a specific business scen
 
 Run this check when any of the following is true:
 
-1. The user edited `core/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`.
-2. The user added a property to `core/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`. The DTO is the external projection of `Document`, so polluting the DTO is equivalent to polluting the aggregate.
+1. The user edited `modules/vault.extract/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`.
+2. The user added a property to `modules/vault.extract/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`. The DTO is the external projection of `Document`, so polluting the DTO is equivalent to polluting the aggregate.
 3. The user says they want to "add field X to Document".
 4. A new EF Core migration touches the `VaultDocuments` table.
 5. The user runs `/abp-document-boundary-check`.
@@ -63,9 +63,9 @@ Run this check when any of the following is true:
 
    Use Grep or rg to search property declarations in:
 
-   - `core/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`
-   - `core/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`
-   - `core/src/Dignite.Vault.Extract.EntityFrameworkCore/EntityFrameworkCore/ExtractDbContextModelCreatingExtensions.cs` (the `builder.Entity<Document>` block)
+   - `modules/vault.extract/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`
+   - `modules/vault.extract/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`
+   - `modules/vault.extract/src/Dignite.Vault.Extract.EntityFrameworkCore/EntityFrameworkCore/ExtractDbContextModelCreatingExtensions.cs` (the `builder.Entity<Document>` block)
 
 2. **Classify ownership for each field**
 

@@ -1,6 +1,6 @@
 ---
 name: abp-architecture-reviewer
-description: Use after non-trivial changes under core/ or host/ to review the changes against the ABP/DDD rules and two-layer architecture constraints declared in CLAUDE.md and .claude/rules/. Invoke proactively when the user asks whether a change is architecturally correct, whether it follows the rules, or whether it breaks dependency direction, and before committing large changes.
+description: Use after non-trivial changes under modules/ or src/ to review the changes against the ABP/DDD rules and two-layer architecture constraints declared in CLAUDE.md and .claude/rules/. Invoke proactively when the user asks whether a change is architecturally correct, whether it follows the rules, or whether it breaks dependency direction, and before committing large changes.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -35,9 +35,9 @@ Read only the rule files directly related to the current change. If the change s
 
 ### 2.1 Two Layers + Host (From CLAUDE.md)
 
-- **core/Abstractions** must sit at the bottom of the dependency topology. Any `<ProjectReference>` in `core/Dignite.Vault.Extract.Abstractions/*.csproj` is a violation; it should depend only on foundational ABP packages.
-- **No business-module dependency inside core**: business modules (contract / invoice / HR, etc.) live downstream and integrate via EventBus / MCP / REST. Any new reference from `core/` to business-module code is a hard violation.
-- **host/** is the only place allowed to perform `OnApplicationInitialization` middleware registration. If a `core/` `*Module.cs` file contains `OnApplicationInitialization`, that is a hard violation unless the method is clearly limited to non-middleware delayed initialization, which is rare and must be proven.
+- **Abstractions** (`modules/vault.extract/src/Dignite.Vault.Extract.Abstractions`) must sit at the bottom of the dependency topology. Any `<ProjectReference>` in `modules/vault.extract/src/Dignite.Vault.Extract.Abstractions/*.csproj` is a violation; it should depend only on foundational ABP packages.
+- **No business-module dependency inside the Extract module**: business modules (contract / invoice / HR, etc.) live downstream and integrate via EventBus / MCP / REST. Any new reference from `modules/vault.extract/` to business-module code is a hard violation.
+- **The host (`src/Dignite.Vault.Extract.Host/`)** is the only place allowed to perform `OnApplicationInitialization` middleware registration. If a `modules/` `*Module.cs` file contains `OnApplicationInitialization`, that is a hard violation unless the method is clearly limited to non-middleware delayed initialization, which is rare and must be proven.
 
 ### 2.2 One-Way Dependencies
 
@@ -80,7 +80,7 @@ Search for these hard violations:
 Apply this to the reusable core modules such as `Dignite.Vault.Extract.Parse` and `Dignite.Vault.Extract.Ocr.*`:
 
 - **All public/protected methods must be `virtual`**. This is an ABP module extensibility requirement. Grep `^\s*public\s+(?:async\s+)?(?!virtual\s|override\s|static\s)` to find non-virtual methods.
-- **Do not configure middleware in `*Module.cs`**; only `host/` may do that.
+- **Do not configure middleware in `*Module.cs`**; only the host (`src/`) may do that.
 - Use the `IOptions<TOptions>` pattern for configuration. Do not read `IConfiguration` directly inside modules.
 
 ### 2.6 Multi-Tenancy
@@ -93,8 +93,8 @@ Apply this to the reusable core modules such as `Dignite.Vault.Extract.Parse` an
 
 This is one of the easiest areas to get wrong in this project. See `.claude/skills/abp-document-boundary-check/SKILL.md`. If a change touches:
 
-- `core/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`
-- `core/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`
+- `modules/vault.extract/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`
+- `modules/vault.extract/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`
 - EF Core configuration or migrations touching the `VaultDocuments` table
 
 then invoke the `abp-document-boundary-check` skill, or perform the equivalent check yourself. Any suspicious business field, such as contract amount, invoice number, or expiration date, should be marked as a 🔴 hard violation.
@@ -134,4 +134,4 @@ Use this format:
 - **Do not modify any files**. This agent is review-only.
 - **Do not treat ABP built-in code (`Volo.Abp.*`) as a violation**. That is framework code.
 - **Do not treat EF Core generated migration files (`*.Designer.cs`, `ExtractHostDbContextModelSnapshot.cs`) as violations**. They are tool output. If the migration body itself is questionable, ask the user to invoke `ef-migration-safety-reviewer`.
-- **Do not apply the module-template virtual-method rule to host/**. The host is not a reusable module.
+- **Do not apply the module-template virtual-method rule to the host (`src/`)**. The host is not a reusable module.

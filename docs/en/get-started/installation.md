@@ -7,7 +7,7 @@
 
 # Installation
 
-Dignite Vault Extract is distributed as an ABP application module: a set of NuGet packages for the server and the `@dignite/ng.vault-extract` npm package for the Angular operator UI. This repository's `host/` is one host built from them; this page describes how to add the modules to an ABP application of your own.
+Dignite Vault Extract is distributed as an ABP application module: a set of NuGet packages for the server and the `@dignite/ng.vault-extract` npm package for the Angular operator UI. This repository's host (`src/Dignite.Vault.Extract.Host/`) is one host built from them; this page describes how to add the modules to an ABP application of your own.
 
 > To run this repository itself, see [Local Development](local-development.md).
 
@@ -64,7 +64,7 @@ The OCR providers are mutually exclusive. See [Text Extraction](../text-extracti
 
 ### Module Dependencies
 
-For a single-project host, the dependencies look like this (from `host/src/VaultExtractHostModule.cs`):
+For a single-project host, the dependencies look like this (from `src/Dignite.Vault.Extract.Host/VaultExtractHostModule.cs`):
 
 ```csharp
 [DependsOn(

@@ -15,8 +15,8 @@ Recommended for production workloads where data is allowed to leave the network 
 
 1. Create an Azure AI Document Intelligence resource (F0 for trial, S0 for production).
 2. Copy the **Endpoint** and **API Key**.
-3. In the host module's `[DependsOn]`, replace `VaultExtractVisionLlmOcrModule` (the shipped default) with `VaultExtractAzureDocumentIntelligenceModule`, and reference `Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence` instead (in this repository, swap the commented `<ProjectReference>` lines in `host/src/Dignite.Vault.Extract.Host.csproj`). Remove the keyed vision `IChatClient` registration from `ConfigureAI` too: it fails at startup without `Vault:Extract:VisionOcrModelId`.
-4. Add the endpoint and key to `host/src/appsettings.secrets.json`, `appsettings.Production.json` or environment variables:
+3. In the host module's `[DependsOn]`, replace `VaultExtractVisionLlmOcrModule` (the shipped default) with `VaultExtractAzureDocumentIntelligenceModule`, and reference `Dignite.Vault.Extract.Ocr.AzureDocumentIntelligence` instead (in this repository, swap the commented `<ProjectReference>` lines in `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj`). Remove the keyed vision `IChatClient` registration from `ConfigureAI` too: it fails at startup without `Vault:Extract:VisionOcrModelId`.
+4. Add the endpoint and key to `src/Dignite.Vault.Extract.Host/appsettings.secrets.json`, `appsettings.Production.json` or environment variables:
 
 ```json
 "AzureDocumentIntelligence": {

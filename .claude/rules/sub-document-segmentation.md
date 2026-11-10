@@ -1,11 +1,11 @@
 ---
 description: "Dignite Vault Extract sub-document segmentation subsystem: the two-representation model (DocumentSegment ledger + derived Document), the two-Kind red line, the field lifecycle contract, and the cross-entity invariant (decision record: #390)"
 paths:
-  - "core/src/**/Segmentation/**/*.cs"
-  - "core/src/**/DerivedDocumentSpawner.cs"
-  - "core/src/**/ContainerMarker*.cs"
-  - "core/src/**/Segments/**/*.cs"
-  - "core/src/**/DocumentSegment*.cs"
+  - "modules/vault.extract/src/**/Segmentation/**/*.cs"
+  - "modules/vault.extract/src/**/DerivedDocumentSpawner.cs"
+  - "modules/vault.extract/src/**/ContainerMarker*.cs"
+  - "modules/vault.extract/src/**/Segments/**/*.cs"
+  - "modules/vault.extract/src/**/DocumentSegment*.cs"
 ---
 
 # Sub-document Segmentation
@@ -111,7 +111,7 @@ default — the #364-class missed-branch bug, hardened in #379), not a license t
 | `RoutedDocumentId` | **keep explicit** | reconstructable from `(OriginDocumentId, OriginConstituentKey)`, but the explicit pointer is the ledger's purpose (idempotency + retraction clarity); reconstructing the join is more complex, not less |
 | `SliceText` | **transient one-way seed** | duplicated by `Document.Markdown` after parse; bounded duplication is accepted; **do not add a parse→segment writeback to clear it** (couples parse job to the ledger for a low-value saving) |
 
-_Removed by #487: `PageNumber` and `FigureContentHash`, dropped from the entity (+ EF config + `DocumentSegmentConsts.MaxFigureContentHashLength`) with the `V487_DropDormantSegmentFigureColumns` migration. Both were **figure-only**; `FigureContentHash` belonged to the deleted retention chain, and `PageNumber` was **write-only even at v0.2.0** (nothing in `core/src` ever read it back). #494's restored figure routing needs neither — a figure child is identified by the SHA-256 of its transcription like any other slice — so there is **no migration to undo**._
+_Removed by #487: `PageNumber` and `FigureContentHash`, dropped from the entity (+ EF config + `DocumentSegmentConsts.MaxFigureContentHashLength`) with the `V487_DropDormantSegmentFigureColumns` migration. Both were **figure-only**; `FigureContentHash` belonged to the deleted retention chain, and `PageNumber` was **write-only even at v0.2.0** (nothing in `modules/vault.extract/src` ever read it back). #494's restored figure routing needs neither — a figure child is identified by the SHA-256 of its transcription like any other slice — so there is **no migration to undo**._
 
 _**`Kind = Figure` is live again (#494).** Fresh detection writes it for every standalone figure span, exactly as at
 v0.2.0. Both kinds are first-class: a **Text** row's premise is the container bundle (`IsContainerIndependent()`

@@ -1,13 +1,13 @@
 ---
 description: "Dignite Vault Extract field architecture details: system common field table, type-bound field (mechanism B) implementation, field-extension judgment, document-type classification execution"
 paths:
-  - "core/src/**/Document.cs"
-  - "core/src/**/DocumentDto.cs"
-  - "core/src/**/TextExtractionResult.cs"
-  - "core/src/**/Fields/**/*.cs"
-  - "core/src/**/*Field*.cs"
-  - "core/src/**/DocumentTypes/**/*.cs"
-  - "core/src/**/Classification/**/*.cs"
+  - "modules/vault.extract/src/**/Document.cs"
+  - "modules/vault.extract/src/**/DocumentDto.cs"
+  - "modules/vault.extract/src/**/TextExtractionResult.cs"
+  - "modules/vault.extract/src/**/Fields/**/*.cs"
+  - "modules/vault.extract/src/**/*Field*.cs"
+  - "modules/vault.extract/src/**/DocumentTypes/**/*.cs"
+  - "modules/vault.extract/src/**/Classification/**/*.cs"
 ---
 
 # Field Architecture Details (Dignite Vault Extract)

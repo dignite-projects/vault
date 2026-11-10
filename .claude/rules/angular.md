@@ -12,17 +12,24 @@ paths:
 
 ## Project Structure
 
-This is an Angular CLI workspace (`angular/`), with `angular.json` declaring both projects. It was an
-Nx workspace until #579; anything still referring to `project.json` or `nx` commands is stale.
+There are two Angular CLI workspaces since #716 phase 1: the host SPA (`angular/`, project `host`) and the
+module workspace (`modules/vault.extract/angular/`, projects `vault-extract` + a `dev-app` stub that only
+holds the `environment.ts` `abp generate-proxy` reads). The host compiles the library from source via
+`angular/tsconfig.base.json` `paths`. Both are npm workspaces of the repo-root `package.json`: run
+`npm install` once at the repo root, never inside a workspace, or the host bundles a second Angular
+runtime for the library code (`npm run check:single-angular` in `angular/` catches it). It was an Nx
+workspace until #579; anything still referring to `project.json` or `nx` commands is stale.
 
 ```
-angular/
-├── src/                             # The only runnable app (ng serve host / npm start)
-│   └── app/
-│       ├── app.config.ts            # bootstrapApplication providers
-│       ├── app.routes.ts            # APP_ROUTES (lazy loadChildren to lib route arrays)
-│       └── home/
+angular/                             # host SPA workspace
+└── src/                             # The only runnable app (ng serve host / npm start)
+    └── app/
+        ├── app.config.ts            # bootstrapApplication providers
+        ├── app.routes.ts            # APP_ROUTES (lazy loadChildren to lib route arrays)
+        └── home/
+modules/vault.extract/angular/       # module workspace
 └── projects/
+    ├── dev-app/src/environments/    # proxy-generation stub, not runnable
     └── vault-extract/               # Angular library; imported as @dignite/ng.vault-extract
         ├── src/lib/
         │   ├── proxy/               # ⚠️  GENERATED — never edit by hand
@@ -45,7 +52,7 @@ angular/
 
 ## Generate Service Proxies
 ```bash
-cd angular
+cd modules/vault.extract/angular
 npm run generate-proxy
 ```
 

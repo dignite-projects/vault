@@ -1,0 +1,1671 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  effect,
+  inject,
+  signal,
+  computed,
+  untracked,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { catchError, forkJoin, map, of, switchMap, timer, Subscription } from 'rxjs';
+import { ActivatedRoute, Router } from '@angular/router';
+import { CommonModule, DOCUMENT, Location } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { marked } from 'marked';
+import { HttpErrorReporterService, LocalizationPipe, PermissionService } from '@abp/ng.core';
+import { Confirmation, ConfirmationService, ToasterService } from '@abp/ng.theme.shared';
+import { FlexFieldControlComponent, FlexFieldData, FlexFieldValue, FlexFieldViewComponent } from '@dignite/ng.flex-fields';
+import {
+  CabinetDto,
+  CabinetService,
+  DocumentDto,
+  DocumentLifecycleStatus,
+  DocumentPipelineRunDto,
+  DocumentPipelineRunService,
+  DocumentReviewDisposition,
+  DocumentReviewReasons,
+  DocumentService,
+  DocumentTypeDto,
+  FieldDefinitionDto,
+  FieldDefinitionService,
+  FieldValidationWarningDto,
+  EXTRACT_PERMISSIONS,
+  PipelineRunStatus,
+} from '@dignite/ng.vault-extract';
+import {
+  canAssignAnyDocumentType,
+  reclassificationTargetTypes,
+  rightsOf,
+} from '../../shared/document-access';
+import { DocumentTypesStore } from '../../shared/document-types.store';
+import { stripMarkdownCodeFences } from '../../shared/strip-code-fences';
+import { DocumentFileBlobService } from '../../shared/document-file-blob.service';
+import { isImageContentType, isPdfContentType } from '../../shared/content-type';
+
+interface PipelineRow {
+  pipelineCode: string;
+  labelKey: string;
+  isKnown: boolean;
+  run: DocumentPipelineRunDto | null;
+  // Pre-computed view fields. Without these, the template re-invoked
+  // getRunStatusBadgeClass / getElapsedMs / formatElapsed / isRetryable on
+  // every change detection cycle for every row. Now they are derived once
+  // when the pipelineRows signal recomputes (i.e. when the document is
+  // (re)loaded).
+  statusBadgeClass: string;
+  statusLabel: string;
+  inProgress: boolean;
+  elapsedDisplay: string | null;
+  retryable: boolean;
+}
+
+// Mirrors modules/vault.extract/src/Dignite.Vault.Extract.Domain.Shared/Documents/ExtractPipelines.cs.
+const KNOWN_PIPELINE_CODES = [
+  'text-extraction',
+  'classification',
+  'field-extraction',
+] as const;
+
+// #440 interim live status: while a document is still in-flight, silently re-fetch it + its pipeline runs so
+// the detail page reflects server-side progress without a manual Refresh. Bounded and self-terminating — to
+// be replaced by server push (SSE / SignalR), see issue #440. Start fast, then back the interval off toward
+// the cap so a long-running pipeline does not keep polling at full rate.
+const POLL_BASE_INTERVAL_MS = 2000;
+const POLL_MAX_INTERVAL_MS = 10000;
+
+@Component({
+  selector: 'lib-document-detail',
+  templateUrl: './document-detail.component.html',
+  styleUrls: ['./document-detail.component.scss'],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    FlexFieldControlComponent,
+    FlexFieldViewComponent,
+    LocalizationPipe,
+  ],
+  providers: [DocumentFileBlobService],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class DocumentDetailComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly documentService = inject(DocumentService);
+  private readonly documentPipelineRunService = inject(DocumentPipelineRunService);
+  private readonly fieldDefinitionService = inject(FieldDefinitionService);
+  private readonly cabinetService = inject(CabinetService);
+  private readonly fb = inject(FormBuilder);
+  private readonly toaster = inject(ToasterService);
+  // #635: the document fetch opts out of ABP's global error handling to catch a 403, and hands every other
+  // error back through this — the same call RestService.handleError makes.
+  private readonly httpErrorReporter = inject(HttpErrorReporterService);
+  private readonly confirmation = inject(ConfirmationService);
+  private readonly permissionService = inject(PermissionService);
+  private readonly destroyRef = inject(DestroyRef);
+  // #440: DOM document handle for the Page Visibility check that pauses background polling on a hidden tab.
+  private readonly domDocument = inject(DOCUMENT);
+  // Original-file blob load / sanitize / revoke lifecycle (#277), shared with the file-preview page.
+  protected readonly fileBlob = inject(DocumentFileBlobService);
+
+  // #635 decision 7: the visible types come from the one shared store — the type displayName mapping, the
+  // confirm / reclassify picker, and the code → id lookup the field-definition fetch needs.
+  readonly documentTypes = inject(DocumentTypesStore);
+
+  // #635 decision 5: what this caller may do with THIS document, decided on the server and sent down with
+  // it. Everything is denied until the document is in hand.
+  private readonly rights = computed(() => rightsOf(this.document()));
+  readonly canDelete = computed(() => this.rights().canDelete);
+  // The operator edit family: confirm / reclassify / re-parse / re-extract / field editing / Markdown
+  // correction / cabinet re-filing. One gate, matching the backend, where all of them share
+  // DocumentAccessRule.Edit.
+  readonly canEdit = computed(() => this.rights().canEdit);
+  // #635 decision 2: NARROWER than the edit family on purpose. Allowing a suspected duplicate, resolving
+  // field-validation warnings and rejecting review each clear a BLOCKING review reason — the channel's
+  // data-quality gate on the way to DocumentReadyEto — so an uploader is deliberately not admitted to them
+  // on their own document, while an Edit grant or module-wide ConfirmClassification is.
+  readonly canReview = computed(() => this.rights().canReview);
+  // #635 decision 2: retry moved onto the Edit arm. It used to be reachable by anyone holding
+  // Pipelines.Retry on any readable document, which walked around the per-type Edit gate that its neighbour
+  // "re-recognize" already had.
+  readonly canRetry = computed(() => this.rights().canRetry);
+  readonly canViewCabinets = this.permissionService.getGrantedPolicy(
+    EXTRACT_PERMISSIONS.Cabinets.Default,
+  );
+  // The role-level half of "which types may I assign" — the only question about this page that is still
+  // the client's to answer, because a reclassification's TARGET type is not the document being judged.
+  // #645: two permissions admit every target type — ConfirmClassification ("编辑所有类型的文档") and
+  // Documents.Upload ("上传到所有文档类型"), mirroring the server's DeclareType row.
+  readonly canConfirmClassification = this.permissionService.getGrantedPolicy(
+    EXTRACT_PERMISSIONS.Documents.ConfirmClassification,
+  );
+  readonly canUploadIntoAllTypes = this.permissionService.getGrantedPolicy(
+    EXTRACT_PERMISSIONS.Documents.Upload,
+  );
+
+  document = signal<DocumentDto | null>(null);
+  // #306/#354: when this document is a sub-document (originDocumentId set), the source/container document
+  // loaded for the provenance banner so it can show the parent's title instead of a raw id. null when this
+  // is a normal document, or when the parent is inaccessible (soft-deleted / cross-layer) — the banner then
+  // falls back to the id.
+  parentDocument = signal<DocumentDto | null>(null);
+  // #306/#354: true when the parent (origin) lookup failed — the source was removed (soft / permanently deleted) or is
+  // cross-layer / inaccessible. Drives the banner's "source unavailable" label and hides the dead "view parent" link,
+  // distinguishing a failed lookup from the brief in-flight window (both otherwise leave parentDocument null).
+  parentLookupFailed = signal(false);
+  // #216: PipelineRun was split into an independent aggregate root and removed from
+  // DocumentDto.pipelineRuns. It is now an independent signal loaded separately through
+  // DocumentPipelineRunService in loadDocument.
+  pipelineRuns = signal<DocumentPipelineRunDto[]>([]);
+  isLoading = signal(true);
+  // Left column three-tab area (#274): Markdown preview by default; switching to 'file' triggers lazy
+  // loading of the original-file blob.
+  activeTab = signal<'preview' | 'source' | 'file'>('preview');
+  retryingPipeline = signal<string | null>(null);
+  isReparsing = signal(false);
+  isEditingFields = signal(false);
+  isSavingFields = signal(false);
+  fieldDefinitions = signal<FieldDefinitionDto[]>([]);
+  // #635: the field schema this page wants, waiting for the shared type store to be able to resolve its
+  // code → id. null until a document is loaded. See the constructor effect and requestFieldSchema.
+  private readonly fieldSchemaRequest = signal<{
+    readonly typeCode: string | null;
+    readonly nonce: number;
+  } | null>(null);
+  // The extracted-fields edit form. Its "values" group is where each <ff-flex-field-control> registers
+  // its own field's control (FieldTypeControlBase.rebuild); undefined means the fields card is not in
+  // edit mode.
+  fieldsForm = signal<FormGroup | undefined>(undefined);
+  // Candidate cabinets for the document: cabinetId-to-name display mapping plus reassignment dropdown
+  // options (#257). Loaded only with Cabinets.Default permission.
+  cabinets = signal<CabinetDto[]>([]);
+  // Cabinet reassignment (#257) edit state: entering edit shows the dropdown; empty selectedCabinetId
+  // means unclassified.
+  isEditingCabinet = signal(false);
+  isSavingCabinet = signal(false);
+  selectedCabinetId = signal<string>('');
+  // #555: operator correction of Document.Markdown edit-toggle state, mirroring the Cabinet reassignment
+  // and extracted-fields editor above. markdownDraft holds the textarea value while editing;
+  // reprocessOnSave is the "also re-extract fields" checkbox, defaulted off so a plain typo fix does not
+  // also queue field re-extraction.
+  isEditingMarkdown = signal(false);
+  isSavingMarkdown = signal(false);
+  markdownDraft = signal('');
+  reprocessOnSave = signal(false);
+  // #632: the types this caller may ASSIGN. #645: every type for ConfirmClassification or Documents.Upload,
+  // otherwise the types carrying an Upload grant. Confirming and reclassifying both go through the one
+  // picker below, and both are judged against the TARGET type by the backend, so offering a type outside
+  // this set only builds a 403.
+  readonly assignableTypes = computed(() =>
+    reclassificationTargetTypes(
+      this.documentTypes.value(),
+      this.canConfirmClassification,
+      this.canUploadIntoAllTypes,
+    ),
+  );
+
+  // #395: manual confirm/assign classification — the authoritative override for UnresolvedClassification,
+  // relocated here from the removed review-queue page. #660: the same dialog is the type editor beside the type
+  // badge, for a document that already has a type: one picker, one call, whether the type is being confirmed
+  // or changed.
+  showClassifyDialog = signal(false);
+  selectedTypeId = signal('');
+  isConfirmingClassification = signal(false);
+
+  // #395: reject (#237/#284 recoverable disposition). The review queue was the only place this action
+  // lived; it moves to the remediation hub so the disposition is not lost.
+  showRejectDialog = signal(false);
+  rejectReason = signal('');
+  isRejecting = signal(false);
+  // #411: in-flight guard for the "Allow duplicate" operator action.
+  isAllowingDuplicate = signal(false);
+  // #527: in-flight guard for the "Mark resolved" field-validation-warning action.
+  isResolvingWarnings = signal(false);
+  // #657: in-flight guard for the "Confirm entry complete" action.
+  isConfirmingFieldEntry = signal(false);
+
+  readonly DocumentLifecycleStatus = DocumentLifecycleStatus;
+  readonly DocumentReviewDisposition = DocumentReviewDisposition;
+  readonly DocumentReviewReasons = DocumentReviewReasons;
+  readonly PipelineRunStatus = PipelineRunStatus;
+
+  pipelineRows = computed<PipelineRow[]>(() => {
+    if (!this.document()) return [];
+
+    // #216: run source changed from doc.pipelineRuns to the independent pipelineRuns signal
+    // (DocumentPipelineRunService).
+    const allRuns = this.pipelineRuns();
+    const known: PipelineRow[] = KNOWN_PIPELINE_CODES.map(code => this.toPipelineRow(
+      code,
+      `VaultExtract::Document:Pipeline:${code}`,
+      true,
+      this.pickLatestRun(allRuns, code),
+    ));
+
+    const unknownCodes = Array.from(
+      new Set(
+        allRuns
+          .map(r => r.pipelineCode)
+          .filter((code): code is string => !!code && !KNOWN_PIPELINE_CODES.includes(code as typeof KNOWN_PIPELINE_CODES[number]))
+      )
+    );
+
+    const unknown: PipelineRow[] = unknownCodes.map(code => this.toPipelineRow(
+      code,
+      code,
+      false,
+      this.pickLatestRun(allRuns, code),
+    ));
+
+    return [...known, ...unknown];
+  });
+
+  protected toPipelineRow(
+    pipelineCode: string,
+    labelKey: string,
+    isKnown: boolean,
+    run: DocumentPipelineRunDto | null,
+  ): PipelineRow {
+    return {
+      pipelineCode,
+      labelKey,
+      isKnown,
+      run,
+      statusBadgeClass: this.getRunStatusBadgeClass(run?.status),
+      statusLabel: this.getRunStatusLabel(run?.status),
+      inProgress: this.isRunInProgress(run?.status),
+      elapsedDisplay: run ? this.formatElapsedOrNull(run) : null,
+      retryable: isKnown && this.isRetryable(run),
+    };
+  }
+
+  protected formatElapsedOrNull(run: DocumentPipelineRunDto): string | null {
+    return this.getElapsedMs(run) === null ? null : this.formatElapsed(run);
+  }
+
+  // #284: operator attention required, for any unresolved review reason, equals server-provided
+  // requiresReview. The client does not infer it locally.
+  needsReview = computed(() => this.document()?.requiresReview ?? false);
+
+  // #395: classification still unresolved AND the operator may act — drives the "Confirm classification"
+  // CTA. Mirrors the list's needsConfirmation; the blocking UnresolvedClassification reason is the only one
+  // a manual type assignment resolves.
+  needsClassification = computed(() =>
+    this.canEdit() &&
+    (((this.document()?.reviewReasons ?? DocumentReviewReasons.None) & DocumentReviewReasons.UnresolvedClassification)
+      !== DocumentReviewReasons.None),
+  );
+
+  // #411: a suspected duplicate AND the operator may act — drives the "Allow" CTA (release as not a duplicate).
+  // The opposite resolution (confirm the duplicate) is the existing Delete action.
+  // #635 decision 2: "may act" here is canReview, not canEdit. Releasing a suspected duplicate clears a
+  // blocking review reason, and a duplicate invoice is the adversarial case the review queue exists for, so
+  // the uploader does not get to release their own.
+  needsDuplicateReview = computed(() =>
+    this.canReview() &&
+    (((this.document()?.reviewReasons ?? DocumentReviewReasons.None) & DocumentReviewReasons.DuplicateSuspected)
+      !== DocumentReviewReasons.None),
+  );
+
+  // #412: required fields are missing AND the operator may act — drives the "Complete fields" CTA. The reason
+  // is non-blocking and clears itself once the values are filled in the fields card below, so the banner
+  // offers a jump-and-edit shortcut rather than a confirm/approve button.
+  // #491: FieldExtractionIncomplete (the document was too long to extract automatically) takes the same CTA —
+  // manual entry is likewise its only remedy. #657: unlike MissingRequiredFields, filling the fields here
+  // releases nothing by itself — since #657 the release is the separate "Confirm entry complete" act below
+  // (needsFieldEntryConfirmation), so this shortcut only gets the operator to the form.
+  needsFieldCompletion = computed(() =>
+    this.canEdit() &&
+    (((this.document()?.reviewReasons ?? DocumentReviewReasons.None) &
+      (DocumentReviewReasons.MissingRequiredFields | DocumentReviewReasons.FieldExtractionIncomplete))
+      !== DocumentReviewReasons.None),
+  );
+
+  // #527: field-validation warnings are present AND the operator may act — drives the "Mark resolved" CTA. The reason
+  // is blocking (gates Ready): the pipeline kept each flagged value but reported a concern, so the operator compares
+  // it against the source (left column) and either re-extracts or resolves. Resolving clears the bit and releases the
+  // document; editing a field value on its own does NOT clear a warning (#527 §9).
+  // #635 decision 2: gated on canReview rather than canEdit — this is the second pair of eyes on the
+  // uploader's work, and #527 §9 (a field edit never clears a warning) is exactly what keeps that true.
+  needsFieldValidationResolution = computed(() =>
+    this.canReview() &&
+    (((this.document()?.reviewReasons ?? DocumentReviewReasons.None) & DocumentReviewReasons.FieldValidationWarning)
+      !== DocumentReviewReasons.None),
+  );
+
+  // #657: FieldExtractionIncomplete is present AND the operator may act — drives the "Confirm entry complete"
+  // CTA. Gated on canReview rather than canEdit: the call clears a blocking review reason and therefore runs
+  // on the server's Review rule with the ownership arm shut, the same reasoning already written on
+  // needsDuplicateReview and needsFieldValidationResolution above.
+  needsFieldEntryConfirmation = computed(() =>
+    this.canReview() &&
+    (((this.document()?.reviewReasons ?? DocumentReviewReasons.None) & DocumentReviewReasons.FieldExtractionIncomplete)
+      !== DocumentReviewReasons.None),
+  );
+
+  // #527: the warnings carried by the FieldValidationWarning review-reason detail (at most one such detail, one entry
+  // per flagged field). Drives both the itemised list rendered in the metadata card and the id set sent to the resolve
+  // endpoint. Empty when there is no such detail.
+  // #635: the document is held by a blocking review reason and this caller can do nothing about it — the
+  // explanation an uploader needs once their own document is locked for review (they keep read and delete,
+  // lose edit and retry, never had review). Built ONLY from what the server sent: each detail's
+  // `isBlocking` and the row's `rights`. Re-deriving which reasons block on the client would be a second
+  // copy of ReviewReasonPolicy, which is the kind of copy #635 removed. The `canEdit` term is what keeps it
+  // off a document blocked only on classification: its uploader may still confirm or reclassify it, so
+  // there is something they can do, and the line would be false.
+  readonly waitingForReviewer = computed(
+    () =>
+      (this.document()?.reviewReasonDetails ?? []).some(detail => detail.isBlocking === true) &&
+      !this.canEdit() &&
+      !this.canReview(),
+  );
+
+  fieldValidationWarnings = computed<FieldValidationWarningDto[]>(() =>
+    (this.document()?.reviewReasonDetails ?? [])
+      .find(d => d.reason === DocumentReviewReasons.FieldValidationWarning)
+      ?.fieldValidationWarnings ?? [],
+  );
+
+  // #284: pure availability axis. After the two axes became orthogonal, the review banner and processing
+  // banner are judged independently; the template's @if needsReview takes precedence over isProcessing.
+  isProcessing = computed(() => {
+    const status = this.document()?.lifecycleStatus;
+    return status === DocumentLifecycleStatus.Uploaded ||
+           status === DocumentLifecycleStatus.Processing;
+  });
+
+  isReady = computed(() =>
+    this.document()?.lifecycleStatus === DocumentLifecycleStatus.Ready
+  );
+
+  // #306/#354: this document was derived from a constituent of another (container) document. Drives the
+  // provenance banner and its "view parent / view siblings" navigation. originDocumentId is a system signal
+  // carried on the Document output contract (DocumentDto), null for normally-uploaded documents.
+  isSubDocument = computed(() => !!this.document()?.originDocumentId);
+
+  // True when any critical pipeline, text extraction or classification, has an in-progress run
+  // (Pending/Running).
+  pipelineInProgress = computed(() =>
+    this.pipelineRows().some(r => r.isKnown && r.inProgress)
+  );
+
+  // #660 "re-parse" availability: the edit right on this document, extracted text exists, it is not a
+  // sub-document (its text is a slice of its parent's; re-parsing the parent re-splits it), no critical
+  // pipeline is currently running, and the page is not loading.
+  // #648: plus the role-level right to assign ANY type — a re-parse re-runs classification and the classifier
+  // picks the target, so the server judges DeclareType on the empty subject and a per-type uploader is refused.
+  // Use pipelineInProgress instead of !isProcessing(): the latter is always false when needsReview() is
+  // true, which would still expose the button on a pending-review document while a re-parse is in
+  // progress (review #5). The in-flight POST is covered by button [disabled]="isReparsing()".
+  canReparse = computed(() =>
+    this.canEdit() &&
+    canAssignAnyDocumentType(this.canConfirmClassification, this.canUploadIntoAllTypes) &&
+    !!this.document()?.markdown &&
+    !this.isSubDocument() &&
+    !this.pipelineInProgress() &&
+    !this.isLoading()
+  );
+
+  // #660: the type editor beside the type badge. Same prerequisites the server applies to a manual
+  // classification (edit right, extracted text, a type this caller may assign), and hidden while a pipeline
+  // runs, so a change cannot race the run that would overwrite it.
+  canEditType = computed(() =>
+    this.canEdit() &&
+    this.assignableTypes().length > 0 &&
+    !!this.document()?.markdown &&
+    !this.pipelineInProgress() &&
+    !this.isLoading()
+  );
+
+  isReextracting = signal(false);
+
+  // #289 "field re-extraction only" availability: same prerequisites as "re-parse", plus already
+  // classified with documentTypeCode. Field extraction is attached to a type, so unclassified documents
+  // have nothing to extract from; this mirrors the backend NotClassified guard.
+  canReextractFields = computed(() =>
+    this.canEdit() &&
+    !!this.document()?.documentTypeCode &&
+    !!this.document()?.markdown &&
+    !this.pipelineInProgress() &&
+    !this.isLoading()
+  );
+
+  // #555 "correct Markdown" availability: same prerequisites as canReparse/canReextractFields (edit
+  // permission, extracted text present, no critical pipeline running, page not loading), plus excluding
+  // container documents — the backend hard-rejects UpdateMarkdownAsync on a container with
+  // CannotCorrectContainerMarkdown, so the affordance is hidden here rather than exposing an action that is
+  // guaranteed to fail.
+  canEditMarkdown = computed(() =>
+    this.canEdit() &&
+    !!this.document()?.markdown &&
+    !this.document()?.isContainer &&
+    !this.pipelineInProgress() &&
+    !this.isLoading()
+  );
+
+  // #555 review: single source of truth for "reprocess is available" -- referenced by the checkbox's
+  // disabled state, its hint text, and saveMarkdown()'s save-time re-check, so the three cannot drift.
+  // Mirrors canReextractFields's own documentTypeCode requirement, since reprocess=true runs the same
+  // field-extraction pipeline.
+  canReprocessMarkdown = computed(() => !!this.document()?.documentTypeCode);
+
+  isImage = computed(() =>
+    isImageContentType(this.document()?.fileOrigin?.contentType)
+  );
+
+  isPdf = computed(() =>
+    isPdfContentType(this.document()?.fileOrigin?.contentType)
+  );
+
+  // #481: every document carries a required FileOrigin (a text-slice sub-document shares the parent's bundle
+  // file; a figure sub-document its retained image), so source-file affordances now show for sub-documents
+  // too — deliberate provenance UX. This gate survives as null-safety only: the DTO field is nullable and
+  // pre-migration legacy rows may lack a FileOrigin.
+  hasSourceFile = computed(() => !!this.document()?.fileOrigin);
+
+  // Intermediate computed for Markdown source (#274 review): when document() changes but markdown does
+  // not, such as field or cabinet changes, return the same string so downstream renderedMarkdown can
+  // short-circuit by value equality and avoid repeated marked.parse calls.
+  private markdownSource = computed(() => this.document()?.markdown ?? '');
+
+  // Markdown preview (#274): marked renders to an HTML string. When the template binds [innerHTML],
+  // Angular's built-in DomSanitizer sanitizes it automatically by stripping <script>, on*, and
+  // javascript:. Never bypassSecurityTrustHtml: Markdown is attacker-influenced content because VLM OCR
+  // can be prompt-injected by text inside an image, so the sanitizer must stay on end to end.
+  renderedMarkdown = computed<string>(() => this.renderMarkdown(this.markdownSource()));
+
+  // #418: shared Markdown -> HTML step, used by both the left-column preview and the LongText
+  // extracted-field values. Same GFM options and the same sanitize-on-bind contract: every caller MUST
+  // bind the result via [innerHTML] so Angular's DomSanitizer runs. Never bypassSecurityTrustHtml — a
+  // LongText field value is attacker-influenced too (LLM extraction / VLM OCR can be prompt-injected), so
+  // the sanitizer has to stay on end to end.
+  // #448: strip stray ```markdown code fences first. A vision-LLM OCR transcription is sometimes wrapped —
+  // wholly or partly — in a code fence despite the prompt forbidding it, which would make marked render the
+  // fenced table as literal <pre><code> (raw pipes) instead of a GFM table. The backend guard removes this at
+  // the source for new documents; stripping here also rescues documents already stored with the fence
+  // (Document.Markdown is write-once).
+  private renderMarkdown(md: string): string {
+    return md ? (marked.parse(stripMarkdownCodeFences(md), { gfm: true, async: false }) as string) : '';
+  }
+
+  // Owning cabinet name for the document, cabinetId to name. Returns null when unclassified or
+  // unresolved because of missing permission or deleted cabinet.
+  cabinetName = computed<string | null>(() => {
+    const id = this.document()?.cabinetId;
+    if (!id) return null;
+    return this.cabinets().find(c => c.id === id)?.name ?? null;
+  });
+
+  // Document type displayName, mapped from typeCode. Returns null when unclassified, and falls back to
+  // code for cross-layer or deleted types.
+  documentTypeDisplayName = computed<string | null>(() => {
+    const code = this.document()?.documentTypeCode;
+    if (!code) return null;
+    return this.documentTypes.value().find(t => t.typeCode === code)?.displayName ?? code;
+  });
+
+  // #660: the type picker's selection is the type the document already has. Saving it would only re-extract
+  // fields for an unchanged type, which is what "重抽字段" is for, so the dialog's save stays disabled.
+  selectedTypeIsCurrent = computed(() => {
+    const code = this.document()?.documentTypeCode;
+    if (!code || !this.selectedTypeId()) return false;
+    return this.documentTypes.value().find(t => t.typeCode === code)?.id === this.selectedTypeId();
+  });
+
+  // Type-bound extracted fields (field architecture v2). Show only values corresponding to currently
+  // active field definitions:
+  // The backend ExtractedFields output pierces soft-delete and still includes historical values for
+  // deleted field definitions, preserving data for downstream consumers (#206/#207). The operator UI no
+  // longer shows them, matching the list's dynamic columns which also use only active definitions. Labels
+  // use displayName and sorting uses displayOrder.
+  extractedFieldEntries = computed<
+    { key: string; label: string; fieldTypeName: string; raw: unknown; fieldValue: FlexFieldValue }[]
+  >(() => {
+    const fields = this.document()?.extractedFields;
+    if (!fields) return [];
+    const defByName = new Map(this.fieldDefinitions().map(d => [d.name ?? '', d]));
+    return Object.keys(fields)
+      .filter(key => defByName.has(key))
+      .sort((a, b) =>
+        (defByName.get(a)!.displayOrder ?? 0) - (defByName.get(b)!.displayOrder ?? 0) ||
+        a.localeCompare(b))
+      .map(key => {
+        const def = defByName.get(key)!;
+        const raw = fields[key];
+        // #628: every field type's own view component already knows how to render its value read-only —
+        // Markdown for CKEditor, chips for Tags, a literal table for Table, plain text for the scalars —
+        // via the kernel's own dispatcher, <ff-flex-field-view>. Reuse toFlexFieldValue (already built for
+        // the edit form below) instead of a per-type isMarkdown/isTable branch here.
+        //
+        // displayName is blanked out on every entry, not just Table: every built-in/bolt-on view
+        // component's non-list template (showInList=false, the dispatcher's own default) renders an
+        // optional label from fields.field.displayName plus its own block spacing — meant for a
+        // standalone form field, not this <dl>'s <dt>/<dd> pair, which already labels the row two lines
+        // below in the template. Without this, every field's label would render twice, not just Table's
+        // (verified against ff-select-view / ff-ckeditor-view / lib-tags-view's own templates, which all
+        // carry the same *ngIf="fields?.field?.displayName" label).
+        const fieldValue = this.toFlexFieldValue(def, raw);
+        fieldValue.field = { ...fieldValue.field, displayName: '' };
+        return {
+          key,
+          label: def.displayName || key,
+          fieldTypeName: def.fieldTypeName ?? '',
+          raw,
+          fieldValue,
+        };
+      });
+  });
+
+  // Field card display condition: existing extracted values for read-only display, or editable with field
+  // definitions on this type so empty fields can be completed.
+  showFieldsCard = computed(() =>
+    this.extractedFieldEntries().length > 0 ||
+    (this.canEdit() && this.fieldDefinitions().length > 0)
+  );
+
+  // Snapshot of the document being edited, captured once by startEditFields() and held fixed until
+  // editing ends. fieldValues below must not track the live, polling-refreshed document() signal: a
+  // document mid-pipeline is silently re-fetched every few seconds (pollReload), and picking that up
+  // while a field-edit form is open would reseed every <ff-flex-field-control> from the server value on
+  // the next poll tick, wiping out whatever the operator had typed but not yet saved.
+  private readonly editingDocument = signal<DocumentDto | undefined>(undefined);
+
+  // Stable per-field FlexFieldValue for the extracted-fields edit form, one entry per current field
+  // definition. Memoized by computed() and rebuilt only when editingDocument or the field definitions
+  // actually change - never per change-detection pass, and never off the live-polled document(). See
+  // editingDocument's own comment for why the source is a frozen snapshot rather than document() itself.
+  // <ff-flex-field-control> re-renders its dynamic per-type sub-component whenever the object identity of
+  // its "fields" input changes (OnChanges), so a fresh object on every CD pass would make it tear down
+  // and recreate that sub-component every cycle and never settle (NG0103) - see the flex-fields demo's
+  // own such cache, and site's content-editor.component.ts for the same rule applied to its own fields.
+  private readonly fieldValues = computed<ReadonlyMap<string, FlexFieldValue>>(() => {
+    const rawValues = this.editingDocument()?.extractedFields ?? {};
+    return new Map(
+      this.fieldDefinitions().map(def => {
+        const name = def.name ?? '';
+        return [name, this.toFlexFieldValue(def, rawValues[name])] as const;
+      }),
+    );
+  });
+
+  /** The stable FlexFieldValue for one field definition, for the extracted-fields edit form. */
+  fieldValueOf(def: FieldDefinitionDto): FlexFieldValue {
+    return this.fieldValues().get(def.name ?? '') ?? this.toFlexFieldValue(def, undefined);
+  }
+
+  private toFlexFieldValue(def: FieldDefinitionDto, value: unknown): FlexFieldValue {
+    return {
+      field: this.toFieldData(def),
+      required: !!def.isRequired,
+      searchable: !!def.isSearchable,
+      value,
+    };
+  }
+
+  private toFieldData(def: FieldDefinitionDto): FlexFieldData {
+    return {
+      id: def.id ?? '',
+      name: def.name ?? '',
+      displayName: def.displayName ?? '',
+      description: def.description ?? undefined,
+      fieldTypeName: def.fieldTypeName ?? '',
+      configuration: def.configuration ?? {},
+    };
+  }
+
+  private documentId!: string;
+  // If the blob has not loaded when Download File is clicked, set this flag and trigger one download
+  // after the blob is ready. See downloadFile plus the constructor effect.
+  private pendingDownload = false;
+  // #440: subscription to the pending poll tick (null when not polling) + the current backoff interval.
+  private pollTimer: Subscription | null = null;
+  private pollIntervalMs = POLL_BASE_INTERVAL_MS;
+
+  constructor() {
+    // Pending download completion: when the blob arrives, trigger one download; when blob loading fails,
+    // show a hint. pendingDownload is a plain boolean, and this effect reruns only when fileBlob signals
+    // change. The download click first changes signals by triggering loading, so the logic naturally hits
+    // only once.
+    effect(() => {
+      const url = this.fileBlob.blobUrl();
+      const failed = this.fileBlob.hasError();
+      if (!this.pendingDownload) return;
+      if (url) {
+        this.pendingDownload = false;
+        this.fileBlob.download(this.downloadFileName());
+      } else if (failed) {
+        this.pendingDownload = false;
+        this.toaster.error('VaultExtract::Document:DownloadFailed', 'VaultExtract::Error');
+      }
+    });
+
+    // #440: pause the background poll while the tab is hidden (no point re-fetching an unseen page) and
+    // resume with an immediate refresh when it returns to the foreground. Always tear the timer down on
+    // destroy so navigating away stops polling.
+    const onVisibilityChange = () => {
+      if (this.domDocument.hidden) {
+        this.clearPollTimer();
+      } else if (this.shouldPoll() && !this.pollTimer) {
+        this.pollReload();
+      }
+    };
+    this.domDocument.addEventListener('visibilitychange', onVisibilityChange);
+    this.destroyRef.onDestroy(() => {
+      this.domDocument.removeEventListener('visibilitychange', onVisibilityChange);
+      this.clearPollTimer();
+    });
+
+    // #635 decision 7: the field-definition fetch needs a type ID, the document carries a type CODE, and
+    // only the visible types resolve one to the other. That used to be a single chained getVisible() call
+    // owned by this page; the types now come from a shared store which may already hold them or may still
+    // be loading, so the fetch follows the store's state and the page's own request instead.
+    effect(() => {
+      const request = this.fieldSchemaRequest();
+      if (request === null || this.documentTypes.isLoading()) {
+        return;
+      }
+      const types = this.documentTypes.value();
+      untracked(() => this.loadFieldDefinitions(request.typeCode, types));
+    });
+  }
+
+  ngOnInit(): void {
+    // React to the :id route param rather than reading a one-time snapshot. Navigating between documents
+    // that share this route — a sub-document's "view parent"/"view siblings" actions, or any /vault-extract/documents/:id
+    // link — reuses this component instance, so ngOnInit does not fire again. Without reacting to the param
+    // the URL would change but the loaded document would not. Reload whenever the id actually changes,
+    // dropping the previous document's cached file blob and resetting the tab so a stale preview never
+    // carries over to the new document.
+    this.route.paramMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(params => {
+        const id = params.get('id');
+        if (!id || id === this.documentId) return;
+        this.documentId = id;
+        this.fileBlob.reset();
+        this.activeTab.set('preview');
+        // #555 review: this component instance is reused across same-route navigation (see the
+        // comment above), so an open Markdown draft for the PREVIOUS document must not survive
+        // into the newly-loaded one -- otherwise Save would write the old document's text onto
+        // this one.
+        this.isEditingMarkdown.set(false);
+        this.markdownDraft.set('');
+        this.reprocessOnSave.set(false);
+        // #635: opening a document is this page's init, also when the instance is reused for another id.
+        this.documentTypes.retryIfFailed();
+        this.loadDocument();
+      });
+  }
+
+  refresh(): void {
+    // #635: an explicit refresh also heals a failed type-store fetch (a no-op otherwise), without which this
+    // page cannot resolve its field schema or fill the confirm / reclassify picker for the rest of the
+    // session. Not from pollReload: a background tick must not become a retry loop against an outage.
+    this.documentTypes.retryIfFailed();
+    this.loadDocument();
+  }
+
+  private loadDocument(): void {
+    this.isLoading.set(true);
+    // Any explicit (re)load — navigation, manual Refresh, post-action reload — restarts the poll backoff
+    // from the base interval.
+    this.pollIntervalMs = POLL_BASE_INTERVAL_MS;
+    this.fetchDocument(false);
+  }
+
+  // #440: a background poll tick. Silently re-fetches — never toggles isLoading, so the full-page spinner
+  // and the Refresh-button spin stay quiet — and skips the one-time metadata (parent / cabinets) that does
+  // not change mid-pipeline, refreshing field definitions only when classification has just resolved a type.
+  private pollReload(): void {
+    this.fetchDocument(true);
+  }
+
+  private fetchDocument(quiet: boolean): void {
+    // doc and runs are independent after #216, so load them once in parallel; fieldDefinitions still
+    // depend on doc.documentTypeCode and remain sequential.
+    //
+    // #635: skipHandleError on BOTH, and the error branch below owns the outcome. This fetch serves the
+    // poll, the manual Refresh and the reload after re-parse / re-extract / retry — and a re-parse
+    // can move the document into a type this caller may not read (the classifier's candidates are every type
+    // of the layer, the caller's Read scope is not). Left to ABP's global handler, that 403 pops the
+    // authorization modal — once per refused call, and both calls are refused — and leaves the page stale.
+    forkJoin({
+      doc: this.documentService.get(this.documentId, { skipHandleError: true }),
+      runs: this.documentPipelineRunService.getList(this.documentId, { skipHandleError: true }),
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ doc, runs }) => {
+          const previousTypeCode = this.document()?.documentTypeCode ?? null;
+          this.document.set(doc);
+          this.pipelineRuns.set(runs);
+          if (!quiet) {
+            this.isLoading.set(false);
+          }
+          // Original-file blob lazy loading (#274): do not fetch while loading the document by default;
+          // download only when the Original File tab is selected. See selectTab.
+          // If the user is already on that tab, call ensureFilePreview once after reload
+          // (Refresh / re-parse). It returns early when the blob is cached and resets a previous error
+          // for retry, preventing Refresh from being ineffective on a stuck preview (#274 review).
+          if (this.activeTab() === 'file') {
+            this.ensureFilePreview();
+          }
+          // Field definitions are used for: 1. displayName in extracted-field display for all viewers;
+          // 2. completing empty fields when editable. Backend GetListAsync has been open to
+          // Documents.Default since #223, so load whenever a type exists and no longer gate on edit
+          // permission. #395: visible types are always loaded (even when unclassified) so the
+          // confirm-classification picker has its options.
+          // #440: on a quiet poll, reload them only when the type actually changed (classification just
+          // resolved) — otherwise the fields card would flash empty on every tick.
+          if (!quiet || (doc.documentTypeCode ?? null) !== previousTypeCode) {
+            this.fieldDefinitions.set([]);
+            this.requestFieldSchema(doc.documentTypeCode);
+          }
+          // #306/#354: a sub-document carries its source (container) id. Fetch the parent's lightweight
+          // metadata so the provenance banner can show its title; reset first so a previous document's
+          // parent never lingers when navigating between documents in the same component instance.
+          // #440: skipped on a quiet poll — provenance is immutable for a loaded document, so re-fetching
+          // it would only make the banner flicker.
+          if (!quiet) {
+            this.parentDocument.set(null);
+            this.parentLookupFailed.set(false);
+            if (doc.originDocumentId) {
+              this.loadParentDocument(doc.originDocumentId);
+            }
+          }
+          // Cabinet name mapping: fetch only when Cabinets.Default is granted and not already loaded. If
+          // there is no permission, the cabinet row is hidden.
+          if (this.canViewCabinets && this.cabinets().length === 0) {
+            this.loadCabinets();
+          }
+          // #440: (re)schedule or stop the poll based on the freshly loaded state.
+          this.syncPolling();
+        },
+        error: (err: unknown) => {
+          // #635: refused because the caller may no longer read this document — not a failure to report,
+          // an answer. Same exit as a mutation whose result is unreadable, with a message that does not
+          // claim an operation just completed (on a poll, none did).
+          if (err instanceof HttpErrorResponse && err.status === 403) {
+            this.leaveDocument('VaultExtract::Document:NoLongerVisible');
+            return;
+          }
+          if (!quiet) {
+            this.isLoading.set(false);
+          }
+          // #440: stop polling on a failed tick rather than hammering a failing endpoint. Manual Refresh
+          // stays available, and any successful (re)load restarts it.
+          this.stopPolling();
+          // Everything else keeps exactly the behaviour it had before skipHandleError: this is the call
+          // RestService.handleError makes, and ABP's theme shows its error modal from it. That holds for a
+          // quiet poll tick too — a background failure that silently stopped live updates would leave the
+          // operator watching a spinner that will never move.
+          this.httpErrorReporter.reportError(err as HttpErrorResponse);
+        },
+      });
+  }
+
+  // #440: a document warrants polling only while it is genuinely still advancing on the server — a known
+  // pipeline run is Pending/Running, or it is pre-terminal (Uploaded/Processing) and NOT parked waiting on
+  // the operator. The needs-review guard matters because a blocking review reason (e.g. low-confidence
+  // UnresolvedClassification) leaves lifecycle at Processing indefinitely — DeriveLifecycleAsync only
+  // reaches Ready once no blocking reason remains — so without the guard such a document would poll forever.
+  // When a run is actually in progress (e.g. the operator re-classified a needs-review document) we still
+  // poll, because pipelineInProgress() takes precedence.
+  private shouldPoll(): boolean {
+    return this.pipelineInProgress() || (this.isProcessing() && !this.needsReview());
+  }
+
+  // #440: called after every load. Cancels any pending tick, then — if still in-flight and the tab is
+  // visible — schedules the next silent re-fetch, backing the interval off toward the cap.
+  private syncPolling(): void {
+    this.clearPollTimer();
+    if (!this.shouldPoll()) {
+      this.pollIntervalMs = POLL_BASE_INTERVAL_MS;
+      return;
+    }
+    if (this.domDocument.hidden) {
+      return; // resumed by the visibilitychange handler in the constructor
+    }
+    this.pollTimer = timer(this.pollIntervalMs).subscribe(() => {
+      this.pollIntervalMs = Math.min(this.pollIntervalMs * 2, POLL_MAX_INTERVAL_MS);
+      this.pollReload();
+    });
+  }
+
+  private clearPollTimer(): void {
+    this.pollTimer?.unsubscribe();
+    this.pollTimer = null;
+  }
+
+  private stopPolling(): void {
+    this.clearPollTimer();
+    this.pollIntervalMs = POLL_BASE_INTERVAL_MS;
+  }
+
+  // Asks the constructor's effect for this document's field schema. The nonce makes a repeat request for the
+  // SAME type code a distinct value, so an explicit Refresh re-reads a schema an administrator may have
+  // edited — which the old chained call did implicitly by simply running again.
+  private requestFieldSchema(typeCode: string | null | undefined): void {
+    this.fieldSchemaRequest.update(previous => ({
+      typeCode: typeCode ?? null,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
+  }
+
+  // doc.documentTypeCode is the current code projection in the Document output contract (#207). The
+  // field definition API associates by immutable DocumentTypeId, so the code is resolved against the types
+  // visible in the current layer first. An unclassified document — or a type the caller cannot see — simply
+  // has no schema to fetch; the page stays fully usable and the confirm picker still has its options,
+  // because those come from the store rather than from this call.
+  //
+  // #635: two guards, because a schema request can be overtaken two different ways. A NEWER request (a
+  // reclassification, a Refresh, the type store recovering) cancels this one outright — without that, a
+  // slower earlier response could land after a faster later one and put A's schema on a document that is
+  // now B. And the response is checked against the document's CURRENT type when it arrives: a poll can
+  // change the type in the gap before the effect that issues the next request has run, and in that gap no
+  // newer request exists yet to cancel this one.
+  private loadFieldDefinitions(
+    typeCode: string | null,
+    types: readonly DocumentTypeDto[],
+  ): void {
+    this.fieldDefinitionsRequest?.unsubscribe();
+    this.fieldDefinitionsRequest = null;
+
+    const documentTypeId = typeCode ? types.find(t => t.typeCode === typeCode)?.id : undefined;
+    if (!documentTypeId) {
+      this.fieldDefinitions.set([]);
+      return;
+    }
+
+    const stillCurrent = () => (this.document()?.documentTypeCode ?? null) === typeCode;
+    this.fieldDefinitionsRequest = this.fieldDefinitionService.getList({ documentTypeId })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: defs => {
+          if (!stillCurrent()) return;
+          this.fieldDefinitions.set(
+            [...defs].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || (a.name ?? '').localeCompare(b.name ?? '')),
+          );
+        },
+        error: () => {
+          if (!stillCurrent()) return;
+          this.fieldDefinitions.set([]);
+        },
+      });
+  }
+
+  /** The in-flight field-schema fetch, cancelled by the next one. See loadFieldDefinitions. */
+  private fieldDefinitionsRequest: Subscription | null = null;
+
+  // Cabinet candidates for name mapping display plus reassignment dropdown (#257). Called only with
+  // Cabinets.Default permission.
+  private loadCabinets(): void {
+    this.cabinetService.getList()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: list => this.cabinets.set(list),
+        error: () => this.cabinets.set([]),
+      });
+  }
+
+  // #306/#354: load the source (container) document of a sub-document for the provenance banner. A removed
+  // (soft / permanently deleted) or cross-layer parent (404 / filtered) is an EXPECTED outcome — a sub-document
+  // outlives its source — so pass skipHandleError to suppress ABP's global error popup; the component handles it by
+  // flagging parentLookupFailed, and the banner shows a "source unavailable" label. It never blocks the
+  // sub-document's own page.
+  private loadParentDocument(originDocumentId: string): void {
+    this.documentService.get(originDocumentId, { skipHandleError: true })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: parent => {
+          this.parentDocument.set(parent);
+          this.parentLookupFailed.set(false);
+        },
+        error: () => {
+          this.parentDocument.set(null);
+          this.parentLookupFailed.set(true);
+        },
+      });
+  }
+
+  // Cabinet reassignment (#257): enter edit mode and preselect the current cabinet; empty string means
+  // unclassified.
+  startEditCabinet(): void {
+    this.selectedCabinetId.set(this.document()?.cabinetId ?? '');
+    this.isEditingCabinet.set(true);
+  }
+
+  cancelEditCabinet(): void {
+    this.isEditingCabinet.set(false);
+  }
+
+  saveCabinet(): void {
+    const doc = this.document();
+    if (!doc) return;
+    this.isSavingCabinet.set(true);
+    // Empty string becomes null, meaning removed from cabinet / unclassified. Backend validates cabinet
+    // existence and current-layer ownership.
+    const cabinetId = this.selectedCabinetId() || null;
+    this.documentService.updateCabinet(doc.id!, { cabinetId })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => {
+          this.isSavingCabinet.set(false);
+          this.isEditingCabinet.set(false);
+          if (this.leaveIfNoLongerReadable(updated)) return;
+          this.document.set(updated);
+          this.toaster.success('VaultExtract::Document:CabinetUpdated', 'VaultExtract::Success');
+        },
+        error: () => {
+          this.isSavingCabinet.set(false);
+          this.toaster.error('VaultExtract::Document:UpdateFailed', 'VaultExtract::Error');
+        },
+      });
+  }
+
+  // #555: operator correction of Document.Markdown. Enter edit mode with the current markdown preloaded
+  // into the draft textarea; reprocessOnSave defaults off so a plain typo fix does not also queue field
+  // re-extraction.
+  startEditMarkdown(): void {
+    this.markdownDraft.set(this.document()?.markdown ?? '');
+    this.reprocessOnSave.set(false);
+    this.isEditingMarkdown.set(true);
+  }
+
+  cancelEditMarkdown(): void {
+    this.isEditingMarkdown.set(false);
+    this.markdownDraft.set('');
+  }
+
+  // #555: save the corrected Markdown. When the operator also opted into field re-extraction, that has the
+  // identical field-value-overwriting side effect as the standalone reextractFields() action above, so
+  // confirm first, mirroring that method's confirm-first treatment. A plain correction (no reprocess) saves
+  // directly, matching saveCabinet()/saveFields() which do not confirm.
+  saveMarkdown(): void {
+    const doc = this.document();
+    const markdown = this.markdownDraft().trim();
+    if (!doc || !markdown || this.isSavingMarkdown()) return;
+
+    // #555 review: the server rejects Reprocess=true on an unclassified document (NotClassified)
+    // *before* CorrectMarkdown runs, discarding the whole edit -- not just the reprocess request.
+    // Force reprocess off in that case so a plain text fix always saves, regardless of whether the
+    // checkbox UI below is hidden/stale for this document. requestedReprocess is kept so
+    // submitMarkdown can tell "operator never asked" apart from "asked, but silently dropped" and
+    // surface the latter instead of a plain success toast.
+    const requestedReprocess = this.reprocessOnSave();
+    const reprocess = requestedReprocess && this.canReprocessMarkdown();
+    if (reprocess) {
+      this.confirmation
+        .warn('VaultExtract::Document:Markdown:Correct:ReprocessConfirm', 'VaultExtract::AreYouSure')
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(status => {
+          if (status === Confirmation.Status.confirm) this.submitMarkdown(doc.id!, markdown, reprocess, false);
+        });
+    } else {
+      this.submitMarkdown(doc.id!, markdown, reprocess, requestedReprocess && !reprocess);
+    }
+  }
+
+  private submitMarkdown(id: string, markdown: string, reprocess: boolean, reprocessDropped: boolean): void {
+    this.isSavingMarkdown.set(true);
+    this.documentService.updateMarkdown(id, { markdown, reprocess })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => {
+          this.isSavingMarkdown.set(false);
+          this.isEditingMarkdown.set(false);
+          if (this.leaveIfNoLongerReadable(updated)) return;
+          if (reprocessDropped) {
+            // #555 review: the operator checked "also re-extract fields" and confirmed the warning
+            // dialog, but the document went unclassified before Save actually ran -- surface that
+            // instead of a plain success toast, so the request vanishing is visible, not silent.
+            this.toaster.warn('VaultExtract::Document:Markdown:Correct:ReprocessSkipped', 'VaultExtract::Warning');
+          } else {
+            this.toaster.success('VaultExtract::Document:Markdown:Corrected', 'VaultExtract::Success');
+          }
+          // #555 review: apply the corrected DTO immediately so the preview/source tabs never flash
+          // back to the pre-correction text while a reprocess reload is in flight.
+          this.document.set(updated);
+          if (reprocess) {
+            // A field-extraction run was queued server-side (same as reextractFields()) -- refresh only
+            // pipelineRuns/polling so the new run shows up. document is already current from `updated`
+            // above (queuing is lifecycle-neutral server-side), so a full loadDocument() re-fetch of the
+            // document itself would just be discarding-and-refetching identical data.
+            this.reloadPipelineRuns();
+          }
+        },
+        error: () => {
+          this.isSavingMarkdown.set(false);
+          this.toaster.error('VaultExtract::Document:UpdateFailed', 'VaultExtract::Error');
+        },
+      });
+  }
+
+  // #555 review: lighter-weight refresh for after a Reprocess=true Markdown save -- the document itself
+  // is already current (queuing a field-extraction run is lifecycle-neutral server-side), so only
+  // pipelineRuns needs to be re-fetched to pick up the newly-queued run. Mirrors pollReload()'s "quiet"
+  // shape (no isLoading toggle) and, like fetchDocument, re-syncs the poll schedule off the fresh runs.
+  private reloadPipelineRuns(): void {
+    this.documentPipelineRunService.getList(this.documentId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: runs => {
+          this.pipelineRuns.set(runs);
+          this.syncPolling();
+        },
+      });
+  }
+
+  // Unified entry point for the Original File tab (#274 review): reset the previous preview error first
+  // so <img> rebuilds and retries, and failed downloads can refetch. Then ensure the blob is ready; the
+  // service prevents duplicate requests and revokes on component destroy.
+  // Fixes imageError getting stuck and Refresh being ineffective.
+  private ensureFilePreview(): void {
+    // Null-safety guard (#481: FileOrigin is required, so this is only reachable for pre-migration legacy
+    // rows / a missing DTO field): skip the blob fetch when there is no FileOrigin. loadDocument still
+    // reaches here when the file tab was active, so guard at the source — this path re-fired on every reload.
+    if (!this.hasSourceFile()) return;
+    this.fileBlob.resetError();
+    this.fileBlob.ensureLoaded(this.documentId);
+  }
+
+  // Tab switch (#274): when switching to Original File, ensure the original-file preview is ready.
+  selectTab(tab: 'preview' | 'source' | 'file'): void {
+    this.activeTab.set(tab);
+    if (tab === 'file') {
+      this.ensureFilePreview();
+    }
+  }
+
+  // Download File footer action: trigger browser download of the original file directly, avoiding an
+  // extra trip through the preview page.
+  // If the blob is cached, from viewing Original File or a previous download, trigger immediately. If not
+  // cached, set pendingDownload and reuse the service fetch, which prevents duplicate requests. Blob
+  // arrival or failure is completed by the constructor effect.
+  downloadFile(): void {
+    // Defensive: the Download action is hidden for blob-less sub-documents; never trigger a getBlob for one.
+    if (!this.hasSourceFile()) return;
+    if (this.fileBlob.blobUrl()) {
+      this.fileBlob.download(this.downloadFileName());
+      return;
+    }
+    this.pendingDownload = true;
+    this.fileBlob.ensureLoaded(this.documentId);
+  }
+
+  private downloadFileName(): string {
+    return this.document()?.fileOrigin?.originalFileName || this.document()?.title || 'document';
+  }
+
+  // <img> render failure, where the blob downloaded but decode failed, is folded into the unified preview
+  // error signal.
+  onPreviewError(): void {
+    this.fileBlob.markError();
+  }
+
+  /**
+   * #635: every edit- and review-family endpoint answers with the document as the caller may see it AFTER
+   * the write — and when that is nothing, with a body redacted to `{ id, rights }`, `rights.canRead` false.
+   * The write has happened either way. All seven of this page's mutations that return a `DocumentDto` pass
+   * their response through here first; it returns `true` when it has taken the page away, and the caller
+   * must then stop.
+   *
+   * The case that reaches it is a reclassification out of the caller's read scope: an `Edit` grant on type
+   * X and an `Upload` grant on type Y, but no `Read` on Y, moving a document from X to Y. Neither of the two
+   * things the page would otherwise do is right. Putting the redacted DTO into `document` renders an empty
+   * page with every action off; and the four calls that ignore the body and reload would send a `GetAsync`
+   * this caller is now refused, which surfaces as ABP's authorization-error modal straight after a success
+   * toast, over the stale pre-mutation document. The other six calls cannot move a document out of scope
+   * by themselves — they reach this only if a grant is revoked mid-session — but one guard costs less than
+   * reasoning about which calls can race.
+   *
+   * Only an EXPLICIT `canRead === false` leaves. `rightsOf` fails closed — a missing `rights` reads as
+   * all-denied — which is right for deciding which buttons to show and wrong for navigating someone off a
+   * page: a response without a verdict is not a verdict that the caller is out.
+   */
+  private leaveIfNoLongerReadable(result: DocumentDto | null | undefined): boolean {
+    if (result?.rights?.canRead !== false) {
+      return false;
+    }
+    this.leaveDocument('VaultExtract::Document:SavedOutOfView', 'VaultExtract::Success');
+    return true;
+  }
+
+  /**
+   * #635: the one exit for "this caller may no longer read the document on screen", shared by the
+   * mutation guard above and the document fetch's 403. Each path brings its own message: after a mutation
+   * the operation did complete; after a poll, nothing happened except that the answer changed.
+   *
+   * The list, not `goBack()`: the previous page may be another view of this same document (its file
+   * preview), which the caller can no longer open either. The poll is stopped first so no tick can fire in
+   * the gap before navigation tears the component down.
+   */
+  private leaveDocument(messageKey: string, titleKey?: string): void {
+    this.stopPolling();
+    this.toaster.info(messageKey, titleKey);
+    this.router.navigate(['/vault-extract/documents']);
+  }
+
+  goBack(): void {
+    // Return to wherever the operator came from — the review queue, the list, a cabinet-filtered view, etc.
+    // — instead of always the list. The Angular Router stamps an incrementing navigationId on history.state;
+    // it is > 1 once any in-app navigation has happened, and 1 on a direct deep-link / refresh (no in-app
+    // history to pop). Fall back to the list in that case so Back never leaves the app.
+    const navId = (this.location.getState() as { navigationId?: number } | null)?.navigationId;
+    if (navId && navId > 1) {
+      this.location.back();
+    } else {
+      this.router.navigate(['/vault-extract/documents']);
+    }
+  }
+
+  // #354: open this sub-document's source (container) document.
+  openParentDocument(): void {
+    const originDocumentId = this.document()?.originDocumentId;
+    if (!originDocumentId) return;
+    this.router.navigate(['/vault-extract/documents', originDocumentId]);
+  }
+
+  // #411: open a suspected-duplicate candidate so the operator can compare it before allowing / discarding.
+  openDocument(documentId: string): void {
+    this.router.navigate(['/vault-extract/documents', documentId]);
+  }
+
+  // #354: list the sibling sub-documents (all those derived from the same source, including this one),
+  // reusing the list's originDocumentId provenance filter via a deep-link query param.
+  viewSiblingDocuments(): void {
+    const originDocumentId = this.document()?.originDocumentId;
+    if (!originDocumentId) return;
+    this.router.navigate(['/vault-extract/documents'], { queryParams: { originDocumentId } });
+  }
+
+  delete(): void {
+    const doc = this.document();
+    if (!doc) return;
+    this.confirmation
+      .warn('VaultExtract::Document:AreYouSureToDelete', 'VaultExtract::AreYouSure')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(status => {
+        if (status !== Confirmation.Status.confirm) return;
+        this.documentService.delete(doc.id!)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+          next: () => {
+            this.toaster.success('VaultExtract::Document:DeletedSuccessfully', 'VaultExtract::Success');
+            this.router.navigate(['/vault-extract/documents']);
+          },
+        });
+      });
+  }
+
+  // #660 "re-parse": re-run text extraction from the original file, then classification and its cascade, as
+  // for a fresh upload. It overwrites the Markdown (operator corrections included), the type (operator-confirmed
+  // included) and field values, and replaces every sub-document, so confirm first — naming how many
+  // sub-documents go, counted with the list's originDocumentId filter. If the count cannot be read the generic
+  // warning still says sub-documents are replaced. Reload after success to reflect Processing state.
+  reparse(): void {
+    const doc = this.document();
+    if (!doc || this.isReparsing()) return;
+    this.isReparsing.set(true);
+    this.documentService.getList({ originDocumentId: doc.id, maxResultCount: 1, skipCount: 0 })
+      .pipe(
+        map(result => result.totalCount ?? 0),
+        catchError(() => of(0)),
+        switchMap(subDocumentCount => {
+          // The count is in; nothing is in progress while the operator decides, so the button must not say
+          // "re-parsing" behind the dialog.
+          this.isReparsing.set(false);
+          return subDocumentCount > 0
+            ? this.confirmation.warn('VaultExtract::Document:Reparse:ConfirmWithSubDocuments', 'VaultExtract::AreYouSure', {
+                messageLocalizationParams: [String(subDocumentCount)],
+              })
+            : this.confirmation.warn('VaultExtract::Document:Reparse:Confirm', 'VaultExtract::AreYouSure');
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(status => {
+        if (status !== Confirmation.Status.confirm) return;
+        this.isReparsing.set(true);
+        this.documentService.reparse(doc.id!)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: () => {
+              this.isReparsing.set(false);
+              this.toaster.success('VaultExtract::Document:ReparseQueued', 'VaultExtract::Success');
+              this.loadDocument();
+            },
+            error: () => {
+              this.isReparsing.set(false);
+              this.toaster.error('VaultExtract::Document:ReparseFailed', 'VaultExtract::Error');
+            },
+          });
+      });
+  }
+
+  // #289 "field re-extraction only": rerun only the field-extraction pipeline on the existing
+  // classification, without reclassification or OCR.
+  // Safe leaf operation that overwrites only field values, including manual corrections. Confirm first.
+  // Lifecycle-neutral: does not move already Ready documents backward.
+  reextractFields(): void {
+    const doc = this.document();
+    if (!doc || this.isReextracting()) return;
+    this.confirmation
+      .warn('VaultExtract::Document:ReextractFields:Confirm', 'VaultExtract::AreYouSure')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(status => {
+        if (status !== Confirmation.Status.confirm) return;
+        this.isReextracting.set(true);
+        this.documentService.reextractFields(doc.id!)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: () => {
+              this.isReextracting.set(false);
+              this.toaster.success('VaultExtract::Document:ReextractFieldsQueued', 'VaultExtract::Success');
+              this.loadDocument();
+            },
+            error: () => {
+              this.isReextracting.set(false);
+              this.toaster.error('VaultExtract::Document:ReextractFieldsFailed', 'VaultExtract::Error');
+            },
+          });
+      });
+  }
+
+  // #395: manual confirm / assign document type. Authoritative override that clears
+  // UnresolvedClassification and cascades field extraction (backend confirmClassification). Defaults the
+  // picker to the document's current low-confidence type when present so the operator usually just confirms.
+  // #660: also the type editor for a document that already has a type — the same call writes the chosen type
+  // as operator-confirmed and re-extracts fields for it, without re-parsing or re-running the classifier.
+  openClassifyDialog(): void {
+    const doc = this.document();
+    if (!doc) return;
+    // #632: resolved against the ASSIGNABLE types, not every visible one — a pre-selection the caller may
+    // not assign would arm the submit button with a request the server refuses.
+    this.selectedTypeId.set(
+      this.assignableTypes().find(t => t.typeCode === doc.documentTypeCode)?.id ?? '',
+    );
+    this.showClassifyDialog.set(true);
+  }
+
+  closeClassifyDialog(): void {
+    this.showClassifyDialog.set(false);
+    this.selectedTypeId.set('');
+  }
+
+  submitClassify(): void {
+    const doc = this.document();
+    if (!doc || !this.selectedTypeId() || this.isConfirmingClassification()) return;
+    // Captured before the call: the reload afterwards clears the reason this distinguishes.
+    const wasConfirmingClassification = this.needsClassification();
+    this.isConfirmingClassification.set(true);
+    this.documentService.confirmClassification(doc.id!, { documentTypeId: this.selectedTypeId() })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => {
+          this.isConfirmingClassification.set(false);
+          this.closeClassifyDialog();
+          // The one call on this page that routinely moves a document out of the caller's read scope: the
+          // TARGET type is judged by DeclareType (an Upload grant suffices), not by Read.
+          if (this.leaveIfNoLongerReadable(updated)) return;
+          this.toaster.success(
+            wasConfirmingClassification ? 'VaultExtract::Document:ClassificationConfirmed' : 'VaultExtract::Document:TypeChanged',
+            'VaultExtract::Success',
+          );
+          this.loadDocument();
+        },
+        error: () => {
+          this.isConfirmingClassification.set(false);
+          this.toaster.error('VaultExtract::Document:ConfirmFailed', 'VaultExtract::Error');
+        },
+      });
+  }
+
+  // #395: reject the document (#237/#284 recoverable disposition). The rejection reason is required by the
+  // backend RejectReviewInput.Reason; reload after success so disposition/badge reflect the new state.
+  openRejectDialog(): void {
+    if (!this.document()) return;
+    this.rejectReason.set('');
+    this.showRejectDialog.set(true);
+  }
+
+  closeRejectDialog(): void {
+    this.showRejectDialog.set(false);
+    this.rejectReason.set('');
+  }
+
+  submitReject(): void {
+    const doc = this.document();
+    if (!doc || this.isRejecting()) return;
+    const reason = this.rejectReason().trim();
+    if (!reason) {
+      this.toaster.warn('VaultExtract::Document:Review:RejectReasonRequired');
+      return;
+    }
+    this.isRejecting.set(true);
+    this.documentService.rejectReview(doc.id!, { reason })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => {
+          this.isRejecting.set(false);
+          this.closeRejectDialog();
+          if (this.leaveIfNoLongerReadable(updated)) return;
+          this.toaster.success('VaultExtract::Document:Review:RejectedSuccessfully', 'VaultExtract::Success');
+          this.loadDocument();
+        },
+        error: () => {
+          this.isRejecting.set(false);
+          this.toaster.error('VaultExtract::Document:Review:ActionFailed', 'VaultExtract::Error');
+        },
+      });
+  }
+
+  // #411: operator decides a suspected duplicate is not a duplicate (or is an acceptable re-upload). The backend
+  // sets the durable DuplicateAllowed override, clears the blocking reason, and re-derives lifecycle (releasing the
+  // document to Ready + DocumentReadyEto when nothing else blocks). Reload so the badge / banner reflect the change.
+  allowDuplicate(): void {
+    const doc = this.document();
+    if (!doc || this.isAllowingDuplicate()) return;
+    this.isAllowingDuplicate.set(true);
+    this.documentService.allowDuplicate(doc.id!)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => {
+          this.isAllowingDuplicate.set(false);
+          if (this.leaveIfNoLongerReadable(updated)) return;
+          this.toaster.success('VaultExtract::Document:Review:DuplicateAllowed', 'VaultExtract::Success');
+          this.loadDocument();
+        },
+        error: () => {
+          this.isAllowingDuplicate.set(false);
+          this.toaster.error('VaultExtract::Document:Review:ActionFailed', 'VaultExtract::Error');
+        },
+      });
+  }
+
+  // #527: the operator has compared the flagged values against the source and accepts them. Resolve every currently
+  // warned field in one call (the operator reviewed them together): the backend removes those warning rows, clears the
+  // blocking reason, and re-derives lifecycle (releasing to Ready + DocumentReadyEto when nothing else blocks). The
+  // other remedy is Re-extract, which re-derives the warnings from scratch. Confirm first, since this dismisses a
+  // data-quality signal. Reload so the badge / banner reflect the change.
+  resolveFieldValidationWarnings(): void {
+    const doc = this.document();
+    if (!doc || this.isResolvingWarnings()) return;
+    const fieldDefinitionIds = this.fieldValidationWarnings()
+      .map(w => w.fieldDefinitionId)
+      .filter((id): id is string => !!id);
+    if (fieldDefinitionIds.length === 0) return;
+    this.confirmation
+      .warn('VaultExtract::Document:Review:ResolveFieldValidationWarnings:Confirm', 'VaultExtract::AreYouSure')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(status => {
+        if (status !== Confirmation.Status.confirm) return;
+        this.isResolvingWarnings.set(true);
+        this.documentService.resolveFieldValidationWarnings(doc.id!, { fieldDefinitionIds })
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: updated => {
+              this.isResolvingWarnings.set(false);
+              if (this.leaveIfNoLongerReadable(updated)) return;
+              this.toaster.success('VaultExtract::Document:Review:FieldValidationWarningsResolved', 'VaultExtract::Success');
+              this.loadDocument();
+            },
+            error: () => {
+              this.isResolvingWarnings.set(false);
+              this.toaster.error('VaultExtract::Document:Review:ActionFailed', 'VaultExtract::Error');
+            },
+          });
+      });
+  }
+
+  // #657: the operator declares field entry complete for this document — including "none of this type's
+  // fields apply", which is this same call made without entering anything first. The backend clears the
+  // blocking FieldExtractionIncomplete reason (Document.ConfirmFieldEntry) and re-derives lifecycle
+  // (releasing to Ready + DocumentReadyEto when nothing else blocks). Confirm first, since this dismisses a
+  // data-quality gate. Reload so the badge / banner reflect the change.
+  confirmFieldEntry(): void {
+    const doc = this.document();
+    if (!doc || this.isConfirmingFieldEntry()) return;
+    this.confirmation
+      .warn('VaultExtract::Document:Review:ConfirmFieldEntry:Confirm', 'VaultExtract::AreYouSure')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(status => {
+        if (status !== Confirmation.Status.confirm) return;
+        this.isConfirmingFieldEntry.set(true);
+        this.documentService.confirmFieldEntry(doc.id!)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: updated => {
+              this.isConfirmingFieldEntry.set(false);
+              if (this.leaveIfNoLongerReadable(updated)) return;
+              this.toaster.success('VaultExtract::Document:Review:FieldEntryConfirmed', 'VaultExtract::Success');
+              this.loadDocument();
+            },
+            error: () => {
+              this.isConfirmingFieldEntry.set(false);
+              this.toaster.error('VaultExtract::Document:Review:ActionFailed', 'VaultExtract::Error');
+            },
+          });
+      });
+  }
+
+  getStatusBadgeClass(status: DocumentLifecycleStatus | undefined): string {
+    switch (status) {
+      case DocumentLifecycleStatus.Uploaded:   return 'badge bg-secondary';
+      case DocumentLifecycleStatus.Processing: return 'badge bg-warning text-dark';
+      case DocumentLifecycleStatus.PendingReview: return 'badge bg-info text-dark';
+      case DocumentLifecycleStatus.Ready:      return 'badge bg-success';
+      case DocumentLifecycleStatus.Failed:     return 'badge bg-danger';
+      default:                                 return 'badge bg-secondary';
+    }
+  }
+
+  // #284: header badge shows only lifecycle on the availability axis. Review state is expressed by the
+  // banner plus detail-area reviewReasonDetails and is not duplicated.
+  getDocumentStatusBadgeClass(doc: DocumentDto): string {
+    return this.getStatusBadgeClass(doc.lifecycleStatus);
+  }
+
+  getStatusLabel(status: DocumentLifecycleStatus | undefined): string {
+    switch (status) {
+      case DocumentLifecycleStatus.Uploaded:   return 'VaultExtract::Document:Status:Uploaded';
+      case DocumentLifecycleStatus.Processing: return 'VaultExtract::Document:Status:Processing';
+      case DocumentLifecycleStatus.PendingReview: return 'VaultExtract::Document:Status:PendingReview';
+      case DocumentLifecycleStatus.Ready:      return 'VaultExtract::Document:Status:Ready';
+      case DocumentLifecycleStatus.Failed:     return 'VaultExtract::Document:Status:Failed';
+      default:                                 return 'VaultExtract::Document:Status:Unknown';
+    }
+  }
+
+  getDocumentStatusLabel(doc: DocumentDto): string {
+    return this.getStatusLabel(doc.lifecycleStatus);
+  }
+
+  // #284: review reason to localization key, used for detail-area reviewReasonDetails rendering.
+  reviewReasonLabel(reason: DocumentReviewReasons | undefined): string {
+    switch (reason) {
+      case DocumentReviewReasons.UnresolvedClassification:
+        return 'VaultExtract::Document:ReviewReason:UnresolvedClassification';
+      case DocumentReviewReasons.MissingRequiredFields:
+        return 'VaultExtract::Document:ReviewReason:MissingRequiredFields';
+      case DocumentReviewReasons.SegmentationIncomplete:
+        return 'VaultExtract::Document:ReviewReason:SegmentationIncomplete';
+      case DocumentReviewReasons.DuplicateSuspected:
+        return 'VaultExtract::Document:ReviewReason:DuplicateSuspected';
+      case DocumentReviewReasons.FieldExtractionIncomplete:
+        return 'VaultExtract::Document:ReviewReason:FieldExtractionIncomplete';
+      case DocumentReviewReasons.FieldValidationWarning:
+        return 'VaultExtract::Document:ReviewReason:FieldValidationWarning';
+      default:
+        return 'VaultExtract::Document:NeedsReview';
+    }
+  }
+
+  // #412: per-reason remediation hint shown in the banner, so the operator knows what each reason expects
+  // without inferring it from the (reason-neutral) headline. Each reason has exactly one remedy: assign a
+  // type, fill the fields below, re-classify, or release/delete the duplicate.
+  reviewReasonHint(reason: DocumentReviewReasons | undefined): string {
+    switch (reason) {
+      case DocumentReviewReasons.UnresolvedClassification:
+        return 'VaultExtract::Document:Review:Hint:UnresolvedClassification';
+      case DocumentReviewReasons.MissingRequiredFields:
+        return 'VaultExtract::Document:Review:Hint:MissingRequiredFields';
+      case DocumentReviewReasons.SegmentationIncomplete:
+        return 'VaultExtract::Document:Review:Hint:SegmentationIncomplete';
+      case DocumentReviewReasons.DuplicateSuspected:
+        return 'VaultExtract::Document:Review:Hint:DuplicateSuspected';
+      case DocumentReviewReasons.FieldExtractionIncomplete:
+        return 'VaultExtract::Document:Review:Hint:FieldExtractionIncomplete';
+      case DocumentReviewReasons.FieldValidationWarning:
+        return 'VaultExtract::Document:Review:Hint:FieldValidationWarning';
+      default:
+        return 'VaultExtract::Document:NeedsReview';
+    }
+  }
+
+  // #412: "Complete fields" CTA — jump to the extracted-fields card and open the edit form so the missing
+  // required values can be filled. Filling them clears MissingRequiredFields server-side on the next save.
+  completeFields(): void {
+    if (this.canEdit() && this.fieldDefinitions().length > 0 && !this.isEditingFields()) {
+      this.startEditFields();
+    }
+    document.getElementById('extracted-fields-card')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  getRunStatusBadgeClass(status: PipelineRunStatus | undefined): string {
+    switch (status) {
+      case PipelineRunStatus.Pending:   return 'badge bg-secondary';
+      case PipelineRunStatus.Running:   return 'badge bg-warning text-dark';
+      case PipelineRunStatus.Succeeded: return 'badge bg-success';
+      case PipelineRunStatus.Failed:    return 'badge bg-danger';
+      case PipelineRunStatus.Skipped:   return 'badge bg-light text-dark border';
+      default:                          return 'badge bg-light text-muted border';
+    }
+  }
+
+  getRunStatusLabel(status: PipelineRunStatus | undefined): string {
+    switch (status) {
+      case PipelineRunStatus.Pending:   return 'VaultExtract::Document:Pipeline:Status:Pending';
+      case PipelineRunStatus.Running:   return 'VaultExtract::Document:Pipeline:Status:Running';
+      case PipelineRunStatus.Succeeded: return 'VaultExtract::Document:Pipeline:Status:Succeeded';
+      case PipelineRunStatus.Failed:    return 'VaultExtract::Document:Pipeline:Status:Failed';
+      case PipelineRunStatus.Skipped:   return 'VaultExtract::Document:Pipeline:Status:Skipped';
+      default:                          return 'VaultExtract::Document:Pipeline:Status:NotStarted';
+    }
+  }
+
+  isRunInProgress(status: PipelineRunStatus | undefined): boolean {
+    return status === PipelineRunStatus.Pending || status === PipelineRunStatus.Running;
+  }
+
+  isRetryable(run: DocumentPipelineRunDto | null | undefined): boolean {
+    return !!run && run.status === PipelineRunStatus.Failed;
+  }
+
+  retryPipeline(pipelineCode: string): void {
+    if (this.retryingPipeline() !== null) return;
+
+    this.retryingPipeline.set(pipelineCode);
+    this.documentService.retryPipeline(this.documentId, { pipelineCode })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+      next: () => {
+        this.retryingPipeline.set(null);
+        this.toaster.success('VaultExtract::Document:Pipeline:RetryQueued', 'VaultExtract::Success');
+        this.loadDocument();
+      },
+      error: () => {
+        this.retryingPipeline.set(null);
+        this.toaster.error('VaultExtract::Document:Pipeline:RetryFailed', 'VaultExtract::Error');
+      },
+    });
+  }
+
+  getElapsedMs(run: DocumentPipelineRunDto): number | null {
+    if (!run.startedAt) return null;
+    const start = new Date(run.startedAt).getTime();
+    if (Number.isNaN(start)) return null;
+    const end = run.completedAt ? new Date(run.completedAt).getTime() : Date.now();
+    if (Number.isNaN(end) || end < start) return null;
+    return end - start;
+  }
+
+  startEditFields(): void {
+    this.editingDocument.set(this.document() ?? undefined);
+    this.fieldsForm.set(this.fb.group({ values: this.fb.group({}) }));
+    this.isEditingFields.set(true);
+  }
+
+  cancelEditFields(): void {
+    this.isEditingFields.set(false);
+    this.fieldsForm.set(undefined);
+    this.editingDocument.set(undefined);
+  }
+
+  saveFields(): void {
+    const doc = this.document();
+    const form = this.fieldsForm();
+    if (!doc || !form) return;
+    this.isSavingFields.set(true);
+
+    const raw = (form.get('values')?.getRawValue() ?? {}) as Record<string, unknown>;
+    const fields: Record<string, unknown> = {};
+    for (const def of this.fieldDefinitions()) {
+      const key = def.name ?? '';
+      const value = raw[key];
+      if (this.shouldOmitFieldValue(value)) continue;
+      fields[key] = value;
+    }
+
+    this.documentService.updateExtractedFields(doc.id!, { fields })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => {
+          this.isSavingFields.set(false);
+          this.isEditingFields.set(false);
+          this.fieldsForm.set(undefined);
+          this.editingDocument.set(undefined);
+          if (this.leaveIfNoLongerReadable(updated)) return;
+          this.document.set(updated);
+          this.toaster.success('VaultExtract::Document:FieldsUpdated', 'VaultExtract::Success');
+        },
+        error: () => {
+          this.isSavingFields.set(false);
+          this.toaster.error('VaultExtract::Document:UpdateFailed', 'VaultExtract::Error');
+        },
+      });
+  }
+
+  // Omit a field entirely rather than sending an explicit empty value, so the server treats "nothing
+  // entered" as not provided. An empty array covers a multi-valued field (Tags, multi-Select) left with
+  // no chips - <ff-flex-field-control> always yields a real (possibly empty) array for those, never the
+  // blank string this check used to see pre-flex-fields.
+  private shouldOmitFieldValue(value: unknown): boolean {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') return value.trim() === '';
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
+  }
+
+  formatElapsed(run: DocumentPipelineRunDto): string {
+    const ms = this.getElapsedMs(run);
+    if (ms == null) return '';
+    if (ms < 1000) return `${ms} ms`;
+    const seconds = ms / 1000;
+    if (seconds < 60) return `${seconds.toFixed(1)} s`;
+    const minutes = Math.floor(seconds / 60);
+    const remSeconds = Math.round(seconds - minutes * 60);
+    return `${minutes}m ${remSeconds}s`;
+  }
+
+  protected pickLatestRun(runs: DocumentPipelineRunDto[], pipelineCode: string): DocumentPipelineRunDto | null {
+    const matches = runs.filter(r => r.pipelineCode === pipelineCode);
+    if (matches.length === 0) return null;
+    return matches.reduce((prev, curr) => ((curr.attemptNumber ?? 0) > (prev.attemptNumber ?? 0) ? curr : prev));
+  }
+}

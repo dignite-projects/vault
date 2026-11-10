@@ -20,9 +20,12 @@ Content requiring IDP: scans / photos / PDF images / Office files / digital-born
 
 ## Project layout
 
-- **core/** - Dignite Vault Extract channel implementation (ABP application stack)
-- **host/** - Host application: configures OCR / Markdown / LLM providers; the only place middleware may be configured
-- **angular/** - Angular SPA (operator UI)
+- **modules/vault.extract/** - Dignite Vault Extract channel implementation (ABP module stack: `src/`, `test/`) and its Angular library (`angular/`, published as `@dignite/ng.vault-extract`)
+- **src/Dignite.Vault.Extract.Host/** - Host application: configures OCR / Markdown / LLM providers; the only place middleware may be configured
+- **angular/** - Host SPA (operator UI); compiles the module libraries from source through `tsconfig.base.json` `paths`
+- **etc/** - Docker compose / image scripts, ABP Studio run profile, PaddleOCR sidecar
+
+The repo is being restructured into the Vault suite monorepo (#716): host at the root, products under `modules/`. Phase 1 (this layout) only moved files — every PackageId, namespace and npm name is unchanged. All Angular workspaces share **one** `npm install` at the repo root (root `package.json` `workspaces`); never install inside a module's `angular/`, or the host bundles a second Angular runtime (CI: `check:single-angular`).
 - **docs/** - Operations / configuration / API documentation; design decisions live in GitHub Issues, not under docs/
 
 Business modules (contract / invoice / HR management, etc.) are **not** in this repo — they live on the downstream consumer side and integrate via EventBus / MCP / REST.
@@ -33,9 +36,9 @@ Business modules (contract / invoice / HR management, etc.) are **not** in this 
 
 Dignite Vault Extract is a **two-layer architecture** (the business layer is out of scope):
 
-- **Layer 1 — Core (`core/`)**: all channel capabilities. `Abstractions` (the bottom of the dependency topology — extension contracts: multi-stage ETOs + `ITextExtractor` / `TextExtractionContext` / `TextExtractionResult`, depending on no other Dignite Vault Extract project) + the standard ABP module stack (`Domain.Shared` / `Domain` / `Application` / `EntityFrameworkCore` / `HttpApi` / `Mcp`) + the pluggable text-extraction stack (`Parse` orchestrator + `Ocr` contract + multiple providers). **All channel core capabilities live in the Application layer**; REST (`HttpApi`) and MCP (`Mcp`) are parallel egress adapters — protocol/transport concerns do not leak into Application. Telling the *uploader* in the operator UI (#680, via the Dignite.Abp.Notifications framework; the host picks the SignalR channel and the Dignite.NotificationCenter inbox) is an Application-layer handler, not an egress adapter, and is not part of the downstream egress contract — see `docs/en/egress/operator-notifications.md`.
+- **Layer 1 — Core (`modules/vault.extract/`)**: all channel capabilities. `Abstractions` (the bottom of the dependency topology — extension contracts: multi-stage ETOs + `ITextExtractor` / `TextExtractionContext` / `TextExtractionResult`, depending on no other Dignite Vault Extract project) + the standard ABP module stack (`Domain.Shared` / `Domain` / `Application` / `EntityFrameworkCore` / `HttpApi` / `Mcp`) + the pluggable text-extraction stack (`Parse` orchestrator + `Ocr` contract + multiple providers). **All channel core capabilities live in the Application layer**; REST (`HttpApi`) and MCP (`Mcp`) are parallel egress adapters — protocol/transport concerns do not leak into Application. Telling the *uploader* in the operator UI (#680, via the Dignite.Abp.Notifications framework; the host picks the SignalR channel and the Dignite.NotificationCenter inbox) is an Application-layer handler, not an egress adapter, and is not part of the downstream egress contract — see `docs/en/egress/operator-notifications.md`.
 - **Layer 2 — Downstream consumers (out of scope, not in this repo)**: business modules (contract / invoice / HR management, etc.) live in their own repos and consume via the egress contracts; `Document` is the truth source and business records are its derived projections.
-- **Layer 3 — Host (`host/`)**: a container only — declares dependencies via `[DependsOn]`, configures providers in `ConfigureServices` + registers three keyed `IChatClient`s (`TitleGenerator` / `Structured` / `Vision`, for title generation / structured-output paths / VisionLlm OCR respectively; **does not register `IEmbeddingGenerator`** — the channel layer does no vectorization), **configures middleware only here** (`OnApplicationInitialization`), and implements no business logic.
+- **Layer 3 — Host (`src/Dignite.Vault.Extract.Host/`)**: a container only — declares dependencies via `[DependsOn]`, configures providers in `ConfigureServices` + registers three keyed `IChatClient`s (`TitleGenerator` / `Structured` / `Vision`, for title generation / structured-output paths / VisionLlm OCR respectively; **does not register `IEmbeddingGenerator`** — the channel layer does no vectorization), **configures middleware only here** (`OnApplicationInitialization`), and implements no business logic.
 
 > **Key constraint**: **LLM / OCR providers and API keys are configured at the host deployment layer, never exposed to end customers** — customers are business users, not technical users; making customers fill in API keys is a product-philosophy mistake.
 
@@ -120,7 +123,7 @@ Apply to built-in LLM classification, unified field extraction (mechanism B), ti
 
 ## ABP conventions
 
-Verified against the code on 2026-09-21: nothing in `core/src` / `host/src` violates any of these today — keep it that way. (Generic ABP tutorial rules were removed from `.claude/rules/`; https://abp.io/docs/latest is the reference for anything not listed here.)
+Verified against the code on 2026-09-21: nothing in `modules/vault.extract/src` / `src/Dignite.Vault.Extract.Host` violates any of these today — keep it that way. (Generic ABP tutorial rules were removed from `.claude/rules/`; https://abp.io/docs/latest is the reference for anything not listed here.)
 
 - **`virtual`**: every public/protected method on application services and domain services (`*Manager`) is `virtual`, because packaged modules are overridden by consumers. Helpers are `protected virtual`, not `private`.
 - **Time**: `Clock.Now` / `IClock`, never `DateTime.Now` / `UtcNow`.
@@ -131,11 +134,11 @@ Verified against the code on 2026-09-21: nothing in `core/src` / `host/src` viol
 - **Async all the way**: no `.Result` / `.Wait()`.
 - **Authorization**: permission-based, never hard-coded role checks. The documents domain has its own access-rule table and must not use `[Authorize]` — read `.claude/rules/authorization.md` before touching it.
 - **Multi-tenancy**: never hand-write `TenantId` predicates (ABP's global filter does it); `CurrentTenant.Change(...)` only inside a `using`.
-- **Tests**: ABP integration-style (test base + in-memory SQLite), Shouldly assertions, NSubstitute for LLM / OCR / blob doubles. One project: `dotnet test core/test/<Project>/<Project>.csproj` (the whole core suite runs in about a minute); Angular: `npx ng test vault-extract --watch=false` from `angular/`.
+- **Tests**: ABP integration-style (test base + in-memory SQLite), Shouldly assertions, NSubstitute for LLM / OCR / blob doubles. One project: `dotnet test modules/vault.extract/test/<Project>/<Project>.csproj` (the whole core suite runs in about a minute); Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`.
 
 ## Working rules
 
-1. Development follows the conventions above and the path-scoped rules under `.claude/rules/` (they auto-load by `paths:` when you touch production code under `core/src` / `host/src`; when modifying ABP BackgroundJob / JobArgs you must read `.claude/rules/background-jobs.md`)
+1. Development follows the conventions above and the path-scoped rules under `.claude/rules/` (they auto-load by `paths:` when you touch production code under `modules/vault.extract/src` / `src/Dignite.Vault.Extract.Host`; when modifying ABP BackgroundJob / JobArgs you must read `.claude/rules/background-jobs.md`)
 2. Do not configure middleware in core ABP modules — only in the host
 3. **Decide whether an Issue is needed before changing**: changes touching channel boundaries (OCR pipeline / egress contracts / field architecture / document-type system / Markdown-first / security conventions), module boundaries, or Slice tasks — **stop first and tell the user to open a GitHub Issue before proceeding**; pure implementation-detail fixes (bug fixes, wording corrections) are recorded directly in the commit message
 4. **Downstream-consumer questions**: business modules (contract / invoice management, etc.) are out of Dignite Vault Extract scope. For discussions involving downstream-consumer implementation, explicitly state it is out-of-scope; Dignite Vault Extract only guarantees stable egress contracts

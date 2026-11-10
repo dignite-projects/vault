@@ -21,9 +21,9 @@ If Dignite Vault Extract Core later adds a Meter or ActivitySource named `Dignit
 
 ## Host Pipeline Configuration
 
-The pipeline is set up in `host/src/VaultExtractHostModule.cs → ConfigureOpenTelemetry`. It's **opt-in** so an unconfigured host doesn't spawn a background exporter or hit a non-existent OTLP endpoint. The committed `appsettings.Development.json` turns it on for local development.
+The pipeline is set up in `src/Dignite.Vault.Extract.Host/VaultExtractHostModule.cs → ConfigureOpenTelemetry`. It's **opt-in** so an unconfigured host doesn't spawn a background exporter or hit a non-existent OTLP endpoint. The committed `appsettings.Development.json` turns it on for local development.
 
-Default in `host/src/appsettings.json`:
+Default in `src/Dignite.Vault.Extract.Host/appsettings.json`:
 
 ```json
 "OpenTelemetry": {
@@ -52,16 +52,14 @@ OpenTelemetry__Otlp__Endpoint=http://otel-collector.internal:4317
 
 ## Local Development with Aspire Dashboard
 
-For local dev we ship a profile-gated `aspire-dashboard` service in `host/docker-compose.yml`. It receives OTLP over gRPC and renders traces + metrics + logs at `http://localhost:18888`.
+For local dev we ship a profile-gated `aspire-dashboard` service in `docker-compose.yml`. It receives OTLP over gRPC and renders traces + metrics + logs at `http://localhost:18888`.
 
 **Why aspire-dashboard for dev**: single container, zero-config, runs on the developer's laptop. Use Jaeger / Datadog / Grafana Tempo / Azure Monitor in shared environments; OTLP is vendor-neutral so the same instrumentation hits any backend.
 
 ### Bring It Up
 
 ```powershell
-cd host
-
-# Profile-gated so plain `docker compose up` doesn't pull a 300MB image
+# From the repository root. Profile-gated so plain `docker compose up` doesn't pull a 300MB image
 docker compose --profile observability up -d aspire-dashboard
 ```
 
@@ -71,8 +69,8 @@ Pick one of three places to set `OpenTelemetry:Enabled = true`:
 
 | Where | Scope | Notes |
 |---|---|---|
-| `host/src/Properties/launchSettings.json` → `environmentVariables` | Per-launch-profile, **persisted in git** | Recommended for the project default. Already populated for both `IIS Express` and `Dignite.Vault.Extract.Host` profiles. |
-| `host/src/appsettings.Development.json` → `OpenTelemetry.Enabled = true` | Development environment, **persisted in git** | Equivalent effect to launchSettings; choose one or the other (both is harmless but redundant). |
+| `src/Dignite.Vault.Extract.Host/Properties/launchSettings.json` → `environmentVariables` | Per-launch-profile, **persisted in git** | Recommended for the project default. Already populated for both `IIS Express` and `Dignite.Vault.Extract.Host` profiles. |
+| `src/Dignite.Vault.Extract.Host/appsettings.Development.json` → `OpenTelemetry.Enabled = true` | Development environment, **persisted in git** | Equivalent effect to launchSettings; choose one or the other (both is harmless but redundant). |
 | Shell env vars (`$env:OpenTelemetry__Enabled = "true"` in PowerShell) | Current shell session only | For ad-hoc inspection without changing any tracked file. |
 
 The repo defaults to **launchSettings.json**: contributors who clone, `docker compose --profile observability up -d`, then F5 / `dotnet run` immediately see signals on the dashboard with no further config.
@@ -81,7 +79,7 @@ The repo defaults to **launchSettings.json**: contributors who clone, `docker co
 
 ```powershell
 # Start the host
-dotnet run --project host/src/Dignite.Vault.Extract.Host.csproj
+dotnet run --project src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj
 
 # Upload a document via the API or operator UI, then open the dashboard
 start http://localhost:18888

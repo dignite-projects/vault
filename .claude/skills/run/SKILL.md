@@ -23,7 +23,7 @@ The base appsettings LocalDB target (`(LocalDb)\MSSQLLocalDB`) is used only when
 Resolve the active SQL `host:port` **from the gitignored secrets file at runtime** — no literal target is committed to this skill:
 
 ```powershell
-$secrets = "host/src/appsettings.secrets.json"
+$secrets = "src/Dignite.Vault.Extract.Host/appsettings.secrets.json"
 if (Test-Path $secrets) {
     # Development override present → remote SQL Server
     $cs = (Get-Content $secrets -Raw | ConvertFrom-Json).ConnectionStrings.Default
@@ -44,17 +44,17 @@ For the remote case, expect `TcpTestSucceeded : True`. If it fails, check VPN/ne
 
 ## Step 2 — Start the .NET host
 
-The host project lives at `host/src/Dignite.Vault.Extract.Host.csproj` (directly inside `host/src/`).
+The host project lives at `src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj` (directly inside `src/Dignite.Vault.Extract.Host/`).
 
 ```powershell
-dotnet run --project host/src
+dotnet run --project src/Dignite.Vault.Extract.Host
 ```
 
 Or, to pin the environment explicitly:
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = "Development"
-dotnet run --project host/src
+dotnet run --project src/Dignite.Vault.Extract.Host
 ```
 
 The host binds to `https://localhost:44348` (confirmed in both `launchSettings.json` and `appsettings.json` `App.SelfUrl`).
@@ -76,7 +76,7 @@ Swagger UI is available at `https://localhost:44348/swagger` (served via `UseAbp
 
 ## Step 3 — Start the Angular SPA
 
-The workspace root is `angular/`. The Angular CLI project name is `host`. The `package.json` `start` script runs `ng serve host`.
+Dependencies are installed once at the repo root (`npm install`, npm workspaces) — never inside `angular/` or a module's `angular/`. The host SPA workspace is `angular/`; its Angular CLI project name is `host`. The `package.json` `start` script runs `ng serve host`.
 
 ```powershell
 Set-Location angular
@@ -128,17 +128,17 @@ Do not use `pkill` — it is not available on Windows / Git Bash.
 Requires the host running at `https://localhost:44348`.
 
 ```powershell
-Set-Location angular
+Set-Location modules/vault.extract/angular
 npm run generate-proxy
 ```
 
 This runs:
 
 ```
-abp generate-proxy -t ng -m vault-extract --api-name Default --source host --target vault-extract --url https://localhost:44348
+abp generate-proxy -t ng -m vault-extract --api-name Default --source dev-app --target vault-extract --url https://localhost:44348
 ```
 
-(exact script from `angular/package.json`)
+(exact script from `modules/vault.extract/angular/package.json`; `dev-app` is an environment-only stub)
 
 ---
 
@@ -147,10 +147,10 @@ abp generate-proxy -t ng -m vault-extract --api-name Default --source host --tar
 | Step | Command | Expected result |
 |---|---|---|
 | DB reachability (Dev) | Resolve host:port from `appsettings.secrets.json`, then `Test-NetConnection` | `TcpTestSucceeded : True` |
-| Start host | `dotnet run --project host/src` | Binds `https://localhost:44348` |
+| Start host | `dotnet run --project src/Dignite.Vault.Extract.Host` | Binds `https://localhost:44348` |
 | Health check | `GET https://localhost:44348/health-status` | HTTP 200 |
 | Swagger | `https://localhost:44348/swagger` | Swagger UI loads |
 | Start Angular | `cd angular && npm start` | `http://localhost:4200` |
-| Generate proxies | `cd angular && npm run generate-proxy` | Proxy files updated |
+| Generate proxies | `cd modules/vault.extract/angular && npm run generate-proxy` | Proxy files updated |
 | Stop host | `Get-NetTCPConnection -LocalPort 44348 …` | Process killed |
 | Stop Angular | `Get-NetTCPConnection -LocalPort 4200 …` | Process killed |

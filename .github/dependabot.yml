@@ -83,7 +83,7 @@ updates:
         versions: [">= 3.119.3"]
 
   - package-ecosystem: npm
-    directory: "/angular"
+    directory: "/"
     schedule:
       interval: monthly
     groups:
@@ -126,7 +126,7 @@ updates:
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   - package-ecosystem: npm
-    directory: "/host/src"
+    directory: "/src/Dignite.Vault.Extract.Host"
     schedule:
       interval: monthly
     ignore:

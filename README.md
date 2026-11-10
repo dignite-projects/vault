@@ -22,17 +22,20 @@ content requiring IDP: scans / photos / PDF images / Office files / digital-born
 
 ```
 vault/
-├── core/      # Channel implementation — ABP layers (Abstractions / Domain.Shared / Domain / Application / EntityFrameworkCore / HttpApi / Mcp) plus the text-extraction providers
-├── host/      # Host application — provider wiring (OCR + AI) and middleware (ASP.NET Core API)
-├── angular/   # Angular SPA (operator UI) and the @dignite/ng.vault-extract library
-└── docs/      # Documentation: setup, configuration, egress contracts, deployment (design decisions go to GitHub Issues, not here)
+├── modules/
+│   └── vault.extract/   # Channel implementation — ABP layers (Abstractions / Domain.Shared / Domain / Application / EntityFrameworkCore / HttpApi / Mcp)
+│                        # plus the text-extraction providers, and angular/ (the @dignite/ng.vault-extract library)
+├── src/                 # Host application — provider wiring (OCR + AI) and middleware (ASP.NET Core API)
+├── angular/             # Host SPA (operator UI); compiles the module libraries from source
+├── etc/                 # Docker, ABP Studio run profile, scripts, PaddleOCR sidecar
+└── docs/                # Documentation: setup, configuration, egress contracts, deployment (design decisions go to GitHub Issues, not here)
 ```
 
 Business modules (contract management / invoice management / HR records / etc.) are **not** in this repo — they belong on the downstream consumer side per the channel philosophy.
 
 ## Use it as a module
 
-Vault Extract is distributed as an ABP application module: the `Dignite.Vault.Extract.*` NuGet packages for the server and the `@dignite/ng.vault-extract` npm package for the Angular operator UI. This repository's `host/` is one host built from them. To add the modules to an ABP application of your own, see [Installation](./docs/en/get-started/installation.md).
+Vault Extract is distributed as an ABP application module: the `Dignite.Vault.Extract.*` NuGet packages for the server and the `@dignite/ng.vault-extract` npm package for the Angular operator UI. This repository's host (`src/Dignite.Vault.Extract.Host/`) is one host built from them. To add the modules to an ABP application of your own, see [Installation](./docs/en/get-started/installation.md).
 
 ## Quick start (run this repository)
 
@@ -45,7 +48,7 @@ Vault Extract is distributed as an ABP application module: the `Dignite.Vault.Ex
 | An LLM provider | **mandatory** — any OpenAI-compatible endpoint; a local Ollama works |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop) | optional — PaddleOCR sidecar and the local OpenTelemetry dashboard |
 
-**1. Configure the LLM provider.** Create `host/src/appsettings.secrets.json`. It is git-ignored and never published; do not put credentials in the committed `appsettings.json` or `appsettings.Development.json`.
+**1. Configure the LLM provider.** Create `src/Dignite.Vault.Extract.Host/appsettings.secrets.json`. It is git-ignored and never published; do not put credentials in the committed `appsettings.json` or `appsettings.Development.json`.
 
 ```json
 {
@@ -65,7 +68,7 @@ The host fails fast at startup while `ApiKey` is still the committed placeholder
 **2. Run the backend.**
 
 ```bash
-cd host/src
+cd src/Dignite.Vault.Extract.Host
 abp install-libs
 dotnet run --migrate-database   # first run, and after pulling a new migration; seeds admin / 1q2w3E*
 dotnet run
@@ -76,8 +79,8 @@ API: `https://localhost:44348`. Swagger: `https://localhost:44348/swagger`.
 **3. Run the Angular UI.**
 
 ```bash
+npm install       # once, at the repo root: one install for every Angular workspace
 cd angular
-npm install
 npm start
 ```
 

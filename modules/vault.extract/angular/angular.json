@@ -1,0 +1,63 @@
+{
+  "$schema": "../../../node_modules/@angular/cli/lib/config/schema.json",
+  "cli": {
+    "analytics": false,
+    "schematicCollections": [
+      "@angular-eslint/schematics"
+    ]
+  },
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "dev-app": {
+      "projectType": "application",
+      "root": "projects/dev-app",
+      "sourceRoot": "projects/dev-app/src"
+    },
+    "vault-extract": {
+      "projectType": "library",
+      "root": "projects/vault-extract",
+      "sourceRoot": "projects/vault-extract/src",
+      "prefix": "lib",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "options": {
+            "project": "projects/vault-extract/ng-package.json"
+          },
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/vault-extract/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/vault-extract/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/vault-extract/tsconfig.spec.json",
+            "buildTarget": "vault-extract:build",
+            "runner": "vitest",
+            "include": [
+              "**/*.spec.ts",
+              "../documents/**/*.spec.ts",
+              "../config/**/*.spec.ts"
+            ]
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "projects/vault-extract/**/*.ts",
+              "projects/vault-extract/**/*.html"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
