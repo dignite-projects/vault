@@ -15,9 +15,9 @@ Dignite Vault Extract is distributed as an ABP application module: a set of NuGe
 
 | Requirement | Version |
 | --- | --- |
-| ABP Framework | 10.7.0 or later (every package depends on `Volo.Abp.* >= 10.7.0`) |
+| ABP Framework | 10.7.1 or later (every package depends on `Volo.Abp.* >= 10.7.1`) |
 | .NET | 10.0 |
-| Angular (for the UI) | 22, with `@abp/ng.*` `~10.7.0` |
+| Angular (for the UI) | 22, with `@abp/ng.*` `~10.7.1` |
 | Database | A relational database through EF Core. The shipped host uses SQL Server; the schema is provider-agnostic ([Database Portability](../deployment/deployment.md#database-portability)) |
 | LLM provider | Mandatory. Any provider with a `Microsoft.Extensions.AI` `IChatClient`; see [AI Provider](../configuration/ai-provider.md) |
 
@@ -149,7 +149,7 @@ Install the package into your Angular application:
 npm install @dignite/ng.vault-extract
 ```
 
-It depends on `@abp/ng.*` `~10.7.0`, `@dignite/ng.flex-fields` and `@dignite/ng.flex-fields-ckeditor`, and peers on Angular 22, `@ng-bootstrap/ng-bootstrap`, `ng-zorro-antd` and `rxjs`. The package has three entry points: `@dignite/ng.vault-extract` (generated proxies, shared tokens and services), `/config` and `/documents`.
+It depends on `@abp/ng.*` `~10.7.1`, `@dignite/ng.flex-fields` and `@dignite/ng.flex-fields-ckeditor`, and peers on Angular 22, `@ng-bootstrap/ng-bootstrap`, `ng-zorro-antd` and `rxjs`. The package has three entry points: `@dignite/ng.vault-extract` (generated proxies, shared tokens and services), `/config` and `/documents`.
 
 Register the menu in `app.config.ts`:
 
