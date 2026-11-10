@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Volo.Abp.Auditing" />
     <PackageReference Include="Volo.Abp.BlobStoring" />
     <PackageReference Include="Volo.Abp.Ddd.Domain" />
     <!-- Field architecture v3 (#558): IFlexField (the field-definition Entity contract) and the
