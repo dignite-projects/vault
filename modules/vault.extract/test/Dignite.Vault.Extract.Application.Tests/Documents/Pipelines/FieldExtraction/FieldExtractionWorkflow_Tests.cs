@@ -43,7 +43,8 @@ public class FieldExtractionWorkflow_Tests
             chatClient,
             NullLogger<FieldExtractionWorkflow>.Instance,
             new FieldSchemaPromptBudgetGuard(Options.Create(new VaultExtractBehaviorOptions())),
-            TestFieldTypeRegistry.Default);
+            TestFieldTypeRegistry.Default,
+            Options.Create(new VaultExtractBehaviorOptions()));
     }
 
     private static FieldExtractionDescriptor Field(
@@ -66,7 +67,7 @@ public class FieldExtractionWorkflow_Tests
             new DateTimeConfiguration { InputMode = DateTimeInputMode.DateTime }.ConfigurationDictionary);
 
     private static (FieldExtractionWorkflow Workflow, Func<ChatOptions?> CapturedOptions) CreateWorkflowCapturingOptions(
-        string jsonResponse, ChatFinishReason? finishReason = null)
+        string jsonResponse, ChatFinishReason? finishReason = null, VaultExtractBehaviorOptions? behaviorOptions = null)
     {
         var chatClient = Substitute.For<IChatClient>();
         ChatOptions? captured = null;
@@ -86,7 +87,8 @@ public class FieldExtractionWorkflow_Tests
             chatClient,
             NullLogger<FieldExtractionWorkflow>.Instance,
             new FieldSchemaPromptBudgetGuard(Options.Create(new VaultExtractBehaviorOptions())),
-            TestFieldTypeRegistry.Default);
+            TestFieldTypeRegistry.Default,
+            Options.Create(behaviorOptions ?? new VaultExtractBehaviorOptions()));
 
         return (workflow, () => captured);
     }
@@ -305,7 +307,8 @@ public class FieldExtractionWorkflow_Tests
             {
                 MaxFieldSchemaPromptLength = 4
             })),
-            TestFieldTypeRegistry.Default);
+            TestFieldTypeRegistry.Default,
+            Options.Create(new VaultExtractBehaviorOptions()));
         var fields = new[]
         {
             new FieldExtractionDescriptor(
@@ -462,34 +465,99 @@ public class FieldExtractionWorkflow_Tests
     // (SiliconFlow's own default output cap, observed at ~4096 tokens, applies whenever the caller sends none;
     // the JSON gets cut off mid-generation and fails to parse, silently nulling every field on the call).
 
+    // A host whose structured model allows effectively unlimited output, so the schema estimate is sent uncapped.
+    private static VaultExtractBehaviorOptions UncappedOutput => new() { MaxFieldExtractionOutputTokens = int.MaxValue };
+
     [Fact]
-    public async Task MaxOutputTokens_covers_an_AllowMultiple_fields_own_worst_case()
+    public async Task MaxOutputTokens_covers_an_AllowMultiple_fields_own_worst_case_when_the_model_allows_it()
     {
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "tags": [] }, "validationWarnings": [] }""");
+            """{ "values": { "tags": [] }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
 
         await workflow.ExtractAsync(new[] { MultiField("tags") }, "# doc");
 
-        // A hard floor, not an exact figure: MaxOutputTokens must at least cover every array slot at its max
-        // length, or a full multi-value field can never finish generating before the request's own ceiling
-        // truncates it — the same failure this fix targets, just self-inflicted instead of provider-inflicted.
+        // A hard floor, not an exact figure: below the host's ceiling, MaxOutputTokens must at least cover every
+        // array slot at its max length, or a full multi-value field can never finish generating before the request's
+        // own ceiling truncates it — the same failure the estimate targets, just self-inflicted instead of
+        // provider-inflicted.
         capturedOptions()!.MaxOutputTokens.ShouldNotBeNull();
         capturedOptions()!.MaxOutputTokens!.Value.ShouldBeGreaterThan(
             DocumentExtractedFieldConsts.MaxMultiValueCount * DocumentExtractedFieldConsts.MaxTextValueLength);
     }
 
     [Fact]
-    public async Task MaxOutputTokens_scales_up_when_an_AllowMultiple_field_is_requested()
+    public async Task MaxOutputTokens_scales_up_when_an_AllowMultiple_field_is_requested_and_the_model_allows_it()
     {
         var (scalarWorkflow, scalarOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1 }, "validationWarnings": [] }""");
+            """{ "values": { "amount": 1 }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
         await scalarWorkflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
 
         var (multiWorkflow, multiOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "tags": [] }, "validationWarnings": [] }""");
+            """{ "values": { "tags": [] }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
         await multiWorkflow.ExtractAsync(new[] { MultiField("tags") }, "# doc");
 
         multiOptions()!.MaxOutputTokens!.Value.ShouldBeGreaterThan(scalarOptions()!.MaxOutputTokens!.Value);
+    }
+
+    // ─── MaxOutputTokens ceiling: reproduces the 2026-11-10 self-test failure ───
+    // A contract type with one default-configured Tags field estimated 177,664 output tokens; SiliconFlow refused
+    // it for DeepSeek-V3 ("max_tokens (177664) have exceeded max_seq_len (163840)") on every retry, so the document
+    // ended Failed. OpenAI's gpt-4o-mini allows 16,384 completion tokens — below even the validation-warning
+    // allowance alone — so with no ceiling every field extraction against it was refused.
+
+    [Fact]
+    public async Task MaxOutputTokens_never_exceeds_the_hosts_ceiling_for_a_default_Tags_schema()
+    {
+        var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "contract_keywords": [], "party_a_name": null }, "validationWarnings": [] }""");
+
+        await workflow.ExtractAsync(
+            new[] { MultiField("contract_keywords"), Field("party_a_name", TextFieldType.ControlName) }, "# doc");
+
+        capturedOptions()!.MaxOutputTokens.ShouldBe(new VaultExtractBehaviorOptions().MaxFieldExtractionOutputTokens);
+        capturedOptions()!.MaxOutputTokens!.Value.ShouldBeLessThanOrEqualTo(16_384);
+    }
+
+    [Fact]
+    public async Task MaxOutputTokens_follows_a_ceiling_the_host_configures()
+    {
+        var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "amount": 1 }, "validationWarnings": [] }""",
+            behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = 8_192 });
+
+        await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
+
+        capturedOptions()!.MaxOutputTokens.ShouldBe(8_192);
+    }
+
+    [Fact]
+    public async Task MaxOutputTokens_sends_an_estimate_below_the_ceiling_unchanged()
+    {
+        var (uncappedWorkflow, uncappedOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "amount": 1 }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
+        await uncappedWorkflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
+        var estimate = uncappedOptions()!.MaxOutputTokens!.Value;
+
+        var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "amount": 1 }, "validationWarnings": [] }""",
+            behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = estimate + 1 });
+        await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
+
+        capturedOptions()!.MaxOutputTokens.ShouldBe(estimate);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task A_non_positive_output_ceiling_fails_before_calling_the_model(int ceiling)
+    {
+        var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "amount": 1 }, "validationWarnings": [] }""",
+            behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = ceiling });
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc"));
+        capturedOptions().ShouldBeNull();
     }
 
     [Fact]

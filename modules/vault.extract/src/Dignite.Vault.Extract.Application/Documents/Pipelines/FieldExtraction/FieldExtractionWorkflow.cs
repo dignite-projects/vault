@@ -15,6 +15,7 @@ using Dignite.Vault.Extract.FlexFields.Tags;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
@@ -43,17 +44,20 @@ public class FieldExtractionWorkflow : ITransientDependency
     private readonly ILogger<FieldExtractionWorkflow> _logger;
     private readonly FieldSchemaPromptBudgetGuard _schemaPromptBudget;
     private readonly IVaultExtractFieldTypeRegistry _registry;
+    private readonly VaultExtractBehaviorOptions _behaviorOptions;
 
     public FieldExtractionWorkflow(
         [FromKeyedServices(VaultExtractConsts.StructuredChatClientKey)] IChatClient chatClient,
         ILogger<FieldExtractionWorkflow> logger,
         FieldSchemaPromptBudgetGuard schemaPromptBudget,
-        IVaultExtractFieldTypeRegistry registry)
+        IVaultExtractFieldTypeRegistry registry,
+        IOptions<VaultExtractBehaviorOptions> behaviorOptions)
     {
         _chatClient = chatClient;
         _logger = logger;
         _schemaPromptBudget = schemaPromptBudget;
         _registry = registry;
+        _behaviorOptions = behaviorOptions.Value;
     }
 
     /// <summary>
@@ -106,10 +110,22 @@ public class FieldExtractionWorkflow : ITransientDependency
             new(ChatRole.User, PromptBoundary.WrapDocument(markdown))
         };
 
+        // The schema's worst case, capped at what the host says the structured model accepts: a max-tokens value above
+        // the model's limit is refused outright (400) on every retry, which is worse than a rare Length cut-off below.
+        var estimatedOutputTokens = EstimateMaxOutputTokens(fields);
+        var outputTokenCeiling = MaxOutputTokenCeiling;
+        if (estimatedOutputTokens > outputTokenCeiling)
+        {
+            _logger.LogDebug(
+                "Field extraction output estimate of {EstimatedTokens} tokens capped at {MaxOutputTokens} " +
+                "(Vault:ExtractBehavior:MaxFieldExtractionOutputTokens).",
+                estimatedOutputTokens, outputTokenCeiling);
+        }
+
         var options = new ChatOptions
         {
             ResponseFormat = BuildResponseFormat(fields),
-            MaxOutputTokens = EstimateMaxOutputTokens(fields)
+            MaxOutputTokens = Math.Min(estimatedOutputTokens, outputTokenCeiling)
         };
 
         var response = await _chatClient.GetResponseAsync(messages, options, cancellationToken);
@@ -124,7 +140,8 @@ public class FieldExtractionWorkflow : ITransientDependency
             // falls back to all-null for whichever fields did not fully decode.
             _logger.LogWarning(
                 "Field extraction response was cut off at the token limit (MaxOutputTokens={MaxOutputTokens}); " +
-                "the JSON envelope is likely incomplete and some or all field values may parse as null.",
+                "the JSON envelope is likely incomplete and some or all field values may parse as null. If the " +
+                "structured model allows more output, raise Vault:ExtractBehavior:MaxFieldExtractionOutputTokens.",
                 options.MaxOutputTokens);
         }
 
@@ -149,6 +166,12 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// to prevent even though the estimate looked generous in characters. <c>MaxOutputTokens</c> is a ceiling
     /// the model can stop well short of, not a target it is asked to fill, so erring high here is cheap; erring
     /// low silently nulls fields (see <see cref="ExtractAsync"/>'s <c>ChatFinishReason.Length</c> branch).
+    /// </para>
+    /// <para>
+    /// <b>Erring high has a limit, though:</b> the provider refuses a max-tokens value above its model's own limit, on
+    /// every retry. <see cref="ExtractAsync"/> sends this estimate only up to
+    /// <see cref="VaultExtractBehaviorOptions.MaxFieldExtractionOutputTokens"/> — one default-configured Tags field
+    /// estimated 177,664 tokens and SiliconFlow refused it for DeepSeek-V3 (max 163,840).
     /// </para>
     /// </summary>
     private static int EstimateMaxOutputTokens(IReadOnlyList<FieldExtractionDescriptor> fields)
@@ -215,6 +238,18 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// safety margin.
     /// </summary>
     private const int CjkTokenSafetyMultiplier = 4;
+
+    private int MaxOutputTokenCeiling {
+        get {
+            if (_behaviorOptions.MaxFieldExtractionOutputTokens <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Vault:ExtractBehavior:MaxFieldExtractionOutputTokens must be greater than zero.");
+            }
+
+            return _behaviorOptions.MaxFieldExtractionOutputTokens;
+        }
+    }
 
     /// <summary>
     /// Compile-time constant system instructions. **Do not** concatenate any runtime string into this value.

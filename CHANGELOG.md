@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Dignite.Vault.Extract.Ocr.*` → `Dignite.Vault.Parse.Ocr.*`). `Dignite.Vault.Extract.Application` now depends on
   `Dignite.Vault.Parse.Abstractions` only, never on the orchestrator. The old package IDs get no further releases and
   are marked deprecated on nuget.org, pointing at their replacements. Vault Parse shares the repository version.
+- **New host option `Vault:ExtractBehavior:MaxFieldExtractionOutputTokens`** (default `16384`): the most output tokens
+  a field-extraction call asks the structured model for. Set it to that model's maximum output tokens. See Fixed below.
 - **Module dependency rules are checked in CI** (`etc/scripts/check-module-references.mjs`): `vault.parse` references
   nothing else in the repository, `vault.extract` never references `vault.index`, and `vault.index` may reach Extract
   only through `Abstractions` / `Application.Contracts` / `HttpApi.Client`.
@@ -52,6 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     wraps, so the `<document>` / `<field>` boundary holds as before.
   - A rich-text (CKEditor) field keeps `mailto:` and `tel:` links; before, they lost their `href`.
   - The CKEditor `Full` toolbar has left, center and right alignment for HTML fields.
+
+### Fixed
+
+- **Field extraction no longer fails because it asks the model for more output than the model allows.** The workflow
+  estimates the worst-case output of the field schema and sent that estimate as the call's max tokens, uncapped. The
+  estimate is large: the validation-warning allowance alone is about 67k tokens, and one Tags field at its default
+  configuration adds about 103k. A provider refuses a request above its model's limit, so the call returned
+  `400 Bad Request` on every retry and the document ended **Failed**. SiliconFlow refused DeepSeek-V3 at 177,664
+  ("exceeded max_seq_len (163840)") for a type with a Tags field. OpenAI's `gpt-4o-mini` allows 16,384 completion
+  tokens, less than the validation-warning allowance alone, so every field-extraction call against it asked for more
+  than the model allows. The estimate is now sent only up to
+  `Vault:ExtractBehavior:MaxFieldExtractionOutputTokens`. Documents already Failed this way recover with **Retry** on
+  the document page, or `POST /api/vault-extract/documents/{id}/retry-pipeline` with `"pipelineCode": "field-extraction"`.
+  `FieldExtractionWorkflow`'s constructor now also takes `IOptions<VaultExtractBehaviorOptions>`, so a host that
+  subclasses it passes that through.
 
 ## [0.6.0] - 2026-10-29
 
