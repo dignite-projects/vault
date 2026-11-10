@@ -21,7 +21,7 @@ content requiring IDP: scans / photos / PDF images / Office files / digital-born
 ## Solution structure
 
 ```
-vault-extract/
+vault/
 ├── core/      # Channel implementation — ABP layers (Abstractions / Domain.Shared / Domain / Application / EntityFrameworkCore / HttpApi / Mcp) plus the text-extraction providers
 ├── host/      # Host application — provider wiring (OCR + AI) and middleware (ASP.NET Core API)
 ├── angular/   # Angular SPA (operator UI) and the @dignite/ng.vault-extract library
