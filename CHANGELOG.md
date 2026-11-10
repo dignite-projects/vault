@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the document page, or `POST /api/vault-extract/documents/{id}/retry-pipeline` with `"pipelineCode": "field-extraction"`.
   `FieldExtractionWorkflow`'s constructor now also takes `IOptions<VaultExtractBehaviorOptions>`, so a host that
   subclasses it passes that through.
+- **A provider's permanent refusal no longer sends the same request again for two days.** The parse (OCR),
+  classification and field-extraction jobs failed the run and rethrew every exception for ABP's job retry. That is
+  right for throttling, timeouts and server errors. A provider that refused the request itself (an HTTP 4xx other than
+  408 or 429) refuses it on every retry, though, and each retry re-sent it; the self-test that found the max-tokens
+  bug above saw four queued jobs of one document all re-run once the cause was fixed. Those jobs now fail the run and
+  end, with a warning that names the status. The run stays **Failed** and **Retry** works as before, once the cause
+  (configuration, a model limit) is fixed. The split follows the provider SDKs' own retry policies, which retry 408,
+  429 and 5xx only. A failure without an HTTP status is retried as before.
 
 ## [0.6.0] - 2026-10-29
 

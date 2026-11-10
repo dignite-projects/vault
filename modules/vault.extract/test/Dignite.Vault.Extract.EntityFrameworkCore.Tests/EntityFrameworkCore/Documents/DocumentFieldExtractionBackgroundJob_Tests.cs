@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -205,6 +207,76 @@ public class DocumentFieldExtractionBackgroundJob_Tests
             // #510: a blocking reason (FieldExtractionIncomplete) withholds Ready -> PendingReview, not Processing.
             doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.PendingReview);
         });
+    }
+
+    /// <summary>
+    /// A provider that refuses the request itself (a 4xx other than 408 / 429 — the 2026-11-10 self-test hit
+    /// "max_tokens exceeded max_seq_len", a 400) refuses it again on every retry. The job fails the run and returns
+    /// instead of handing the same request back to ABP's retry loop; an operator retries the run once the cause is
+    /// fixed.
+    /// </summary>
+    [Fact]
+    public async Task A_providers_permanent_refusal_fails_the_run_and_ends_the_job_without_rethrowing()
+    {
+        var documentId = await SeedClassifiedDocumentAsync("type.refused");
+        _workflow
+            .ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<FieldExtractionWorkflowResult>(
+                new HttpRequestException("Service request failed.", null, HttpStatusCode.BadRequest)));
+
+        await _job.ExecuteAsync(new DocumentFieldExtractionJobArgs { DocumentId = documentId, PipelineRunId = null });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var run = await _runRepository.FindLatestByDocumentAndCodeAsync(documentId, VaultExtractPipelines.FieldExtraction);
+            run!.Status.ShouldBe(PipelineRunStatus.Failed);
+            (await _documentRepository.GetAsync(documentId)).LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Failed);
+        });
+    }
+
+    /// <summary>
+    /// Throttling, timeouts and server errors can succeed on a later attempt, so the job still fails the run and
+    /// rethrows for ABP to retry.
+    /// </summary>
+    [Fact]
+    public async Task A_retryable_provider_failure_still_rethrows_for_ABP_to_retry()
+    {
+        var documentId = await SeedClassifiedDocumentAsync("type.unavailable");
+        _workflow
+            .ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<FieldExtractionWorkflowResult>(
+                new HttpRequestException("Service unavailable.", null, HttpStatusCode.ServiceUnavailable)));
+
+        await Should.ThrowAsync<HttpRequestException>(
+            () => _job.ExecuteAsync(new DocumentFieldExtractionJobArgs { DocumentId = documentId, PipelineRunId = null }));
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var run = await _runRepository.FindLatestByDocumentAndCodeAsync(documentId, VaultExtractPipelines.FieldExtraction);
+            run!.Status.ShouldBe(PipelineRunStatus.Failed);
+        });
+    }
+
+    private async Task<Guid> SeedClassifiedDocumentAsync(string typeCode)
+    {
+        var typeId = _guidGenerator.Create();
+        var documentId = _guidGenerator.Create();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await _documentTypeRepository.InsertAsync(new DocumentType(typeId, null, typeCode, typeCode), autoSave: true);
+            await _fieldRepository.InsertAsync(
+                new Field(_guidGenerator.Create(), null, typeId, "amount", "Amount", NumberFieldType.ControlName,
+                    description: "extract"),
+                autoSave: true);
+
+            var doc = NewDocument(documentId);
+            doc.SetMarkdown("# Body\n\nAmount: 1500");
+            doc.ApplyAutomaticClassificationResult(typeId, 0.99);
+            await _documentRepository.InsertAsync(doc, autoSave: true);
+        });
+
+        return documentId;
     }
 
     /// <summary>

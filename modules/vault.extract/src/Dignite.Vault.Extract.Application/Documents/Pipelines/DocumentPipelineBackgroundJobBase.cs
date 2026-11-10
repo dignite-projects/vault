@@ -64,6 +64,32 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
         => exception.EntityType == typeof(Document);
 
     /// <summary>
+    /// Called from a job's catch after <see cref="FailRunAsync"/>: returns <c>true</c> — the job should return instead
+    /// of rethrowing — when the provider refused the request itself (<see cref="ProviderFailureClassifier.IsPermanent"/>:
+    /// a 4xx other than 408 / 429). Rethrowing would hand the same request back to ABP's retry loop, which re-sends it
+    /// for about two days before abandoning the job (anti-pattern D in <c>.claude/rules/llm-call-anti-patterns.md</c>):
+    /// the 2026-11-10 self-test saw four queued jobs of one document all re-run once the cause was fixed. The run is
+    /// already <c>Failed</c> and retryable, so an operator retries it once the cause (configuration, a provider limit)
+    /// is fixed. Every other failure keeps returning <c>false</c>, and the caller rethrows for ABP to retry.
+    /// </summary>
+    protected virtual bool EndOnPermanentProviderFailure(Exception exception, Guid documentId, string pipelineCode)
+    {
+        if (!ProviderFailureClassifier.IsPermanent(exception))
+        {
+            return false;
+        }
+
+        ProviderFailureClassifier.TryGetHttpStatus(exception, out var status);
+        Logger.LogWarning(
+            exception,
+            "The provider refused the {PipelineCode} request for document {DocumentId} with HTTP {Status}. The run is " +
+            "Failed and the job is not retried, because the same request would be refused again; fix the cause, then " +
+            "retry the run.",
+            pipelineCode, documentId, status);
+        return true;
+    }
+
+    /// <summary>
     /// #662: ends a job whose document is gone, instead of rethrowing into ABP's retry loop. Rethrowing used to retry
     /// the job with backoff until ABP abandoned it (about 12 attempts over two days), and a document restored after
     /// that kept a <c>Pending</c> run nothing would execute: stuck in Processing, and <c>RetryPipelineAsync</c> refuses
@@ -145,8 +171,9 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
     /// Failure closeout: in an independent short UoW, reload Document + run, mark the run failed
     /// (Manager derives LifecycleStatus from this internally), persist the Document main row, and
     /// commit. The failure paths for the two jobs are identical except for
-    /// <paramref name="pipelineCode"/>, so this is lifted to the base class. Callers typically
-    /// rethrow after calling this from catch so ABP background job retry is triggered.
+    /// <paramref name="pipelineCode"/>, so this is lifted to the base class. Callers then ask
+    /// <see cref="EndOnPermanentProviderFailure"/> and rethrow only when it returns <c>false</c>, so ABP background
+    /// job retry is triggered for failures a retry can fix.
     /// </summary>
     protected virtual async Task FailRunAsync(
         Guid documentId,
