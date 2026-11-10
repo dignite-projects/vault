@@ -23,6 +23,9 @@
          "never indexed" stays structural, and ContentFormat=Markdown persists a plain GFM string. -->
     <PackageReference Include="Dignite.Abp.FlexFields.CKEditor" />
     <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" />
+    <PackageReference Include="Volo.Abp.Core" />
+    <PackageReference Include="Volo.Abp.EventBus.Abstractions" />
+    <PackageReference Include="Volo.Abp.VirtualFileSystem" />
   </ItemGroup>
 
   <ItemGroup>
