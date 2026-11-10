@@ -13,10 +13,10 @@
     "@abp/ng.core": "~10.7.0",
     "@abp/ng.permission-management": "~10.7.0",
     "@abp/ng.theme.shared": "~10.7.0",
-    "@dignite/ng.flex-fields": "10.7.1",
-    "@dignite/ng.flex-fields-ckeditor": "10.7.1",
-    "marked": "^18.0.0",
-    "tslib": "^2.1.0"
+    "@dignite/ng.flex-fields": "10.7.4",
+    "@dignite/ng.flex-fields-ckeditor": "10.7.4",
+    "marked": "^18.1.3",
+    "tslib": "^2.9.1"
   },
   "peerDependencies": {
     "@angular/common": "^22.0.0",

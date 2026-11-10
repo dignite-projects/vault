@@ -19,9 +19,9 @@
     "@abp/ng.tenant-management": "~10.7.0",
     "@abp/ng.theme.lepton-x": "~5.7.0",
     "@abp/ng.theme.shared": "~10.7.0",
-    "@dignite/ng.flex-fields": "10.7.1",
-    "@dignite/ng.flex-fields-ckeditor": "10.7.1",
-    "@dignite/ng.notification-center": "10.7.1",
-    "marked": "^18.0.0"
+    "@dignite/ng.flex-fields": "10.7.4",
+    "@dignite/ng.flex-fields-ckeditor": "10.7.4",
+    "@dignite/ng.notification-center": "10.7.4",
+    "marked": "^18.1.3"
   }
 }
