@@ -186,6 +186,11 @@ public class DocumentParseBackgroundJob
         catch (Exception ex)
         {
             await FailRunAsync(args.DocumentId, workItem.RunId, ex.Message, VaultExtractPipelines.Parse);
+            if (EndOnPermanentProviderFailure(ex, args.DocumentId, VaultExtractPipelines.Parse))
+            {
+                return;
+            }
+
             throw;
         }
     }

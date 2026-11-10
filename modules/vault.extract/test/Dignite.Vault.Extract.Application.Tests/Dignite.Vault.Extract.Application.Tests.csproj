@@ -16,6 +16,9 @@
     <PackageReference Include="Volo.Abp.EntityFrameworkCore.Sqlite" />
     <!-- #680: only to pin the SignalR channel name Application spells out (DocumentNotificationDefinitions_Tests). -->
     <PackageReference Include="Dignite.Abp.Notifications.SignalR" />
+    <!-- Only for System.ClientModel.ClientResultException, the exception the OpenAI SDK throws for a provider's
+         4xx/5xx answer (ProviderFailureClassifier_Tests). Same package and version the host uses. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
   </ItemGroup>
 
   <ItemGroup>

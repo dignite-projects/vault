@@ -98,6 +98,11 @@ public class DocumentClassificationBackgroundJob
         catch (Exception ex)
         {
             await FailRunAsync(workItem.DocumentId, workItem.RunId, ex.Message, VaultExtractPipelines.Classification);
+            if (EndOnPermanentProviderFailure(ex, workItem.DocumentId, VaultExtractPipelines.Classification))
+            {
+                return;
+            }
+
             throw;
         }
     }

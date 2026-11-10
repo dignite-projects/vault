@@ -28,7 +28,8 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 /// Same three stages as the classification job: BeginRun (short UoW creates / resumes run and marks
 /// Running), external LLM extraction (no UoW), then CompleteRun (short UoW marks Succeeded). Any
 /// exception calls <see cref="DocumentPipelineBackgroundJobBase{TArgs}.FailRunAsync"/> to mark Failed,
-/// then rethrows to trigger ABP background job retry.
+/// then rethrows to trigger ABP background job retry — except a provider's permanent refusal of the request
+/// (<see cref="DocumentPipelineBackgroundJobBase{TArgs}.EndOnPermanentProviderFailure"/>), which ends the job.
 /// </para>
 /// </summary>
 [BackgroundJobName("VaultExtract.DocumentFieldExtraction")]
@@ -88,6 +89,11 @@ public class DocumentFieldExtractionBackgroundJob
         catch (Exception ex)
         {
             await FailRunAsync(documentId, runId, ex.Message, VaultExtractPipelines.FieldExtraction);
+            if (EndOnPermanentProviderFailure(ex, documentId, VaultExtractPipelines.FieldExtraction))
+            {
+                return;
+            }
+
             throw;
         }
     }
