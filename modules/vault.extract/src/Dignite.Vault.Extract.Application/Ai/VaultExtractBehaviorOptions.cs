@@ -108,4 +108,23 @@ public class VaultExtractBehaviorOptions
     /// well below the default document-body ceiling.
     /// </summary>
     public int MaxFieldSchemaPromptLength { get; set; } = 32_000;
+
+    /// <summary>
+    /// Upper bound on the output tokens one field-extraction call requests (<c>ChatOptions.MaxOutputTokens</c>).
+    /// <para>
+    /// The workflow estimates a worst case from the field schema — every Tags slot and every validation warning at
+    /// its maximum length, CJK at 4 tokens per character — and that estimate is large: the validation-warning
+    /// allowance alone is ~67k tokens, and one default-configured Tags field adds ~103k. A provider refuses a request
+    /// whose max-tokens value exceeds what its model allows (OpenAI's gpt-4o-mini allows 16,384 completion tokens;
+    /// SiliconFlow refused 177,664 for DeepSeek-V3 with "exceeded max_seq_len (163840)"), and that refusal recurs on
+    /// every retry, so the document ends Failed. The estimate is therefore sent only up to this ceiling.
+    /// </para>
+    /// <para>
+    /// Set it to the structured model's maximum output tokens. It is a ceiling the model normally stops far short of;
+    /// a response that genuinely needs more ends with finish reason <c>Length</c>, which the workflow logs and
+    /// degrades (the fields that did not finish parse as null) instead of failing the call. Default 16,384. Must be
+    /// greater than zero.
+    /// </para>
+    /// </summary>
+    public int MaxFieldExtractionOutputTokens { get; set; } = 16_384;
 }
