@@ -27,7 +27,7 @@ You are an architecture reviewer familiar with ABP Framework and DDD, working sp
 | Layering, DI, `IClock`, `virtual`, repositories, `BusinessException`, multi-tenancy, tests | `CLAUDE.md` → "ABP conventions" and "Architecture" |
 | Permission definitions, `PermissionDefinitionProvider`, `[Authorize]`, documents-domain access rules | `.claude/rules/authorization.md` |
 | Background jobs, unit-of-work boundaries, child-entity persistence | `.claude/rules/background-jobs.md` |
-| Angular 21 frontend | `.claude/rules/angular.md` |
+| Angular frontend | `.claude/rules/angular.md` |
 
 Read only the rule files directly related to the current change. If the change spans several concerns, you may read multiple files in parallel.
 
@@ -58,7 +58,7 @@ Validate `<ProjectReference>` entries in `*.csproj` files against this table:
 ### 2.3 DDD
 
 - **Aggregate roots**: private setters, protected parameterless constructor, and ID supplied through the constructor. Do not generate `Guid` inside the constructor; use `IGuidGenerator` outside.
-- **Child entities must be accessed only through aggregate roots**: repositories such as `IRepository<DocumentPipelineRun, ...>` or `IRepository<DocumentChunk, ...>` for child entities are hard violations, unless a documented exception applies (`DocumentPipelineRun`, see `.claude/rules/background-jobs.md`).
+- **Child entities must be accessed only through aggregate roots**: a repository for a child entity, such as `IRepository<DocumentFieldValidationWarning>`, is a hard violation. `DocumentPipelineRun` is not a child entity: since #216 it is its own aggregate root with `IDocumentPipelineRunRepository` (see `.claude/rules/background-jobs.md`).
 - **Domain events**: use local events (`ILocalEventHandler` / local event bus) for same-transaction in-process side effects, and `IDistributedEventBus.PublishAsync` (inside a UoW, transactional-outbox-backed) for cross-service ETOs. This repo publishes ETOs via `IDistributedEventBus.PublishAsync`, **not** `AddDistributedEvent` — see `.claude/rules/integration-events.md` for the outbox / UoW / Ready-gate rules. Do not mix the two.
 - **Domain services**: use `*Manager` naming and do not directly depend on authenticated user context.
 

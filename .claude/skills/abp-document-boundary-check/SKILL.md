@@ -25,9 +25,11 @@ The following fields are infrastructure-level:
 | Cabinet / organization dimension | `CabinetId` |
 | Lifecycle | `LifecycleStatus` |
 | Text extraction | `Markdown` as the only text payload, `Title` as a Markdown-derived display snapshot, `Language`, `ExtractionMetadata` |
-| Type-bound extracted field values | `ExtractedFieldValues` (`IReadOnlyCollection<DocumentExtractedField>`) |
+| Type-bound extracted field values | `FlexFields` (`FlexFieldDictionary`, keyed by `Field.Name`; every key is backed by a field definition), `FieldValidationWarnings` (warning messages only, #527) |
 | AI classification common metadata | `DocumentTypeId` as the internal immutable association, external wire-format `DocumentTypeCode`, `ClassificationConfidence` |
 | Human review | `ReviewDisposition`, `ReviewReasons`, `RejectionReason` |
+| Duplicate detection (#411) | `FieldFingerprint` (hash of the type's unique-key field values), `DuplicateAllowed` (operator override) |
+| Sub-document segmentation | `IsContainer`, `IsSegmented`, `OriginDocumentId`, `OriginConstituentKey` |
 
 Notes:
 
@@ -90,7 +92,7 @@ Run this check when any of the following is true:
 
 - This skill reports; it does not edit `Document.cs`.
 - Do not misclassify existing generic metadata fields such as `ReviewDisposition`, `DocumentTypeId`, or `ExtractionMetadata` as business-specific.
-- Do not apply the same rule to aggregate-internal infrastructure entities such as `DocumentExtractedField` or `DocumentPipelineRun`. This boundary check is about the `Document` aggregate root itself.
+- Do not apply the same rule to other infrastructure entities such as `DocumentFieldValidationWarning` (a child of `Document`) or `DocumentPipelineRun` (its own aggregate root). This boundary check is about the `Document` aggregate root itself.
 
 ## References
 
