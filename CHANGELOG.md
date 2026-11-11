@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     wraps, so the `<document>` / `<field>` boundary holds as before.
   - A rich-text (CKEditor) field keeps `mailto:` and `tel:` links; before, they lost their `href`.
   - The CKEditor `Full` toolbar has left, center and right alignment for HTML fields.
+- **Extension points for a host that subclasses the module.** `DocumentPipelineRunManager.PersistAndDeriveAsync` and
+  `CabinetReadAppService.CheckReadPolicyAsync` are `protected virtual` (they were `private`), and
+  `DocumentTypePackAppService` has a protected `BackgroundJobManager` property. No constructor changed.
+- **CI runs the `Ocr.PaddleOcr` and `Ocr.AzureDocumentIntelligence` test projects.** The host does not wire either
+  provider, but both packages are published, so their tests now gate a release.
 
 ### Fixed
 
@@ -96,6 +101,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   releases it, as before. Those later actions are still allowed on a rejected document; they just no longer change
   its status. Decided without a separate issue: the code already documented rejection as dominant and did not
   enforce it.
+- **Sub-document detection no longer retries a provider's permanent refusal.** The segmentation job was left out
+  of the rule above: an HTTP 4xx other than 408 or 429 from the structured model went back to ABP's retry loop. It
+  now ends the detection the way a schema-drift answer does: a container gets the `SegmentationIncomplete` review
+  reason, a concrete document skips figure routing and extracts normally. Re-parsing the document runs the split
+  again once the cause is fixed.
+- **One slow figure no longer fails the whole document.** A PDF, DOCX or PPTX with embedded images sends each image
+  to the OCR provider, and a failed image is meant to be skipped with the result marked incomplete. A provider
+  *timeout* escaped that rule, because it surfaces as a cancellation, and failed the parse run after the other
+  figures had already been paid for. A timeout now skips the figure like any other figure failure;
+  `extractionIsComplete` is `false` and the reason says how many figures were lost. A host or job shutdown still
+  aborts the parse.
+- **A PDF page with a drawn table grid, a picture and no text no longer fails the parse.** Such a page (an image-only
+  form page, or one whose only text was a running header) threw `ArgumentOutOfRangeException` and took the whole
+  document with it. It now renders its figure transcription.
+- **A document uploaded with a declared type and no extractable text no longer reaches Ready with no fields.** The
+  declared type was applied even when the parse produced no text, field extraction ran over an empty body, and
+  the document was released. The declaration is now retracted and the document goes through automatic
+  classification, which routes it to review like any other empty upload. Confirming a type by hand already refused
+  a document without text.
+- **A file ElBruno cannot convert is reported incomplete.** A corrupt `.html`, `.rtf` or `.epub` was stored as a
+  complete, empty document. `extractionIsComplete` is now `false` with the reason "The file could not be converted
+  (corrupt or unsupported format)", as it already was for a DOCX or PPTX that cannot be opened. A PDF is unaffected:
+  an empty PDF result still falls back to whole-page OCR.
+- **Turning a field's unique key off releases the documents it had parked.** Deleting the last unique-key field
+  cleared the duplicate basis; switching `IsUniqueKey` off, in the field editor or through a `CreateOrUpdate` pack
+  import, did not, so documents stayed blocked by a `DuplicateSuspected` that no schema backed any more. Both paths
+  now queue the same cleanup. Documents parked this way before the upgrade are released by switching the flag on
+  and off again, or by **Allow duplicate**.
+- **The document page explains a document that is waiting because its body is too large for field extraction.**
+  `reviewReasonDetails` had no item for `FieldExtractionIncomplete`, although the reason blocks Ready, so the page
+  showed neither the reason nor "waiting for reviewer". The REST detail response now carries the item
+  (`isBlocking: true`).
+- **PaddleOCR and Azure Document Intelligence separate fallback paragraphs with `\n\n` on every platform.** They
+  used the platform line ending, so the same file produced CRLF Markdown on Windows and LF on Linux. Linux
+  deployments see no change.
+- Smaller fixes: a pipeline run's status message is cut on a character boundary (a long provider error could end
+  in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
 
 ## [0.6.0] - 2026-10-29
 
