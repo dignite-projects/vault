@@ -29,7 +29,7 @@ vault/
 ├── src/                 # Host application — provider wiring (OCR + AI) and middleware (ASP.NET Core API)
 ├── angular/             # Host SPA (operator UI); compiles the module libraries from source
 ├── etc/                 # Docker, ABP Studio run profile, scripts, PaddleOCR sidecar
-└── docs/                # Documentation: setup, configuration, egress contracts, deployment (design decisions go to GitHub Issues, not here)
+└── docs/                # Documentation: setup, configuration, egress contracts, deployment
 ```
 
 Business modules (contract management / invoice management / HR records / etc.) are **not** in this repo — they belong on the downstream consumer side per the channel philosophy.

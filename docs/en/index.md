@@ -97,7 +97,7 @@ scans · photos · PDFs · Office files
 
 ## Design Decisions and Changes
 
-Design decisions are recorded in [GitHub Issues](https://github.com/dignite-projects/vault/issues), and every release's changes, including breaking ones and their migrations, in [CHANGELOG.md](https://github.com/dignite-projects/vault/blob/main/CHANGELOG.md). These pages describe the current behavior.
+These pages describe the current behavior. Every release's changes, including breaking ones and their migrations, are in [CHANGELOG.md](https://github.com/dignite-projects/vault/blob/main/CHANGELOG.md). Older design decisions were written up in [GitHub Issues](https://github.com/dignite-projects/vault/issues), which remain as their record.
 
 ## See Also
 

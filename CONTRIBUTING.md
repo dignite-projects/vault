@@ -63,7 +63,9 @@ npm run lint                      # ng lint host
 
 A **boundary change** is one that alters a contract visible outside its module: an exit contract (REST / MCP / EventBus / Webhook, event payloads), a module's public API or the module-reference rules, a serialized string contract (error codes, localization resource names, configuration sections, blob container names), or a normative rule in CLAUDE.md or `.claude/rules/` itself. The channel boundaries are the usual cases: the OCR / text-extraction pipeline, exit contracts, the field architecture, the document-type tier system, the Markdown-first contract and the security covenant.
 
-A boundary change must start with a GitHub Issue that states the decision and its reasoning, and reach consensus there **before** the PR that implements it is opened. A throwaway spike that informs the decision may come first, but it is not merged.
+A boundary change proposed by an outside contributor must start with a GitHub Issue that states the decision and its reasoning, and reach consensus there **before** the PR that implements it is opened. A throwaway spike that informs the decision may come first, but it is not merged.
+
+The maintainers do not open an Issue for their own boundary decisions. Those are recorded where the contract's consumers read them: the pages under [`docs/`](./docs/en/index.md) and [CHANGELOG.md](./CHANGELOG.md).
 
 Implementation details (bug fixes, wording corrections, a new provider behind an existing contract) don't need an Issue — a descriptive commit message is enough.
 
@@ -71,7 +73,7 @@ Not accepted into the Extract module: business modules (contract / invoice / HR 
 
 ## Branch naming
 
-Branches follow `<type>/<issue-number>-<short-description>` (issue number is required for boundary-touching changes; may be omitted for minor work with no associated Issue):
+Branches follow `<type>/<issue-number>-<short-description>` (include the issue number when the work has an associated Issue; omit it otherwise):
 
 | Prefix | When to use |
 |---|---|
@@ -107,7 +109,7 @@ Listing an AI tool as a commit `Co-Authored-By` trailer is **not required**; the
 
 - Target the `main` branch.
 - CI (`.github/workflows/ci.yml`) must pass: it builds the core solution and the host, runs the backend test suites (Domain, Application, EntityFrameworkCore, MCP, OCR VisionLlm, and host), and builds / lints / tests the Angular workspace.
-- Keep PRs scoped to one concern, and reference the related Issue (required for boundary-touching changes, see above).
+- Keep PRs scoped to one concern, and reference the related Issue when there is one (an outside contribution that changes a boundary needs one, see above).
 - Use the PR template checklist (`.github/pull_request_template.md`).
 
 ## Versioning and releases

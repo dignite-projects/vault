@@ -10,12 +10,13 @@
 ## Related issue
 
 <!--
-  Link the issue this PR addresses (e.g. "Closes #123").
-  Required for a boundary change — one that alters a contract visible outside its module:
-  exit contracts (REST / MCP / EventBus / Webhook, event payloads), a module's public API or
-  the module-reference rules, serialized string contracts, or a rule in CLAUDE.md /
-  .claude/rules/. Those must reach consensus in an issue before this PR is opened
-  (CONTRIBUTING.md → Issue-first principle).
+  Link the issue this PR addresses, if there is one (e.g. "Closes #123").
+  An outside contribution that makes a boundary change needs one. A boundary change alters a
+  contract visible outside its module: exit contracts (REST / MCP / EventBus / Webhook, event
+  payloads), a module's public API or the module-reference rules, serialized string contracts,
+  or a rule in CLAUDE.md / .claude/rules/. It must reach consensus in an issue before this PR
+  is opened (CONTRIBUTING.md → Issue-first principle). Maintainers record their own boundary
+  decisions in docs/ and CHANGELOG.md instead.
 -->
 
 ## Checklist
@@ -25,4 +26,4 @@
 - [ ] Follows the conventions in `.claude/rules/` and CLAUDE.md (dependency direction, ABP patterns, Markdown-first, LLM-call security covenant)
 - [ ] Documentation updated if behavior, configuration, or exit contracts changed
 - [ ] No middleware configured outside the host application
-- [ ] For boundary changes: a GitHub Issue exists and consensus was reached before this PR was opened
+- [ ] For boundary changes: the affected pages under `docs/` and `CHANGELOG.md` are updated (an outside contribution also links the Issue where the change was agreed)

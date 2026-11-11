@@ -92,7 +92,7 @@ A **container** document (a bundle of several documents) never fires `DocumentRe
 
 ## Compatibility
 
-The wire names and payload shapes on this page are stable from the 0.5.0 line. Adding an optional property is non-breaking; renaming a wire name or removing a property is a BREAKING entry in `CHANGELOG.md` with a migration note, and is preceded by a GitHub Issue. Every ETO carries `Version = "1.0"`; it is informational today — do not branch on it — and changes only alongside a breaking payload change announced in the CHANGELOG.
+The wire names and payload shapes on this page are stable from the 0.5.0 line. Adding an optional property is non-breaking; renaming a wire name or removing a property is a BREAKING entry in `CHANGELOG.md` with a migration note. Every ETO carries `Version = "1.0"`; it is informational today — do not branch on it — and changes only alongside a breaking payload change announced in the CHANGELOG.
 
 ## Non-guarantees
 
