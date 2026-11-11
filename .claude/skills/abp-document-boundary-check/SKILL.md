@@ -1,23 +1,22 @@
 ---
 name: abp-document-boundary-check
-description: Verify that the Document aggregate remains a pure infrastructure aggregate, and scan for forbidden business fields such as contract amount, expiration date, invoice number, and similar domain-specific data. Use this after editing Document.cs, when adding a business module, or before closing a Slice.
+description: Check that the Document aggregate still holds only infrastructure data, and scan for business-specific fields such as contract amount, expiration date, invoice number, and similar domain-specific data. Use this after editing Document.cs, when adding a business module, or before closing a Slice.
 ---
 
 # Document Aggregate Boundary Check
 
-## Background And Invariants
+## Background
 
-`CLAUDE.md` defines a mandatory constraint:
+`CLAUDE.md` ("Field architecture") describes how `Document` is shaped today, and this skill checks a change against that shape:
 
-> `Document` is a channel-layer infrastructure aggregate root. Its responsibility is limited to file storage, lifecycle state, text extraction output, AI classification output, and type-bound extracted field values.
->
-> Do not add fields from downstream business modules to `Document`, such as contract amount, expiration date, counterparty name, invoice number, or similar business facts. Those fields belong to the downstream module's own aggregate root, and the downstream module should persist and query them after receiving `DocumentClassifiedEto` / `DocumentReadyEto`.
+- `Document` is a channel-layer infrastructure aggregate root. It holds file storage, lifecycle state, text extraction output, AI classification output, and type-bound extracted field values.
+- Business facts (contract amount, expiration date, counterparty name, invoice number) live in the downstream module's own aggregate root, which persists them after receiving `DocumentClassifiedEto` / `DocumentReadyEto`.
 
 Decision rule: if a field only makes sense in a specific business scenario such as contracts, invoices, reimbursements, licenses, HR, medical claims, or insurance, it does not belong on `Document`.
 
-## Fields Currently Allowed On Document.cs
+## Fields Currently On Document.cs
 
-The following fields are infrastructure-level fields and are allowed:
+The following fields are infrastructure-level:
 
 | Field Category | Field Names (Examples) |
 | --- | --- |
@@ -33,19 +32,19 @@ The following fields are infrastructure-level fields and are allowed:
 Notes:
 
 - `DocumentTypeId` / `DocumentTypeCode` are generic document type identifiers, not business fields.
-- `Markdown` is the only text payload. Do not introduce parallel text fields such as `ExtractedText`, `Summary`, or `RawText`.
-- `ExtractionMetadata` stores provenance only, such as provider name, native payload blob manifest, and integrity or quality signals. Do not turn it into a business-field bag.
+- `Markdown` is the only text payload. A parallel text field such as `ExtractedText`, `Summary`, or `RawText` would put a second text payload on the egress.
+- `ExtractionMetadata` stores provenance only, such as provider name, native payload blob manifest, and integrity or quality signals. It is not a business-field bag.
 
-## Forbidden Patterns
+## Business-Specific Patterns To Look For
 
-Any field name or property meaning that only applies to a specific business scenario should move to that downstream business module's own aggregate root. Common red flags:
+A field name or property meaning that only applies to a specific business scenario belongs in that downstream business module's own aggregate root. Common signs:
 
 - Contract-related: `Amount`, `Currency`, `ContractNumber`, `EffectiveDate`, `ExpirationDate`, `ExpiryDate`, `Counterparty`, `CounterpartyName`, `SignedAt`, `SignedBy`, `ContractType`
 - Invoice-related: `InvoiceNumber`, `InvoiceCode`, `TaxAmount`, `TaxRate`, `Buyer`, `Seller`, `IssuedAt`, `LineItems`
 - Reimbursement / finance: `ReimbursementCategory`, `Reimbursable`, `CostCenter`, `Project`
 - License / HR: `HolderName`, `IDNumber`, `IssuingAuthority`, `LicenseNumber`, `ValidFrom`, `ValidUntil`
 - Any field containing industry-specific terms such as `PolicyNumber`, `PatientId`, or `ClaimAmount`
-- Vectorization-related fields such as `HasEmbedding`, `EmbeddingStatus`, or similar. Vectorization belongs to downstream RAG systems and is outside the Dignite Vault Extract channel layer, so these fields are not allowed on `Document`.
+- Vectorization state such as `HasEmbedding`, `EmbeddingStatus`, or similar. Retrieval belongs to the planned `vault.index` module, which keeps its own state.
 
 ## Trigger Scenarios
 
@@ -69,29 +68,28 @@ Run this check when any of the following is true:
 
 2. **Classify ownership for each field**
 
-   Compare each field against the allowed field categories and forbidden patterns above. For a suspicious field, do not immediately conclude that it is invalid. Answer these questions first:
+   Compare each field against the field categories and the business-specific patterns above. A name that matches a pattern is not a finding by itself. Answer these questions first:
 
-   - Does the field's meaning hold across all document types? Allowed if yes; invalid if no.
-   - Is it metadata, state, or orchestration data, or is it a business fact? Allowed for the former; invalid for the latter.
-   - Is it written by channel-layer pipeline code, or by a downstream business module / business-specific extractor? Allowed for the former; invalid for the latter.
+   - Does the field's meaning hold across all document types? Infrastructure if yes; business-specific if no.
+   - Is it metadata, state, or orchestration data, or is it a business fact? Infrastructure for the former; business-specific for the latter.
+   - Is it written by channel-layer pipeline code, or by a downstream business module / business-specific extractor? Infrastructure for the former; business-specific for the latter.
 
-3. **If a violation is found, give a migration recommendation**
+3. **If a field is business-specific, say where it belongs**
 
-   Do not directly fix the code. Output:
+   Report:
 
-   - The violating field name.
-   - The business domain it belongs to, such as contracts, invoices, reimbursements, licenses, or HR. The downstream business consumer should implement it in its own repository and aggregate.
-   - This exact conclusion in substance: "This field belongs to a downstream business aggregate root. The downstream consumer should subscribe to `DocumentClassifiedEto` / `DocumentReadyEto` and persist it in its own aggregate root. The Dignite Vault Extract `Document` aggregate is pure infrastructure and must not be polluted."
-   - A reference to the relevant `CLAUDE.md` section for user review.
+   - The field name.
+   - The business domain it belongs to, such as contracts, invoices, reimbursements, licenses, or HR.
+   - Where it fits instead: the downstream consumer's own aggregate root, filled after `DocumentClassifiedEto` / `DocumentReadyEto`; or, if the customer wants it extracted per document type, a type-bound field configured through mechanism B.
 
-4. **If no violation is found, give a short confirmation**
+4. **If none is found, give a short confirmation**
 
-   List the current fields and their ownership categories, confirm that all of them are within the allowed field categories, and report the checked change range, such as the latest `git diff Document.cs`.
+   List the current fields and their categories, and report the checked change range, such as the latest `git diff Document.cs`.
 
 ## What Not To Do
 
-- Do not proactively edit `Document.cs` to remove fields. That is a design decision and requires user confirmation.
-- Do not misclassify existing generic metadata fields such as `ReviewDisposition`, `DocumentTypeId`, or `ExtractionMetadata` as violations.
+- This skill reports; it does not edit `Document.cs`.
+- Do not misclassify existing generic metadata fields such as `ReviewDisposition`, `DocumentTypeId`, or `ExtractionMetadata` as business-specific.
 - Do not apply the same rule to aggregate-internal infrastructure entities such as `DocumentExtractedField` or `DocumentPipelineRun`. This boundary check is about the `Document` aggregate root itself.
 
 ## References

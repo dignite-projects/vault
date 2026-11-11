@@ -62,18 +62,17 @@ Validate `<ProjectReference>` entries in `*.csproj` files against this table:
 - **Domain events**: use local events (`ILocalEventHandler` / local event bus) for same-transaction in-process side effects, and `IDistributedEventBus.PublishAsync` (inside a UoW, transactional-outbox-backed) for cross-service ETOs. This repo publishes ETOs via `IDistributedEventBus.PublishAsync`, **not** `AddDistributedEvent` — see `.claude/rules/integration-events.md` for the outbox / UoW / Ready-gate rules. Do not mix the two.
 - **Domain services**: use `*Manager` naming and do not directly depend on authenticated user context.
 
-### 2.4 Common ABP Anti-Patterns (CLAUDE.md "ABP conventions")
+### 2.4 Common ABP Anti-Patterns
 
-Search for these hard violations:
+Search for these:
 
 | Anti-Pattern | Suggested Grep Pattern |
 | --- | --- |
 | `DateTime.Now` / `DateTime.UtcNow` | `\bDateTime\.(Now\|UtcNow)\b` excluding `Migrations/` and `*.Designer.cs` |
 | Manual `AddScoped` / `AddTransient` / `AddSingleton` instead of marker interfaces | `\.(AddScoped\|AddTransient\|AddSingleton)\(` |
-| `MediatR` usage | `using MediatR\b` |
 | `DbContext` inside `*AppService.cs` | grep `DbContext` under `**/Application/**/*AppService.cs` |
 | Custom `UnitOfWork` class instead of `IUnitOfWorkManager` | `class \w+UnitOfWork` |
-| `Result.Result` / `.Wait()` | `\.Result\b\|\.Wait\(\)` |
+| `.Result` / `.Wait()` on a task (blocks a thread, can deadlock) | `\.Result\b\|\.Wait\(\)` |
 
 ### 2.5 Module Development
 
@@ -89,15 +88,15 @@ Apply this to the reusable core modules such as `Dignite.Vault.Parse` and `Digni
 - Cross-tenant queries must use `using (DataFilter.Disable<IMultiTenant>()) { ... }` and explain why in a comment.
 - `using (CurrentTenant.Change(id)) { ... }` must use a `using` block so the tenant context is restored.
 
-### 2.7 Document Aggregate Boundary (Mandatory)
+### 2.7 Document Aggregate Boundary
 
-This is one of the easiest areas to get wrong in this project. See `.claude/skills/abp-document-boundary-check/SKILL.md`. If a change touches:
+`Document` holds no business-specific fields (CLAUDE.md "Field architecture"), and this is one of the easiest areas to get wrong in this project. See `.claude/skills/abp-document-boundary-check/SKILL.md`. If a change touches:
 
 - `modules/vault.extract/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`
 - `modules/vault.extract/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`
 - EF Core configuration or migrations touching the `VaultDocuments` table
 
-then invoke the `abp-document-boundary-check` skill, or perform the equivalent check yourself. Any suspicious business field, such as contract amount, invoice number, or expiration date, should be marked as a 🔴 hard violation.
+then invoke the `abp-document-boundary-check` skill, or perform the equivalent check yourself. Report a field that the check classifies as business-specific (contract amount, invoice number, expiration date) as 🔴, and say where it belongs instead.
 
 ## 3. Output Format
 
