@@ -63,7 +63,7 @@ npm run lint                      # ng lint host
 
 A **boundary change** is one that alters a contract visible outside its module: an exit contract (REST / MCP / EventBus / Webhook, event payloads), a module's public API or the module-reference rules, a serialized string contract (error codes, localization resource names, configuration sections, blob container names), or a normative rule in CLAUDE.md or `.claude/rules/` itself. The channel boundaries are the usual cases: the OCR / text-extraction pipeline, exit contracts, the field architecture, the document-type tier system, the Markdown-first contract and the security covenant.
 
-A boundary change must start with a GitHub Issue that states the decision and its reasoning, and reach consensus there **before** the PR that implements it is opened. A throwaway spike that informs the decision may come first, but it is not merged. This is rule 2 of CLAUDE.md's working rules.
+A boundary change must start with a GitHub Issue that states the decision and its reasoning, and reach consensus there **before** the PR that implements it is opened. A throwaway spike that informs the decision may come first, but it is not merged.
 
 Implementation details (bug fixes, wording corrections, a new provider behind an existing contract) don't need an Issue — a descriptive commit message is enough.
 

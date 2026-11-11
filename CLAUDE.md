@@ -5,6 +5,8 @@
 
 An ABP framework project. Most rules under `.claude/rules/` carry a `paths:` glob and are **auto-loaded when you edit matching code**. This file keeps only what you must know *before* touching any code; the mechanics live in those rule files.
 
+It describes the current design and the rules whose violation breaks something concrete (a security hole, a cross-tenant leak, a wire or database break, a failed CI check). It does not decide future design questions: when one comes up, decide it on its merits.
+
 ## Project layout
 
 - **modules/vault.extract/** - the channel implementation (ABP module stack: `src/`, `test/`) and its Angular library (`angular/`, published as `@dignite/ng.vault-extract`)
@@ -15,7 +17,7 @@ An ABP framework project. Most rules under `.claude/rules/` carry a `paths:` glo
 
 The repo is the Vault suite monorepo (#716): one version for every module in the root `common.props`. Module references are checked in CI by `etc/scripts/check-module-references.mjs`: `vault.parse` references nothing outside itself, `vault.extract` may reference `vault.parse` but never `vault.index`, and `vault.index` reaches Extract only through `Abstractions` / `Application.Contracts` / `HttpApi.Client`. All Angular workspaces share **one** `npm install` at the repo root; never install inside a module's `angular/`, or the host bundles a second Angular runtime (CI: `check:single-angular`).
 
-> **Naming convention**: the C# type / module prefix is **`VaultExtract`** — the namespace `Dignite.Vault.Extract` minus the company token, mirroring ABP's `Volo.Abp.Identity` → `AbpIdentity*Module` (e.g. `VaultExtractHttpApiModule`, `VaultExtractDbContext`, `VaultExtractErrorCodes`). **`Extract` alone is the extraction *verb*, never a type prefix** — `ExtractedField` / `*Extractor` / `TextExtraction*` / `FieldExtraction*` / `ExtractAsync` stay as-is. **Serialized string contracts are frozen even where they still read `Extract`**: error codes `"Extract:*"`, the `/Localization/Extract/` resource, config sections `Vault:Extract*`, the `"extract-documents"` blob container — rename the holder class, never the persisted string value (that is a wire / DB / i18n break → open an Issue first).
+> **Naming convention**: the C# type / module prefix is **`VaultExtract`** — the namespace `Dignite.Vault.Extract` minus the company token, mirroring ABP's `Volo.Abp.Identity` → `AbpIdentity*Module` (e.g. `VaultExtractHttpApiModule`, `VaultExtractDbContext`, `VaultExtractErrorCodes`). **`Extract` alone is the extraction *verb*, never a type prefix** — `ExtractedField` / `*Extractor` / `TextExtraction*` / `FieldExtraction*` / `ExtractAsync` stay as-is. **Serialized string contracts are frozen even where they still read `Extract`**: error codes `"Extract:*"`, the `/Localization/Extract/` resource, config sections `Vault:Extract*`, the `"extract-documents"` blob container — rename the holder class, never the persisted string value (changing one is a wire / DB / i18n break).
 
 ## Architecture
 
@@ -23,13 +25,13 @@ The repo is the Vault suite monorepo (#716): one version for every module in the
 - **Text extraction (`modules/vault.parse/`)**: `Application` sees only the contracts in `Dignite.Vault.Parse.Abstractions`; the host picks the providers. See `.claude/rules/text-extraction.md`.
 - **Host (`src/Dignite.Vault.Extract.Host/`)**: a container only. It declares `[DependsOn]`, configures providers, and registers three keyed `IChatClient`s (`TitleGenerator` / `Structured` / `Vision`). It registers **no `IEmbeddingGenerator`** (the channel does no vectorization) and implements no business logic. **Middleware is configured only here.**
 
-## OUT of scope (explicitly not done)
+## OUT of scope
 
-Before touching these boundaries, stop and open an Issue to discuss:
+What the Extract module does not contain, and where it lives instead:
 
-- **RAG application layer**: ❌ vectorization / vector storage / retrieval engine / Chat·RAG Q&A·NL search / Agent·Workflow orchestration / MCP **client** (server only, no calling external MCP tools) / standardized chunking
-- **Business layer**: ❌ preset schemas for business field extraction (contract amount / invoice number, etc. — customers configure via mechanism B) / preset industry-vertical import templates / business workflows (approval / renewal) / business-system-specific connectors / business modules (contract·invoice·HR management, etc.). Downstream builds these in its own repos against the egress contracts; no business-module dependency may be added inside Core
-- **Configuration layer**: ❌ letting end customers configure the LLM / OCR provider or API key. These are host deployment configuration: customers are business users, not technical users
+- **Retrieval and RAG** (vectorization, vector storage, search over content, chat / Q&A, agent orchestration, an MCP *client*): the planned `vault.index` module, or the consumer.
+- **Business logic** (business field schemas, industry templates, approval or renewal workflows, system-specific connectors, contract / invoice / HR modules): downstream consumers build these in their own repos against the egress contracts. Customers define their own fields through mechanism B.
+- **LLM / OCR provider choice and API keys**: host deployment configuration. End customers are business users and never see them.
 
 ## Document type system (two independent single layers)
 
@@ -37,26 +39,23 @@ A document type is the container for type-bound fields. There are two layers: th
 
 - **No cross-layer mixing**: classification candidates and field extraction match one layer by exact `Document.TenantId`. Host types are not visible to tenants
 - **The same TypeCode in two layers is two legitimate rows**: downstream consumes by the `(TenantId, DocumentTypeCode)` tuple; TypeCode is not a global identity
-- **No built-in document types**: admins manage all types through `IDocumentTypeAppService`; there is no startup registration and no seed contributor
+- **The module ships no document types**: admins create them through `IDocumentTypeAppService`
 
 ## Field architecture
 
-Fields are either system common fields (typed columns on `Document`, produced by the pipeline: `Title` / `Markdown` / `DocumentTypeId` / review fields / `LifecycleStatus` / `Language`) or type-bound fields (mechanism B: extracted by a schema that the Host or tenant configures). Core **presets no business field definitions**.
+Fields are either system common fields (typed columns on `Document`, produced by the pipeline: `Title` / `Markdown` / `DocumentTypeId` / review fields / `LifecycleStatus` / `Language`) or type-bound fields (mechanism B: extracted by a schema that the Host or tenant configures). The module ships no field definitions.
 
-**Document field-extension hard constraints** (must hold before changing `Document.cs` / egress DTOs / `TextExtractionResult`; after such a change run the `abp-document-boundary-check` skill, or apply its checklist by hand):
+How `Document` is shaped today (after changing `Document.cs` / egress DTOs / `TextExtractionResult`, run the `abp-document-boundary-check` skill):
 
-1. **There is forever only one text-typed field: `Markdown`** (written once by the first parse — `Document.SetMarkdown` enforces it; afterwards only an operator correction (#555) or a re-parse (#660) replaces it). Any derived text (Summary / Outline / plain text) is projected on the consumer side via `MarkdownStripper.Strip`, **not persisted**. `Title` is a display snapshot derived from Markdown, not a new text payload.
-2. **Non-text fields are judged by "generic truth source vs. business-specific"**: generic ones (e.g. `PageBlocks`) may be added to `Document` (still requires an Issue to discuss shape); business-specific ones (contract amount / invoice number / ID-card name) are stored by downstream consumers in their own aggregate roots.
-3. **Forbidden**: an **unconstrained** `Dictionary<string,object>` extension bag on `Document` / `TextExtractionResult` / event payloads, and any parallel plain-text field. `Document.FlexFields` (#558) is the one **allowed** bag, because every key is a `Field.Name` backed by a persisted field definition. A *second* bag, or a key with no definition, is still forbidden.
+- **`Markdown` is its only text field.** The first parse writes it once (`Document.SetMarkdown` enforces this); afterwards only an operator correction (#555) or a re-parse (#660) replaces it. Derived text (summary / outline / plain text) is projected by the consumer via `MarkdownStripper.Strip` and is not persisted. `Title` is a display snapshot derived from Markdown.
+- **It holds no business-specific fields** (contract amount / invoice number / ID-card name). Downstream consumers keep those in their own aggregate roots.
+- **`Document.FlexFields` (#558) is a typed bag**: every key is a `Field.Name` backed by a persisted field definition, so its keys are enumerable.
 
 > Details: `.claude/rules/field-architecture.md` (system-field table, mechanism B, classification) and `.claude/rules/sub-document-segmentation.md` (container documents and derived sub-documents).
 
-## Markdown-first (mandatory)
+## Markdown-first
 
-Markdown is the **sole text payload**, from the provider to the egress:
-
-- **Providers must output Markdown**: `ITextExtractor` / `IMarkdownTextProvider` / `IOcrProvider` implementations never fall back to a plain-text path. Plain-text-to-Markdown wrapping is done inside the provider, and `OcrResult` / `TextExtractionResult` **expose no RawText field**
-- **Out-of-band signals are orthogonal to Markdown**: coordinates / confidence / page metadata / form key-value, if ever needed, are added as **named, strongly-typed, nullable** fields (e.g. `PageBlocks`), with **a separate Issue per signal**
+Markdown is the sole text payload of the egress: REST, MCP and events expose `Document.Markdown` and no parallel plain-text field, and downstream consumers depend on that. How providers produce it is in `.claude/rules/text-extraction.md`.
 
 ## Egress contracts
 
@@ -94,4 +93,4 @@ These are normative: code that violates one is a defect to fix, not a precedent 
 ## Working rules
 
 1. Development follows the conventions above and the path-scoped rules under `.claude/rules/`. They auto-load by `paths:` only when a matching file is touched, so before changing a mechanism read its rule file even if the file you are editing does not match (e.g. `background-jobs.md` before any BackgroundJob / JobArgs change)
-2. **Record boundary decisions in an Issue before the implementing PR**: a boundary change is one that alters a contract visible outside its module — an egress contract, a module's public API or the module-reference rules, a serialized string contract (see the naming convention above), or a normative rule in this file or `.claude/rules/` itself. The channel boundaries are the usual cases (OCR pipeline / egress contracts / field architecture / document-type system / Markdown-first / security conventions). Such a change gets a GitHub Issue that states the decision and its reasoning, opened before the PR that implements it; a throwaway spike that informs the decision may come first, but it is not merged. Implementation details — bug fixes, wording corrections, a new provider behind an existing contract — are recorded directly in the commit message
+2. **GitHub Issues are this project's design record.** A decision that changes a contract visible outside its module (an egress contract, a module's public API or the module-reference rules, a serialized string contract) is written up in an Issue with its reasoning. Everything else, including edits to this file and to `.claude/rules/`, is recorded in the commit message
