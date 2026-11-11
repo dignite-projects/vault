@@ -68,6 +68,14 @@ internal static class DocxFixtures
     /// <summary>A native table: rows of cells (first row is the header).</summary>
     public sealed record TableSpec(IReadOnlyList<IReadOnlyList<string>> Rows) : BlockSpec;
 
+    /// <summary>
+    /// A 2-column host table (header row, then one body row) whose first body cell holds <paramref name="HostCellText"/>
+    /// plus a nested table of <paramref name="NestedRows"/>. When <paramref name="DeepestText"/> is set, the nested
+    /// table's last cell additionally hosts a third-level 1x1 table carrying that text.
+    /// </summary>
+    public sealed record NestedTableSpec(
+        string HostCellText, IReadOnlyList<IReadOnlyList<string>> NestedRows, string? DeepestText = null) : BlockSpec;
+
     /// <summary>A run with optional bold/italic, for building a formatted paragraph.</summary>
     public sealed record RunSpec(string Text, bool Bold = false, bool Italic = false);
 
@@ -185,6 +193,14 @@ internal static class DocxFixtures
         public DocSpec Table(IReadOnlyList<IReadOnlyList<string>> rows)
         {
             Blocks.Add(new TableSpec(rows));
+            return this;
+        }
+
+        /// <summary>A host table with a table nested inside one of its cells (and, optionally, a third level inside that).</summary>
+        public DocSpec TableWithNestedTable(
+            string hostCellText, IReadOnlyList<IReadOnlyList<string>> nestedRows, string? deepestText = null)
+        {
+            Blocks.Add(new NestedTableSpec(hostCellText, nestedRows, deepestText));
             return this;
         }
 
@@ -391,6 +407,10 @@ internal static class DocxFixtures
 
                     case TableSpec tableSpec:
                         body.Append(TableXml(tableSpec));
+                        break;
+
+                    case NestedTableSpec nestedTable:
+                        body.Append(NestedTableXml(nestedTable));
                         break;
 
                     case RichParagraphSpec richParagraph:
@@ -800,6 +820,40 @@ internal static class DocxFixtures
         }));
 
         return $"<w:tbl><w:tblPr/><w:tblGrid>{grid}</w:tblGrid>{rows}</w:tbl>";
+    }
+
+    private static string CellXml(string text) =>
+        $"<w:tc><w:tcPr/><w:p><w:r><w:t xml:space=\"preserve\">{Escape(text)}</w:t></w:r></w:p></w:tc>";
+
+    private static string NestedTableXml(NestedTableSpec spec)
+    {
+        var lastRow = spec.NestedRows.Count - 1;
+        var nestedRows = string.Concat(spec.NestedRows.Select((row, r) =>
+        {
+            var lastCell = row.Count - 1;
+            var cells = string.Concat(row.Select((cell, c) =>
+            {
+                if (spec.DeepestText is null || r != lastRow || c != lastCell)
+                {
+                    return CellXml(cell);
+                }
+
+                // The last nested cell also hosts a third-level 1x1 table (a cell must end with a paragraph).
+                var deepest = $"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w=\"1000\"/></w:tblGrid><w:tr>{CellXml(spec.DeepestText)}</w:tr></w:tbl>";
+                return $"<w:tc><w:tcPr/><w:p><w:r><w:t xml:space=\"preserve\">{Escape(cell)}</w:t></w:r></w:p>{deepest}<w:p/></w:tc>";
+            }));
+            return $"<w:tr>{cells}</w:tr>";
+        }));
+        var nestedColumns = spec.NestedRows.Count == 0 ? 0 : spec.NestedRows.Max(r => r.Count);
+        var nestedGrid = string.Concat(Enumerable.Repeat("<w:gridCol w:w=\"1000\"/>", nestedColumns));
+        var nested = $"<w:tbl><w:tblPr/><w:tblGrid>{nestedGrid}</w:tblGrid>{nestedRows}</w:tbl>";
+
+        var hostCell =
+            $"<w:tc><w:tcPr/><w:p><w:r><w:t xml:space=\"preserve\">{Escape(spec.HostCellText)}</w:t></w:r></w:p>{nested}<w:p/></w:tc>";
+
+        return "<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid>"
+            + $"<w:tr>{CellXml("Head1")}{CellXml("Head2")}</w:tr>"
+            + $"<w:tr>{hostCell}{CellXml("Other")}</w:tr></w:tbl>";
     }
 
     private static string RichParagraphXml(RichParagraphSpec spec)

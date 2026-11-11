@@ -378,4 +378,27 @@ public class PdfReadingOrder_Tests
 
         return count;
     }
+
+    [Fact]
+    public void MergeAdjacentHeadings_leaves_a_figure_transcription_untouched()
+    {
+        var input = "## Title\n\n" + ImageOcrMarkup.Wrap("intro\n\n## A\n\n## B\n\noutro", 1);
+
+        PdfReadingOrder.MergeAdjacentHeadings(input).ShouldBe(input);
+    }
+
+    [Fact]
+    public void MergeAdjacentHeadings_still_merges_text_layer_headings()
+    {
+        PdfReadingOrder.MergeAdjacentHeadings("## Agreement\n\n## Letter\n\nbody")
+            .ShouldBe("## Agreement Letter\n\nbody");
+    }
+
+    [Fact]
+    public void MergeAdjacentHeadings_does_not_merge_across_a_figure()
+    {
+        var input = "## Before\n\n" + ImageOcrMarkup.Wrap("x", 1) + "\n\n## After";
+
+        PdfReadingOrder.MergeAdjacentHeadings(input).ShouldBe(input);
+    }
 }

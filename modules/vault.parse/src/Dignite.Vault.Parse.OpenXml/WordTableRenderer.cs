@@ -15,7 +15,8 @@ namespace Dignite.Vault.Parse.OpenXml;
 /// kept, geometry is ignored (#308 decision: accepted blind spot). The table is padded to a rectangle using
 /// the widest row's column count so a ragged row set still renders a valid grid (mirrors
 /// <see cref="DrawingTableRenderer"/>). Deeply nested tables render only their host cell's direct-paragraph
-/// text this step (a nested <c>w:tbl</c> inside a cell is not recursed into).
+/// text here (a nested <c>w:tbl</c> inside a cell is not recursed into); <c>DocxExtractor</c> renders each
+/// nested table as its own table block after the host table.
 /// </para>
 /// </summary>
 internal static class WordTableRenderer
@@ -57,7 +58,8 @@ internal static class WordTableRenderer
         // '*' / '[' / '`' in source text is not re-parsed as emphasis / link / code inside the cell). Use
         // Descendants (not Elements) so paragraphs wrapped in a content control (w:sdt) or custom-XML inside
         // the cell are still picked up; but skip paragraphs that belong to a NESTED table (a nested w:tbl's
-        // text is an accepted blind spot and must not bleed into this cell's own text).
+        // text must not bleed into this cell's own text; it is not recursed into here — DocxExtractor renders
+        // a nested table as its own table block after the host table).
         var noteMarkers = noteReferences is null ? null : new StringBuilder();
         var paragraphs = cell
             .Descendants<W.Paragraph>()

@@ -136,6 +136,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PaddleOCR and Azure Document Intelligence separate fallback paragraphs with `\n\n` on every platform.** They
   used the platform line ending, so the same file produced CRLF Markdown on Windows and LF on Linux. Linux
   deployments see no change.
+- **A table nested inside a Word table cell is no longer dropped.** A Markdown cell cannot hold a table, so the
+  nested table's text was left out of the Markdown, and the result was still reported complete. Each nested table,
+  at any depth, is now rendered as its own table right after its host table, the way a picture inside a cell
+  already was. Documents parsed before the upgrade get the missing text with **Re-parse**.
+- **A damaged footnotes or endnotes part no longer fails the whole DOCX.** Body blocks were skipped one by one when
+  malformed, but the notes pass was not guarded, so one bad note lost a document whose text had already been
+  extracted. A note that cannot be read is now skipped; `extractionIsComplete` is `false` and the reason counts
+  the notes lost.
+- **Headings inside a picture's transcription in a PDF are left as the OCR provider wrote them.** The step that
+  rejoins a heading the PDF text layer split across lines also ran over the transcription between the
+  `*[Image OCR]*` markers and could join two of its headings into one.
 - Smaller fixes: a pipeline run's status message is cut on a character boundary (a long provider error could end
   in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
 

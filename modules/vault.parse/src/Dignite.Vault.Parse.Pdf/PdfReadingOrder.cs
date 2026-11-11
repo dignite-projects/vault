@@ -532,9 +532,12 @@ internal static class PdfReadingOrder
     /// Stitches consecutive same-level heading blocks into one heading (#403): a heading that wrapped across
     /// visual lines / reading bands is rendered as adjacent <c>#…</c> blocks, and here they merge so e.g. the
     /// title's trailing 「書」 rejoins its title line. Operates by splitting on the blank-line block separator
-    /// and re-joining it, so every non-heading block (paragraph, figure span) is returned unchanged.
+    /// and re-joining it, so every non-heading block (paragraph) is returned unchanged. Figure spans are skipped
+    /// by tracking the <c>*[Image OCR]*</c> … <c>*[End OCR]*</c> markers (a transcription is the OCR provider's own
+    /// Markdown and may contain blank lines), so a transcription's own headings are never merged and no heading
+    /// merges into or across a figure.
     /// </summary>
-    private static string MergeAdjacentHeadings(string pageMarkdown)
+    internal static string MergeAdjacentHeadings(string pageMarkdown)
     {
         if (pageMarkdown.Length == 0)
         {
@@ -543,10 +546,29 @@ internal static class PdfReadingOrder
 
         var blocks = pageMarkdown.Split("\n\n");
         var merged = new List<string>(blocks.Length);
+        var insideFigure = false;
+        var previousIsMergeTarget = false;
         foreach (var block in blocks)
         {
+            var startedInsideFigure = insideFigure;
+            var sawMarker = false;
+            foreach (var line in block.Split('\n'))
+            {
+                if (ImageOcrMarkup.IsOpenLine(line))
+                {
+                    insideFigure = true;
+                    sawMarker = true;
+                }
+                else if (ImageOcrMarkup.IsCloseLine(line))
+                {
+                    insideFigure = false;
+                    sawMarker = true;
+                }
+            }
+
+            var touchesFigure = startedInsideFigure || insideFigure || sawMarker;
             var level = HeadingLevelOf(block);
-            if (level > 0 && merged.Count > 0 && HeadingLevelOf(merged[^1]) == level)
+            if (!touchesFigure && level > 0 && merged.Count > 0 && previousIsMergeTarget && HeadingLevelOf(merged[^1]) == level)
             {
                 // Append this heading line's text (after its duplicate "#…<space>" prefix) to the open heading.
                 merged[^1] = merged[^1] + " " + block[(level + 1)..];
@@ -555,6 +577,8 @@ internal static class PdfReadingOrder
             {
                 merged.Add(block);
             }
+
+            previousIsMergeTarget = !touchesFigure;
         }
 
         return string.Join("\n\n", merged);
