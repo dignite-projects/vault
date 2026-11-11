@@ -32,7 +32,7 @@ This avoids holding database connections, locks, or transactions while external 
 - Do not introduce repositories for child entities to work around persistence issues.
 - If a job carries an execution/run identifier in its args, persist that same identifier before enqueueing or beginning the job, and use it when completing or failing the job.
 
-### DocumentPipelineRun Exception (#216)
+### DocumentPipelineRun is its own aggregate root (#216)
 
 `DocumentPipelineRun` is itself an `AggregateRoot<Guid>`, so it is handled directly through `IDocumentPipelineRunRepository` and **no longer through the `Document` aggregate root**. The BeginRun / CompleteRun / FailRun phases in the three-phase UoW pattern used by background jobs (`DocumentParseBackgroundJob` / `DocumentClassificationBackgroundJob`) all follow this model:
 
