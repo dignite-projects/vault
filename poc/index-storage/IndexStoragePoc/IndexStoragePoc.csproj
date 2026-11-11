@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);MEDI001;MEAI001;EF9105</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The repository's EF Core line (10.0.11, via ABP 10.7.1) and the DataIngestion build that matches its Microsoft.Extensions.AI 10.11.0. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DataIngestion" Version="10.11.0-preview.1.26513.7" />
+    <PackageReference Include="Microsoft.Extensions.DataIngestion.Markdig" Version="10.11.0-preview.1.26513.7" />
+    <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="1.0.1" />
+  </ItemGroup>
+</Project>

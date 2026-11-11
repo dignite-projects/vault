@@ -1,0 +1,13 @@
+SET NOCOUNT ON;
+DECLARE @t datetime2 = SYSDATETIME();
+DROP INDEX IX_Chunks_ScopeVector ON dbo.VaultIndexChunks;
+DROP FULLTEXT INDEX ON dbo.VaultIndexChunks;
+ALTER TABLE dbo.VaultIndexChunks DROP CONSTRAINT PK_VaultIndexChunks;
+CREATE UNIQUE CLUSTERED INDEX CX_Chunks_Scope ON dbo.VaultIndexChunks (TenantId, DocumentTypeId, Id);
+ALTER TABLE dbo.VaultIndexChunks ADD CONSTRAINT PK_VaultIndexChunks PRIMARY KEY NONCLUSTERED (Id);
+PRINT CONCAT('reclustered in ', DATEDIFF(ms, @t, SYSDATETIME()), ' ms');
+SET @t = SYSDATETIME();
+CREATE FULLTEXT INDEX ON dbo.VaultIndexChunks (Text LANGUAGE 1041) KEY INDEX PK_VaultIndexChunks ON ftc WITH CHANGE_TRACKING AUTO;
+WHILE FULLTEXTCATALOGPROPERTY('ftc', 'PopulateStatus') <> 0 WAITFOR DELAY '00:00:01';
+PRINT CONCAT('full-text repopulated in ', DATEDIFF(ms, @t, SYSDATETIME()), ' ms');
+SELECT i.name, CAST(SUM(a.total_pages)*8/1024 AS int) AS mb FROM sys.indexes i JOIN sys.partitions p ON p.object_id=i.object_id AND p.index_id=i.index_id JOIN sys.allocation_units a ON a.container_id=p.partition_id WHERE i.object_id=OBJECT_ID('dbo.VaultIndexChunks') GROUP BY i.name;

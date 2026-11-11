@@ -1,0 +1,8 @@
+1 small type (#15)         rows    4026  p50     8.8 ms  p95    11.8 ms  max    17.0 ms  (best distance 0.226)
+1 large type (#0)          rows   49555  p50    88.9 ms  p95   105.5 ms  max   132.1 ms  (best distance 0.223)
+5 types (#0-4)             rows  119376  p50   217.1 ms  p95   222.7 ms  max   223.7 ms  (best distance 0.217)
+5 small types OR owner     rows   28024  p50    43.6 ms  p95    46.4 ms  max    47.0 ms  (best distance 0.222)
+whole tenant (ReadAll)     rows  200719  p50   214.9 ms  p95   230.6 ms  max   234.4 ms  (best distance 0.220)
+1 large type (#0)          8 concurrent: 39.1 queries/s, p50   194.2 ms  p95   224.3 ms  max   950.7 ms
+whole tenant (ReadAll)     8 concurrent: 9.1 queries/s, p50   883.0 ms  p95  1091.0 ms  max  1103.2 ms
+whole tenant (ReadAll)     cold buffer pool: 1488 ms

@@ -1,0 +1,124 @@
+===== seed 200000 50000
+tenant 11111111-0000-0000-0000-000000000001: 200000 chunks, 20062 documents, type sizes 48825/26165/18165/14021/11470/9734/8473/7513/6758/6146/5641/5216/4854/4540/4267/4026/3812/3621/3449/3293
+tenant 22222222-0000-0000-0000-000000000002: 50000 chunks, 5028 documents, type sizes 12206/6541/4541/3505/2867/2433/2118/1878/1689/1536/1410/1304/1213/1135/1066/1006/953/905/862/823
+bulk load: 250000 chunks in 55.9s
+field rows: 12304
+b-tree indexes: 1.3s
+full-text initial population (250000 chunks): 155.0s
+chunk table size: 2006 MB
+===== vector
+1 small type (#15)         rows    4026  p50    22.6 ms  p95    28.6 ms  max    29.0 ms  (best distance 0.226)
+1 large type (#0)          rows   48825  p50   174.8 ms  p95   177.8 ms  max   186.5 ms  (best distance 0.223)
+5 types (#0-4)             rows  118646  p50   266.6 ms  p95   278.8 ms  max   293.1 ms  (best distance 0.217)
+5 small types OR owner     rows   28024  p50    38.2 ms  p95    44.8 ms  max    45.9 ms  (best distance 0.222)
+whole tenant (ReadAll)     rows  199989  p50   261.1 ms  p95   277.7 ms  max   290.1 ms  (best distance 0.220)
+--- generated SQL (5 small types OR owner) ---
+DECLARE @p int = 10;
+DECLARE @ef_filter__CurrentTenantId uniqueIdentifier = '11111111-0000-0000-0000-000000000001';
+DECLARE @_8__locals1_types1 uniqueIdentifier = '1932fe5c-b575-31aa-9352-f1b8cd425b99';
+DECLARE @_8__locals1_types2 uniqueIdentifier = '44c82652-247c-586d-055a-b4626fd85f8f';
+DECLARE @_8__locals1_types3 uniqueIdentifier = 'cfd97558-c2ca-198b-9f0f-4a445bbcfa58';
+DECLARE @_8__locals1_types4 uniqueIdentifier = '71be121b-71f6-285c-3bec-085632269c8f';
+DECLARE @_8__locals1_types5 uniqueIdentifier = 'b591d945-148d-24fb-dae0-057cc2230a99';
+DECLARE @owner uniqueIdentifier = 'd3cc076a-b2ad-5e65-0952-8642c5a2f216';
+DECLARE @qv sql_variant = Microsoft.Data.SqlTypes.SqlVector`1[System.Single];
+
+SELECT TOP(@p) [v].[Id]
+FROM [VaultIndexChunks] AS [v]
+WHERE [v].[TenantId] = @ef_filter__CurrentTenantId AND ([v].[DocumentTypeId] IN (@_8__locals1_types1, @_8__locals1_types2, @_8__locals1_types3, @_8__locals1_types4, @_8__locals1_types5) OR [v].[OwnerId] = @owner)
+ORDER BY VECTOR_DISTANCE('cosine', [v].[Embedding], @qv)
+1 large type (#0)          8 concurrent: 26.9 queries/s, p50   290.6 ms  p95   419.3 ms  max  1507.2 ms
+whole tenant (ReadAll)     8 concurrent: 7.5 queries/s, p50  1073.5 ms  p95  1137.4 ms  max  1158.5 ms
+whole tenant (ReadAll)     cold buffer pool: 1865 ms
+===== ftrank
+--- generated SQL ---
+DECLARE @p2 int = 10;
+DECLARE p0 nvarchar(4000) = N'"遅延損害金"';
+DECLARE @ef_filter__CurrentTenantId uniqueIdentifier = '11111111-0000-0000-0000-000000000001';
+DECLARE @type0 uniqueIdentifier = '7e8b31a2-f05a-6d6e-4a44-45a03751ee66';
+
+SELECT TOP(@p2) [v0].[Id], [i].[Rank]
+FROM (
+    SELECT [KEY] AS ChunkId, [RANK] AS Rank FROM CONTAINSTABLE(dbo.VaultIndexChunks, Text, @p0)
+) AS [i]
+INNER JOIN (
+    SELECT [v].[Id], [v].[DocumentTypeId]
+    FROM [VaultIndexChunks] AS [v]
+    WHERE [v].[TenantId] = @ef_filter__CurrentTenantId
+) AS [v0] ON [i].[ChunkId] = [v0].[Id]
+WHERE [v0].[DocumentTypeId] = @type0
+ORDER BY [i].[Rank] DESC
+tenant filter present in SQL: True
+selective: one invoice no.   type #0  engine matches       1  p50     3.3 ms  p95     3.7 ms  max     3.7 ms
+selective: one invoice no.   tenant   engine matches       1  p50     3.2 ms  p95     3.6 ms  max     3.6 ms
+medium: 遅延損害金                type #0  engine matches   52143  p50   192.5 ms  p95   211.7 ms  max   211.7 ms
+medium: 遅延損害金                tenant   engine matches   52143  p50    24.9 ms  p95    33.6 ms  max    33.6 ms
+common: 契約                   type #0  engine matches  128807  p50    69.8 ms  p95    72.7 ms  max    72.7 ms
+common: 契約                   tenant   engine matches  128807  p50    19.7 ms  p95    42.6 ms  max    42.6 ms
+two terms AND                type #0  engine matches   51846  p50    75.8 ms  p95    77.3 ms  max    77.3 ms
+two terms AND                tenant   engine matches   51846  p50    20.1 ms  p95    20.4 ms  max    20.4 ms
+===== ftlag
+1 chunk, time until CONTAINS finds it:          p50  4565.9 ms  p95  4728.0 ms  max  4733.4 ms
+50 chunks (one document), until all 50 found:   p50  4541.9 ms  p95  4574.6 ms  max  4574.6 ms
+replace 20 chunks in one tx, until consistent:  p50  4683.5 ms  p95  4761.6 ms  max  4761.6 ms
+(the vector leg sees the same rows at commit; only the keyword leg lags)
+===== fields
+counterparty = 取引先279      docs     3 chunks     33 | A join  p50     2.5 ms  p95     2.7 ms  max     2.7 ms
+                                                   | B ids   p50     1.7 ms  p95     1.8 ms  max     2.0 ms  id list 0 KB, same top-10: True
+counterparty = 取引先042      docs    30 chunks    278 | A join  p50     4.1 ms  p95     5.3 ms  max    11.3 ms
+                                                   | B ids   p50     3.2 ms  p95     3.9 ms  max     4.0 ms  id list 1 KB, same top-10: True
+counterparty = 取引先001      docs   197 chunks   1887 | A join  p50    12.6 ms  p95    14.0 ms  max    18.4 ms
+                                                   | B ids   p50    12.1 ms  p95    13.2 ms  max    13.7 ms  id list 8 KB, same top-10: True
+counterparty = 取引先000      docs   497 chunks   4995 | A join  p50    30.7 ms  p95    31.5 ms  max    32.9 ms
+                                                   | B ids   p50    30.3 ms  p95    31.9 ms  max    32.9 ms  id list 19 KB, same top-10: True
+amount > 5,000,000         docs  2471 chunks  24743 | A join  p50    43.6 ms  p95    48.4 ms  max    49.6 ms
+                                                   | B ids   p50   114.0 ms  p95   121.5 ms  max   127.7 ms  id list 94 KB, same top-10: True
+===== ftjp
+契約               expected [1,4,6,7,16]  CONTAINS [1,4,6,7,16]  FREETEXT [1,4,6,7,16]  tokens: 契約
+賃貸借              expected [1]  CONTAINS [1]  FREETEXT [1]  tokens: 賃貸借
+賃貸借契約            expected [1]  CONTAINS [1]  FREETEXT [1,4,6,7,16] ✗  tokens: 賃貸借 | 契約
+支払               expected [2,3]  CONTAINS [3] ✗  FREETEXT [3] ✗  tokens: 支払
+支払う              expected [2]  CONTAINS [2]  FREETEXT [2]  tokens: 支払う
+サーバー             expected [4,5,8]  CONTAINS [4,5,8]  FREETEXT [4,5,8]  tokens: サーバー | サーバ
+サーバ              expected [4,5,8]  CONTAINS [4,5,8]  FREETEXT [4,5,8]  tokens: サーバ
+ABC              expected [6,7]  CONTAINS [6,7]  FREETEXT [6,7]  tokens: abc
+ＡＢＣ              expected [6,7]  CONTAINS [6,7]  FREETEXT [6,7]  tokens: abc | abc
+123              expected [12,13]  CONTAINS [] ✗  FREETEXT [] ✗  tokens: 123 | nn123
+ください             expected [9,10]  CONTAINS [9] ✗  FREETEXT [9] ✗  tokens: ください
+下さい              expected [9,10]  CONTAINS [10] ✗  FREETEXT [10] ✗  tokens: 下さい
+千代田区             expected [11]  CONTAINS [11]  FREETEXT [11]  tokens: 千代田 | 区
+千代田              expected [11]  CONTAINS [11]  FREETEXT [11]  tokens: 千代田
+引渡日              expected [17,18]  CONTAINS [17] ✗  FREETEXT [17,18]  tokens: 引渡 | 日
+引き渡し             expected [17,18]  CONTAINS [18] ✗  FREETEXT [18] ✗  tokens: 引き渡し
+合同               expected [14]  CONTAINS [14]  FREETEXT [14]  tokens: 合同
+markdown         expected [15]  CONTAINS [15]  FREETEXT [15]  tokens: markdown
+損害賠償             expected [16]  CONTAINS [16]  FREETEXT [16]  tokens: 損害 | 賠償
+T1234567890123   expected [19]  CONTAINS [19]  FREETEXT [19]  tokens: t1234567890123
+電子帳簿保存法          expected [20]  CONTAINS [20]  FREETEXT [20]  tokens: 電子 | 帳簿 | 保存 | 法
+帳簿               expected [20]  CONTAINS [20]  FREETEXT [20]  tokens: 帳簿
+請求書              expected [3,20]  CONTAINS [3,20]  FREETEXT [1,3,20] ✗  tokens: 請求 | 書
+exact match with the expected set: CONTAINS 17/23, FREETEXT 16/23
+--- how the breaker splits some indexed sentences ---
+ 1: 本 | 賃貸借 | 契約 | 書 | は | 甲 | と | 乙 | の | 間 | で | 締結 | さ | れる
+ 4: サーバー | サーバ | の | 保守 | 契約 | を | 更新 | し | まし | た
+ 6: abc | abc | 株式 | 会社 | と | の | 取引 | 基本 | 契約
+ 8: サーハ゛ー | サーバ | の | 設定 | 手順
+12: 見積 | 金額 | は | 123,456円 | 123,456円 | 税込
+17: 物件 | の | 引渡 | 日 | は | 別途 | 定める
+18: 物件 | の | 引き渡し | 日 | を | 変更 | する
+20: 電子 | 帳簿 | 保存 | 法 | に | 対応 | し | た | 請求 | 書 | 発行
+===== ingest
+--- (1) building blocks on the Markdown string ---
+chunk 1:  43 tokens  context="# 賃貸借契約書"  text="# 賃貸借契約書⏎本契約は、賃貸人（以下「甲」という。）と賃借人（以下「乙」とい…"
+chunk 2:  58 tokens  context="# 賃貸借契約書 ## 第1条（目的）"  text="# 賃貸借契約書 ## 第1条（目的）⏎甲は乙に対し、下記の物件を住居として賃貸…"
+chunk 3:  55 tokens  context="# 賃貸借契約書 ## 第2条（賃料）"  text="# 賃貸借契約書 ## 第2条（賃料）⏎乙は毎月末日までに翌月分の賃料を甲の指定…"
+chunk 4:  62 tokens  context="# 賃貸借契約書 ## 第2条（賃料） ### 2.1 遅延損害金"  text="# 賃貸借契約書 ## 第2条（賃料） ### 2.1 遅延損害金⏎支払期限を過…"
+chunk 5: 103 tokens  context="# 賃貸借契約書 ## 第3条（契約期間）"  text="# 賃貸借契約書 ## 第3条（契約期間）⏎契約期間は締結日から二年間とし、期間…"
+--- (2) IngestionPipeline with an EF chunk writer ---
+result: id=5e6ee643-e264-9bfe-d503-5ef58933da75.md succeeded=True error=: 
+result: id=863404b0-06d5-42dc-e81b-f2d3a4f1d07e.md succeeded=True error=: 
+result: id=a62bd4c9-b797-bc24-370d-5ffe06b00ca8.md succeeded=False error=ArgumentException: Argument is an empty string (Parameter 'markdown')
+pipeline over 3 files: 1338 ms; writer calls: 2; tenant seen by writer: 11111111-0000-0000-0000-000000000001,11111111-0000-0000-0000-000000000001
+run row: doc=5e6ee643-e264-9bfe-d503-5ef58933da75 chunks=5 ok=True
+run row: doc=863404b0-06d5-42dc-e81b-f2d3a4f1d07e chunks=5 ok=True
+done

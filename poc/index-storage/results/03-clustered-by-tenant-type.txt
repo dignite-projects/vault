@@ -1,0 +1,25 @@
+reclustered in 26936 ms
+full-text repopulated in 163118 ms
+name mb
+---- --
+CX_Chunks_Scope 1973
+IX_Chunks_Document 17
+IX_Chunks_Scope 21
+PK_VaultIndexChunks 14
+1 small type (#15)         rows    4026  p50    12.3 ms  p95    12.9 ms  max    18.6 ms  (best distance 0.226)
+1 large type (#0)          rows   49555  p50   135.1 ms  p95   159.9 ms  max   168.7 ms  (best distance 0.223)
+5 types (#0-4)             rows  119376  p50   272.0 ms  p95   278.7 ms  max   282.2 ms  (best distance 0.217)
+5 small types OR owner     rows   28024  p50    46.4 ms  p95    50.5 ms  max    50.7 ms  (best distance 0.222)
+whole tenant (ReadAll)     rows  200719  p50   179.2 ms  p95   188.8 ms  max   199.3 ms  (best distance 0.220)
+1 large type (#0)          8 concurrent: 34.1 queries/s, p50   225.1 ms  p95   262.1 ms  max   990.8 ms
+whole tenant (ReadAll)     8 concurrent: 8.1 queries/s, p50  1019.1 ms  p95  1089.5 ms  max  1242.0 ms
+whole tenant (ReadAll)     cold buffer pool: 1559 ms
+selective: one invoice no.   type #0  engine matches       1  p50     3.3 ms  p95     3.5 ms  max     3.5 ms
+selective: one invoice no.   tenant   engine matches       1  p50     3.2 ms  p95     5.8 ms  max     5.8 ms
+medium: 遅延損害金                type #0  engine matches   52284  p50   160.8 ms  p95   169.1 ms  max   169.1 ms
+medium: 遅延損害金                tenant   engine matches   52284  p50    80.6 ms  p95   123.2 ms  max   123.2 ms
+common: 契約                   type #0  engine matches  129163  p50   345.0 ms  p95   364.9 ms  max   364.9 ms
+common: 契約                   tenant   engine matches  129163  p50   151.2 ms  p95   237.6 ms  max   237.6 ms
+two terms AND                type #0  engine matches   51992  p50   154.4 ms  p95   161.9 ms  max   161.9 ms
+two terms AND                tenant   engine matches   51992  p50    74.2 ms  p95    76.0 ms  max    76.0 ms
+done
