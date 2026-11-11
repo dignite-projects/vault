@@ -40,11 +40,46 @@ public class DocumentAppService_UpdateMarkdown_Tests
         _pipelineRunManager = GetRequiredService<DocumentPipelineRunManager>();
     }
 
+    /// <summary>
+    /// A correction changes the consumable text of a Ready document with no lifecycle transition to announce it, so the
+    /// app service re-publishes <see cref="DocumentReadyEto"/> itself, as an operator field edit does (#650). Before Vault
+    /// Index this path fired nothing (#555), which left a consumer serving the old text. The document is driven to
+    /// Ready through the real run manager and its in-memory run repository, not by setting the status.
+    /// </summary>
     [Fact]
-    public async Task Reprocess_False_Updates_Markdown_And_Does_Not_Enqueue_Or_Publish()
+    public async Task Reprocess_False_On_A_Ready_Document_Republishes_DocumentReadyEto()
+    {
+        var doc = await CreateReadyDocumentAsync();
+        StubGet(doc);
+
+        await _appService.UpdateMarkdownAsync(doc.Id, new UpdateMarkdownInput
+        {
+            Markdown = "# Doc\n\ncorrected body",
+            Reprocess = false
+        });
+
+        doc.Markdown.ShouldBe("# Doc\n\ncorrected body");
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Ready);
+        await _backgroundJobManager.DidNotReceive().EnqueueAsync(
+            Arg.Any<DocumentFieldExtractionJobArgs>(),
+            Arg.Any<BackgroundJobPriority>(),
+            Arg.Any<TimeSpan?>());
+        await _eventBus.Received(1).PublishAsync(
+            Arg.Is<DocumentReadyEto>(e => e.DocumentId == doc.Id && e.TenantId == doc.TenantId),
+            Arg.Any<bool>(),
+            Arg.Any<bool>());
+    }
+
+    /// <summary>
+    /// A document that is not Ready has announced nothing yet, so a correction announces nothing either: it is
+    /// announced once, with the corrected text, when it reaches Ready.
+    /// </summary>
+    [Fact]
+    public async Task Reprocess_False_On_A_Document_That_Is_Not_Ready_Does_Not_Enqueue_Or_Publish()
     {
         var doc = await CreateClassifiedExtractedDocumentAsync();
         StubGet(doc);
+        doc.LifecycleStatus.ShouldNotBe(DocumentLifecycleStatus.Ready);
 
         var dto = await _appService.UpdateMarkdownAsync(doc.Id, new UpdateMarkdownInput
         {
@@ -59,7 +94,31 @@ public class DocumentAppService_UpdateMarkdown_Tests
             Arg.Any<DocumentFieldExtractionJobArgs>(),
             Arg.Any<BackgroundJobPriority>(),
             Arg.Any<TimeSpan?>());
-        // Reprocess=false fires no event at all (documented trade-off on UpdateMarkdownAsync); pinned so a future re-announce cannot slip in silently.
+        await _eventBus.DidNotReceive().PublishAsync(Arg.Any<DocumentReadyEto>(), Arg.Any<bool>(), Arg.Any<bool>());
+    }
+
+    /// <summary>
+    /// With Reprocess, queueing the field-extraction run derives the document out of Ready at once (a Pending key
+    /// pipeline), so the app service announces nothing; the return to Ready is announced by the lifecycle handler,
+    /// with the re-extracted fields. Announcing here as well would publish the old fields first.
+    /// </summary>
+    [Fact]
+    public async Task Reprocess_True_On_A_Ready_Document_Leaves_The_Announcement_To_The_Reextraction()
+    {
+        var doc = await CreateReadyDocumentAsync();
+        StubGet(doc);
+
+        await _appService.UpdateMarkdownAsync(doc.Id, new UpdateMarkdownInput
+        {
+            Markdown = "# Doc\n\ncorrected body",
+            Reprocess = true
+        });
+
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Processing);
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<DocumentFieldExtractionJobArgs>(a => a.DocumentId == doc.Id),
+            Arg.Any<BackgroundJobPriority>(),
+            Arg.Any<TimeSpan?>());
         await _eventBus.DidNotReceive().PublishAsync(Arg.Any<DocumentReadyEto>(), Arg.Any<bool>(), Arg.Any<bool>());
     }
 
@@ -184,6 +243,25 @@ public class DocumentAppService_UpdateMarkdown_Tests
     {
         var doc = await CreateExtractedDocumentAsync();
         typeof(Document).GetProperty(nameof(Document.DocumentTypeId))!.SetValue(doc, Guid.NewGuid());
+        return doc;
+    }
+
+    // Classified, with Markdown, and every key pipeline Succeeded through the real run manager: Ready the way the
+    // pipeline derives it. Markdown goes in by reflection, because a Parse run completed through CompleteParseAsync
+    // would be started a second time by the key-pipeline loop.
+    private async Task<Document> CreateReadyDocumentAsync()
+    {
+        var doc = CreateDocument();
+        typeof(Document).GetProperty(nameof(Document.Markdown))!.SetValue(doc, "# Sample\n\nbody");
+        typeof(Document).GetProperty(nameof(Document.DocumentTypeId))!.SetValue(doc, Guid.NewGuid());
+
+        foreach (var pipelineCode in VaultExtractPipelines.KeyPipelines)
+        {
+            var run = await _pipelineRunManager.StartAsync(doc, pipelineCode);
+            await _pipelineRunManager.CompleteAsync(doc, run);
+        }
+
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Ready);
         return doc;
     }
 

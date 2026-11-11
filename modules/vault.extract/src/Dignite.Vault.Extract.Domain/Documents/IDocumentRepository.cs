@@ -390,6 +390,23 @@ public interface IDocumentRepository : IRepository<Document, Guid>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The ids of the documents downstream may consume (<see cref="DocumentQueries.ReadyForConsumers"/>), for a
+    /// consumer that backfills or rebuilds from the whole layer (Vault Index, through
+    /// <c>IDocumentIntegrationService</c>). Live rows only: the <c>ISoftDelete</c> filter stays on, unlike the
+    /// cleanup scans above, because a document in the recycle bin is not consumable. <c>IMultiTenant</c> applies by
+    /// ambient state.
+    /// <para>
+    /// A keyset cursor, not an offset: ordered by <c>Id</c> with <c>Id &gt; afterId</c> (null = from the beginning).
+    /// The set changes while a long backfill walks it, and under offset paging a document leaving the set shifts
+    /// every later one back a position, so one is skipped for good. Ids only, so no Markdown is materialized.
+    /// </para>
+    /// </summary>
+    Task<List<Guid>> GetReadyIdsAsync(
+        Guid? afterId,
+        int maxCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Erases the uploader's name from every document <paramref name="creatorId"/> uploaded (#698, GDPR): sets
     /// <c>FileOrigin.UploadedByUserName</c> to <see cref="FileOriginConsts.AnonymizedUploaderName"/> and returns how
     /// many rows changed. <c>CreatorId</c> and everything else stay as they are: the account is anonymized by

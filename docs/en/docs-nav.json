@@ -93,6 +93,10 @@
           "path": "egress/integration-events.md"
         },
         {
+          "text": "In-Process Integration",
+          "path": "egress/in-process-integration.md"
+        },
+        {
           "text": "Data Download",
           "path": "egress/data-download.md"
         },

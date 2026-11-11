@@ -23,6 +23,19 @@ public interface IDocumentAppService : IApplicationService
     /// </summary>
     Task<DocumentDto?> FindForCallerAsync(Guid id);
 
+    /// <summary>
+    /// The calling user's read scope over the current tenant's documents, for a module in the same host that keeps
+    /// its own rows about documents and filters them for this user (Vault Index). It is the scope the operator list,
+    /// the export and the MCP search already narrow by, projected to a DTO, so the module enforces Extract's read rule
+    /// without restating it. Resolved per call: a revoked grant takes effect on the next call.
+    /// <para>
+    /// Throws <see cref="Volo.Abp.Authorization.AbpAuthorizationException"/> when the caller lacks entry
+    /// (<c>Documents.Default</c>), so such a caller reaches nothing through the module either. An in-process use case,
+    /// like <see cref="FindForCallerAsync"/>: not a REST endpoint and not an MCP tool.
+    /// </para>
+    /// </summary>
+    Task<DocumentReadScopeDto> GetReadScopeAsync();
+
     Task<PagedResultDto<DocumentListItemDto>> GetListAsync(GetDocumentListInput input);
 
     Task<DocumentDto> UploadAsync(UploadDocumentInput input);
@@ -152,9 +165,13 @@ public interface IDocumentAppService : IApplicationService
     /// <c>true</c> re-runs field extraction (the same mechanism <see cref="ReextractFieldsAsync"/> uses), which
     /// round-trips the lifecycle through Processing and, when it derives Ready again, re-fires <see cref="Abstractions.Documents.DocumentReadyEto"/>.
     /// It does <b>not</b> touch classification or segmentation — those have their own independent entry points
-    /// (<see cref="ReparseAsync"/>, <see cref="ReclassifyAsync"/>). <c>false</c> (default) writes the Markdown only: no re-extraction, and
-    /// no event is fired at all — a deliberate accepted trade-off; a downstream consumer that already pulled
-    /// the document via <c>DocumentReadyEto</c> will not know the content changed until it re-fetches.
+    /// (<see cref="ReparseAsync"/>, <see cref="ReclassifyAsync"/>). <c>false</c> (default) writes the Markdown only, with
+    /// no re-extraction. On a document that is <c>Ready</c> it then re-publishes
+    /// <see cref="Abstractions.Documents.DocumentReadyEto"/>, the same "pull it again" signal as
+    /// <see cref="UpdateExtractedFieldsAsync"/>: the consumable content changed with no lifecycle transition to
+    /// announce it. A correction does not change the lifecycle, so the document is Ready both before and after or
+    /// neither; one that is not Ready fires nothing now and is announced when it reaches Ready. Until Vault Index,
+    /// this path fired nothing at all (#555), which left a consumer serving the old text.
     /// </para>
     /// <para>
     /// Never touches <see cref="Document.Title"/>, <see cref="Document.Language"/>,

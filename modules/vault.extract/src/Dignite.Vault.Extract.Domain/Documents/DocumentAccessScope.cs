@@ -57,6 +57,23 @@ public sealed class DocumentAccessScope
     public bool IsUnrestricted => _documentTypeIds is null;
 
     /// <summary>
+    /// The types this scope reaches on the per-type arm. Empty for <see cref="Unrestricted"/>, which reaches every
+    /// type without naming any, so read it together with <see cref="IsUnrestricted"/>. Exposed for
+    /// <c>IDocumentAppService.GetReadScopeAsync</c>, which hands this same answer to a module that filters its own
+    /// rows by it (Vault Index); <see cref="ToPredicate"/> stays the only reading of it over <see cref="Document"/>.
+    /// </summary>
+    public IReadOnlySet<Guid> DocumentTypeIds => _documentTypeIds ?? EmptyTypeIds;
+
+    /// <summary>
+    /// The caller's own user id when the rule's owner arm is open for this caller; <c>null</c> when it is shut, when
+    /// the caller has no user id, and for <see cref="Unrestricted"/>. Exposed for the same reason as
+    /// <see cref="DocumentTypeIds"/>.
+    /// </summary>
+    public Guid? OwnerId => _ownerId;
+
+    private static readonly IReadOnlySet<Guid> EmptyTypeIds = new HashSet<Guid>();
+
+    /// <summary>
     /// The row predicate: <c>DocumentTypeId ∈ types OR CreatorId == ownerId</c>, with each absent arm dropped and
     /// <b>both</b> absent collapsing to a constant false. Untyped rows are reached only through the owner arm —
     /// they belong to no type, so no grant can name them.

@@ -368,6 +368,16 @@ public class EfCoreDocumentRepository
         }
     }
 
+    public virtual async Task<List<Guid>> GetReadyIdsAsync(
+        Guid? afterId,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        var dbSet = await GetDbSetAsync();
+        return await ApplyKeysetPage(dbSet.Where(DocumentQueries.ReadyForConsumers), afterId, maxCount)
+            .ToListAsync(GetCancellationToken(cancellationToken));
+    }
+
     /// <summary>
     /// Shared keyset page for the #528 cleanup scans: <c>WHERE Id &gt; afterId ORDER BY Id Take(N)</c>, riding the
     /// primary-key index (O(batch), unlike deep OFFSET paging), projecting Ids only so no full row — especially

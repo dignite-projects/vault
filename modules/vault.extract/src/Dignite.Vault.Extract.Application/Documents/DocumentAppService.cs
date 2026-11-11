@@ -98,6 +98,12 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         _duplicateDetectionEvaluator = duplicateDetectionEvaluator;
     }
 
+    /// <summary>
+    /// Type codes, field definitions and the <c>ExtractedFields</c> rendering, shared with the integration service.
+    /// Resolved lazily so the constructor a subclass calls stays as it was.
+    /// </summary>
+    protected DocumentReferenceMaps ReferenceMaps => LazyServiceProvider.LazyGetRequiredService<DocumentReferenceMaps>();
+
     public virtual async Task<DocumentDto> GetAsync(Guid id)
     {
         // Programmatic authorization, inside the method body. This is also the authorization guard for the MCP
@@ -156,6 +162,30 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         }
 
         return await MapToDtoAsync(document);
+    }
+
+    /// <summary>
+    /// The version of the reading <see cref="DocumentReadScopeDto"/> documents. Raise it whenever that reading changes
+    /// (a new arm, a different owner key), so a consumer written for the old one refuses instead of widening.
+    /// </summary>
+    protected const int ReadScopeVersion = 1;
+
+    /// <summary>
+    /// The read scope the operator list and the MCP search already narrow by, projected for a module in the same
+    /// host (Vault Index). <see cref="DocumentAccessChecker.ResolveScopeAsync"/> asserts entry and throws without it,
+    /// so a caller who may not open the documents area gets no scope at all.
+    /// </summary>
+    public virtual async Task<DocumentReadScopeDto> GetReadScopeAsync()
+    {
+        var scope = await _documentAccess.ResolveScopeAsync(DocumentAccessRule.Read);
+
+        return new DocumentReadScopeDto
+        {
+            Version = ReadScopeVersion,
+            IsUnrestricted = scope.IsUnrestricted,
+            DocumentTypeIds = scope.DocumentTypeIds.OrderBy(id => id).ToList(),
+            OwnerId = scope.OwnerId
+        };
     }
 
     public virtual async Task<PagedResultDto<DocumentListItemDto>> GetListAsync(GetDocumentListInput input)
@@ -958,8 +988,9 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
     /// so the concurrency guard and the queue call cannot drift between the two callers. Guards first —
     /// rejects while a field-extraction run for this document is already Pending/Running, avoiding double-click
     /// stacking (new attempts do not collide with the unique index for Running, so this must be blocked
-    /// explicitly) — then creates a fresh Pending run and enqueues its background job. Lifecycle-neutral:
-    /// queuing alone does not change <see cref="Document.LifecycleStatus"/>.
+    /// explicitly) — then creates a fresh Pending run and enqueues its background job. Not lifecycle-neutral:
+    /// field extraction is a key pipeline, so the Pending run derives a Ready document to Processing right away
+    /// (<c>DocumentPipelineRunManager.QueueAsync</c>).
     /// </summary>
     protected virtual async Task QueueFieldReextractionAsync(Guid id, Document document)
     {
@@ -1117,9 +1148,10 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
     /// guard + enqueue pair <see cref="ReextractFieldsAsync"/> uses (<see cref="QueueFieldReextractionAsync"/>),
     /// which round-trips the lifecycle through Processing and, when it derives Ready again, re-fires <see cref="DocumentReadyEto"/>. It does
     /// not touch classification or segmentation — those are
-    /// <see cref="ReparseAsync"/>'s and <see cref="ReclassifyAsync"/>'s job. Reprocess = <c>false</c> writes the Markdown only: no
-    /// re-extraction, no event at all — a deliberate accepted trade-off (a downstream consumer that already
-    /// pulled the document via <c>DocumentReadyEto</c> will not know the content changed until it re-fetches).
+    /// <see cref="ReparseAsync"/>'s and <see cref="ReclassifyAsync"/>'s job. Reprocess = <c>false</c> writes the Markdown only, with no
+    /// re-extraction, and re-publishes <see cref="DocumentReadyEto"/> when the document is Ready, the way
+    /// <see cref="UpdateExtractedFieldsAsync"/> does (#650). #555 had accepted firing nothing here; with Vault Index
+    /// indexing the Markdown, that left the index serving the old text with nothing to tell it otherwise.
     /// </para>
     /// <para>
     /// Forbidden on a container (<see cref="Document.IsContainer"/>): it runs no field extraction and its
@@ -1176,6 +1208,20 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         }
 
         await _documentRepository.UpdateAsync(document, autoSave: true);
+
+        // A correction changes the consumable text of a Ready document with no lifecycle transition to announce it,
+        // the same situation as an operator field edit (#650), so it re-announces the same way. One check covers
+        // "Ready before and after": CorrectMarkdown does not move the lifecycle, and nothing in this method moves a
+        // document INTO Ready. The Reprocess branch fails the check by itself, because queueing the run has just
+        // derived the document out of Ready; its return to Ready is announced by DocumentReadyEventHandler, with the
+        // re-extracted fields. A container never gets here (refused above), so this publishes where the lifecycle
+        // handler would.
+        if (document.LifecycleStatus == DocumentLifecycleStatus.Ready)
+        {
+            var documentTypeCode = await ResolveTypeCodeAsync(document.DocumentTypeId);
+            await _distributedEventBus.PublishAsync(
+                DocumentReadyEtoFactory.Create(document, documentTypeCode, Clock.Now));
+        }
 
         return await MapToDtoAsync(document);
     }
@@ -1883,102 +1929,25 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
     }
 
     /// <summary>
-    /// Resolves this document batch's DocumentTypeId -> TypeCode and DocumentTypeId -> its fields by name,
-    /// in one pass. Traverses soft-delete so archived types and fields referenced by historical documents
-    /// still resolve; <c>IMultiTenant</c> still isolates by ambient tenant, because a batch belongs to one
-    /// layer.
-    /// <para>
-    /// Fields are grouped <b>by document type</b>, not by name alone. The value bag is keyed by field name,
-    /// but a name is only unique within its type — <c>(TenantId, DocumentTypeId, Name)</c> — so a flat
-    /// name map would let one type's <c>amount</c> render another type's <c>amount</c> with the wrong
-    /// field type, which for a Date field is a differently-shaped string rather than an error.
-    /// </para>
+    /// Type codes and each type's field definitions for a batch of documents, through the shared
+    /// <see cref="DocumentReferenceMaps"/> (the integration service renders fields through it too). Kept as an
+    /// override point.
     /// </summary>
-    protected virtual async Task<(Dictionary<Guid, string> TypeCodes, Dictionary<Guid, Dictionary<string, Field>> FieldsByType)>
+    protected virtual Task<(Dictionary<Guid, string> TypeCodes, Dictionary<Guid, Dictionary<string, Field>> FieldsByType)>
         ResolveReferenceMapsAsync(IReadOnlyCollection<Document> documents)
-    {
-        var typeIds = documents
-            .Where(d => d.DocumentTypeId.HasValue)
-            .Select(d => d.DocumentTypeId!.Value)
-            .Distinct()
-            .ToList();
-
-        var typeCodes = new Dictionary<Guid, string>();
-        var fieldsByType = new Dictionary<Guid, Dictionary<string, Field>>();
-
-        using (DataFilter.Disable<ISoftDelete>())
-        {
-            if (typeIds.Count > 0)
-            {
-                foreach (var t in await _documentTypeRepository.GetListAsync(t => typeIds.Contains(t.Id)))
-                {
-                    typeCodes[t.Id] = t.TypeCode;
-                }
-
-                foreach (var f in await _fieldRepository.GetListAsync(f => typeIds.Contains(f.DocumentTypeId)))
-                {
-                    if (!fieldsByType.TryGetValue(f.DocumentTypeId, out var byName))
-                    {
-                        byName = new Dictionary<string, Field>(StringComparer.Ordinal);
-                        fieldsByType[f.DocumentTypeId] = byName;
-                    }
-
-                    byName[f.Name] = f;
-                }
-            }
-        }
-
-        return (typeCodes, fieldsByType);
-    }
+        => ReferenceMaps.ResolveAsync(documents);
 
     protected virtual string? ResolveTypeCode(Guid? documentTypeId, IReadOnlyDictionary<Guid, string> typeCodes)
         => documentTypeId.HasValue && typeCodes.TryGetValue(documentTypeId.Value, out var code) ? code : null;
 
     /// <summary>
-    /// Assembles the <c>ExtractedFields</c> dictionary of the egress from a document's value bag.
-    /// <para>
-    /// The bag is already keyed by field name, so this is a rendering step rather than a join: each value
-    /// goes through <see cref="FlexFieldValueJsonWriter"/>, which is what keeps the wire shapes identical
-    /// to v2 — a Date field still emits <c>"2026-03-14"</c> rather than the midnight <c>DateTime</c> the
-    /// bag actually holds.
-    /// </para>
-    /// <para>
-    /// A bag key with no surviving field definition is skipped rather than emitted raw. It means the field
-    /// was hard-deleted out from under its values, and a key whose type nothing can state would render by
-    /// guesswork.
-    /// </para>
+    /// The <c>ExtractedFields</c> of the egress, rendered by the shared <see cref="DocumentReferenceMaps"/>. Kept as
+    /// an override point.
     /// </summary>
     protected virtual Dictionary<string, JsonElement>? AssembleExtractedFields(
         Document document,
         IReadOnlyDictionary<Guid, Dictionary<string, Field>> fieldsByType)
-    {
-        if (document.FlexFields.Count == 0 || document.DocumentTypeId == null)
-        {
-            return null;
-        }
-
-        if (!fieldsByType.TryGetValue(document.DocumentTypeId.Value, out var byName))
-        {
-            return null;
-        }
-
-        var dict = new Dictionary<string, JsonElement>(document.FlexFields.Count, StringComparer.Ordinal);
-        foreach (var entry in document.FlexFields)
-        {
-            if (!byName.TryGetValue(entry.Key, out var field))
-            {
-                continue;
-            }
-
-            var rendered = FlexFieldValueJsonWriter.Write(entry.Value, field.FieldTypeName, field.Configuration, _fieldTypeExtensionRegistry);
-            if (rendered.HasValue)
-            {
-                dict[entry.Key] = rendered.Value;
-            }
-        }
-
-        return dict.Count > 0 ? dict : null;
-    }
+        => ReferenceMaps.AssembleExtractedFields(document, fieldsByType);
 
     /// <summary>Resolves one document's DocumentTypeId -> TypeCode, traversing soft-delete, for DocumentTypeCode carried by export ETOs.</summary>
     protected virtual async Task<string?> ResolveTypeCodeAsync(Guid? documentTypeId)

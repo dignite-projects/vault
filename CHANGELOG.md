@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **In-process contracts for a module that derives data from documents in the same host** (the groundwork for
+  Vault Index). See [In-Process Integration](docs/en/egress/in-process-integration.md).
+  - `IDocumentIntegrationService` (`Dignite.Vault.Extract.Documents.Integration`), an ABP integration service for
+    ingestion with no user: `FindReadyAsync(id)` returns a Ready document's Markdown, field values, type id, owner,
+    title and language, or `null`; `GetReadyIdsAsync` walks the Ready documents' ids by keyset cursor. It returns
+    only what `DocumentReadyEto` announces (Ready, typed, not a container), is not exposed over HTTP, and is not
+    behind the `VaultExtract.Enable` feature.
+  - `IDocumentAppService.GetReadScopeAsync()`, for serving a signed-in user: the user's read scope as
+    `DocumentReadScopeDto { Version, IsUnrestricted, DocumentTypeIds, OwnerId }`, the same scope the operator list,
+    export and MCP search narrow by. In-process only: the REST controller implements it explicitly, so it adds no
+    endpoint and no Angular proxy method.
+  - `DocumentAccessScope` exposes `DocumentTypeIds` and `OwnerId`, and `IDocumentRepository` has
+    `GetReadyIdsAsync`. A host or test that implements `IDocumentRepository` itself must add it.
+
 ### Changed
+
+- **Correcting the Markdown of a Ready document re-fires `DocumentReadyEto`** (`POST /api/vault-extract/documents/{id}/markdown`
+  without `reprocess`). It fired nothing before (#555), so a consumer kept the text it had pulled; it now behaves
+  like an operator field edit. A document that is not Ready fires nothing until it reaches Ready, and with
+  `reprocess` the event still fires once, when re-extraction brings the document back to Ready. Subscribers that
+  already treat `DocumentReadyEto` as an upsert need no change.
 
 - **BREAKING (NuGet): the text-extraction stack is its own product, Vault Parse (#716, phase 2).** It moved to
   `modules/vault.parse/` and its packages, namespaces and module classes are renamed. Configuration is unchanged:
