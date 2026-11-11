@@ -1,5 +1,5 @@
 ---
-description: "Dignite Vault Extract sub-document segmentation subsystem: the two-representation model (DocumentSegment ledger + derived Document), the two-Kind red line, the field lifecycle contract, and the cross-entity invariant (decision record: #390)"
+description: "Dignite Vault Extract sub-document segmentation subsystem: the two-representation model (DocumentSegment ledger + derived Document), the two-Kind assumption, the field lifecycle contract, and the cross-entity invariant (decision record: #390)"
 paths:
   - "modules/vault.extract/src/**/Segmentation/**/*.cs"
   - "modules/vault.extract/src/**/DerivedDocumentSpawner.cs"
@@ -28,8 +28,8 @@ A sub-document exists first as a **`DocumentSegment`** (pre-spawn ledger row) an
 
 Therefore `DocumentSegment` is a **durable internal ledger**, **not** a transient work queue:
 
-- It is **never deleted after parse success** (the "delete-segment-after-parse" aggressive simplification is a
-  boundary change, explicitly deferred — #390 Decision 4; open an issue if ever pursued). Rows go only together with
+- It is **never deleted after parse success** (deleting rows after parse was considered and
+  deferred in #390 Decision 4). Rows go only together with
   the children they route, through `SubDocumentRetractor`: a container→concrete reclassify removes the `Text` rows
   (#364), a re-parse removes every row (#660).
 - It is **never on any egress** (REST / MCP / ETO). Downstream discovers sub-documents only as `Document` rows with
@@ -90,18 +90,16 @@ What keeps it true:
 - **A sub-document is never re-parsed itself** (`Extract:DocumentReparseSubDocument`): it has no file; re-parsing the
   parent re-splits it.
 
-## 🚦 RED LINE: the subsystem assumes exactly two Kinds {Text, Figure}
+## The subsystem assumes exactly two Kinds {Text, Figure}
 
 `DocumentSegmentKind.IsContainerIndependent()` (exhaustive switch, throws on an unhandled kind), the
 `Strip` vs `ExtractBodies` child-seed split, and the **Text-only** retraction filter in
-`ContainerMarkerClearedEventHandler` are all **binary**. Adding a third `DocumentSegmentKind`
-(Table / Signature / Attachment / …) is a **CHANNEL BOUNDARY change**:
+`ContainerMarkerClearedEventHandler` are all **binary**. A third `DocumentSegmentKind`
+(Table / Signature / Attachment / …) breaks all three, so adding one means re-reviewing *every*
+`IsContainerIndependent()` call site and the container→type retraction semantics.
 
-> **STOP and open a GitHub issue** to re-review *every* `IsContainerIndependent()` call site and the
-> container→type retraction semantics **before** writing code.
-
-The exhaustive switch throwing at runtime on an unhandled kind is the **backstop** (it prevents a silent wrong
-default — the #364-class missed-branch bug, hardened in #379), not a license to add a kind quietly.
+The exhaustive switch throwing at runtime on an unhandled kind is the **backstop**: it prevents a silent wrong
+default (the #364-class missed-branch bug, hardened in #379).
 
 ## Field lifecycle contract (do not add / remove without updating #390)
 
@@ -142,4 +140,4 @@ state machines. The coupling rules:
   "not a document" row state.
 
 Changes to these transitions must be covered by the cross-entity invariant tests (container→type→container round
-trips: assert segment-row + sub-document terminal states). When in doubt, this is a boundary — open an issue.
+trips: assert segment-row + sub-document terminal states).

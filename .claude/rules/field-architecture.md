@@ -12,7 +12,7 @@ paths:
 
 # Field Architecture Details (Dignite Vault Extract)
 
-> Auto-loaded when editing `Document` / field / document-type code. CLAUDE.md holds the high-level split of the two field kinds, the essence of mechanism (B), the Document field-extension hard constraints, and the two-independent-single-layers rule for document types; this file holds the mechanics.
+> Auto-loaded when editing `Document` / field / document-type code. CLAUDE.md holds the high-level split of the two field kinds, the essence of mechanism (B), how `Document` is shaped, and the two independent layers of document types; this file holds the mechanics.
 
 ## System common fields (auto-produced by the pipeline, top-level typed columns)
 
@@ -86,7 +86,7 @@ Five call sites each do something different per field type: read/validate a raw 
 
 ### Where a value lives
 
-- **`Document.FlexFields`** (the kernel's `FlexFieldDictionary`, a JSON column) is **authoritative**, keyed by `Field.Name`. Written as a whole set through `Document.SetFlexFields(...)`; a null value drops its key. This is *not* the untyped extension bag CLAUDE.md forbids: every key is backed by a persisted `Field` with a declared type. Deliberately not ABP's `ExtraProperties`, so no other module can collide with a tenant's field names.
+- **`Document.FlexFields`** (the kernel's `FlexFieldDictionary`, a JSON column) is **authoritative**, keyed by `Field.Name`. Written as a whole set through `Document.SetFlexFields(...)`; a null value drops its key. It is a typed bag, not an open extension slot: every key is backed by a persisted `Field` with a declared type. Deliberately not ABP's `ExtraProperties`, so no other module can collide with a tenant's field names.
 - **`DocumentFlexFieldIndex`** (`FlexFieldIndexBase<Document>`) is a **derived** typed pivot table, never authoritative — every row is re-derivable from the bag, so a type change or searchability change is repaired by `RebuildAsync`, not a data migration. Cascade-deleted with its document; `NumberValue` is mapped `decimal(38,6)` because the kernel leaves precision unset and EF's `decimal(18,2)` default would silently round.
 - **Every write of the bag owes the index an `IFlexFieldIndexManager<Document>.SynchronizeAsync` in the same unit of work.** Miss one and that document silently stops matching its own field filters (the bag is correct, so every read *through the bag* still looks right). Exactly four such sites: `FieldExtractionService`'s extraction write, its no-definitions clearing path, `DocumentAppService.UpdateExtractedFieldsAsync`, and `DocumentClassificationBackgroundJob.CompleteRunAsync` (the container / classification-review retraction paths, which clear the bag via `Document.MarkAsContainer` / `RequestClassificationReview` without re-extracting).
 - **`IsSearchable`** decides whether a field's values are decomposed into the index at all (default `true`). A type whose `IndexValueType` is null yields nothing regardless.
@@ -126,11 +126,10 @@ The v2 entities (`FieldDefinition`, `DocumentExtractedField`), their tables, the
 
 `DocumentFieldValidationWarning.FieldDefinitionId` keeps its column name (it is on the wire, in `ResolveFieldValidationWarningsInput` and the review-reason detail DTO) but its FK points at `VaultFields` (#562).
 
-## Document field-extension judgment
+## What goes on `Document`
 
-The hard constraints are in CLAUDE.md ("Document field-extension hard constraints", "Markdown-first"): only one text field `Markdown`; non-text fields split by "generic truth source vs. business-specific"; no unconstrained `Dictionary<string,object>` bag (`Document.FlexFields` is the one allowed bag, #558, because every key is backed by a `Field` definition). Worked examples for the second axis:
+CLAUDE.md ("Field architecture", "Markdown-first") describes `Document`'s shape: one text field `Markdown`, no business-specific fields, and `Document.FlexFields` as a typed bag (#558) whose every key is backed by a `Field` definition. How that line has been drawn so far:
 
-- **Generic, shared across consumers** → may be added to `Document`, still with an Issue to discuss shape: `PageBlocks` (citation highlighting in any business), OCR provider name/version (debugging).
-- **Business-specific** (contract amount / invoice number / ID-card name / receipt line items) → stored by downstream consumers in their own aggregate roots (`Contract` / `Invoice` / `IdCardRecord`); **`Document` is not polluted**.
-- **OCR out-of-band signals** belong to neither downstream business nor the Markdown string (that would break Markdown-first): carry them on `Document` as named, strongly-typed, nullable fields, **one Issue per signal**.
+- **Generic, useful to any consumer** → fits on `Document`: the OCR provider name (debugging), or page blocks for citation highlighting if they are ever built.
+- **Business-specific** (contract amount / invoice number / ID-card name / receipt line items) → stored by downstream consumers in their own aggregate roots (`Contract` / `Invoice` / `IdCardRecord`).
 - `Title` is a display snapshot derived from Markdown (replaced only together with it, by a re-parse, #660); `RejectionReason` is the operator's manual note (#284) — neither is a new text payload.

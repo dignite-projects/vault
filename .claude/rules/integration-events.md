@@ -19,7 +19,7 @@ paths:
 | `DocumentClassifiedEto` | document classification completed | No |
 | `DocumentReadyEto` | **full pipeline complete + no blocking review reason** (`ReviewReasonPolicy.Blocking`); also re-fires when field extraction re-runs on an already-Ready document (bulk/on-demand re-extraction, #289; the round-trip exists because #411 made FieldExtraction a key pipeline) or when an operator edits fields on an already-Ready document (#650) | **Yes** |
 
-The wire names are published to integrators in `docs/en/egress/integration-events.md` and are frozen from the 0.5.0 line — changing one is an Issue first and a BREAKING CHANGELOG entry, the same discipline as the other serialized string contracts in CLAUDE.md; `EtoContract_Tests.Every_Eto_Wire_Name_Is_Pinned` enforces it.
+The wire names are published to integrators in `docs/en/egress/integration-events.md` and are frozen from the 0.5.0 line — changing one breaks every subscriber and needs a BREAKING CHANGELOG entry, like the other serialized string contracts in CLAUDE.md; `EtoContract_Tests.Every_Eto_Wire_Name_Is_Pinned` enforces it.
 
 **Recycle-bin / lifecycle events** (orthogonal to the multi-stage pipeline, not gated by Ready; downstream archives or physically deletes derived data accordingly):
 
