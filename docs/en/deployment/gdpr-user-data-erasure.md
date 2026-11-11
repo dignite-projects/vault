@@ -7,7 +7,7 @@
 
 # GDPR User-Data Erasure
 
-When ABP's GDPR module reports that a user asked for their data to be deleted, Vault Extract erases that user's name from every document they uploaded. Documents themselves are kept. Decision record: [#698](https://github.com/dignite-projects/vault-extract/issues/698).
+When ABP's GDPR module reports that a user asked for their data to be deleted, Vault Extract erases that user's name from every document they uploaded. Documents themselves are kept. Decision record: [#698](https://github.com/dignite-projects/vault/issues/698).
 
 ## What Is Erased, and What Is Not
 

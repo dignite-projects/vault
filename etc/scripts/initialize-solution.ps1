@@ -28,7 +28,6 @@ Run-Step "InstallLibs" {
 Run-Step "DbMigrator" {
     Set-Location (Join-Path $scriptRoot "../../src/Dignite.Vault.Extract.Host")
     dotnet run --migrate-database
-    dotnet run --migrate-database
 }
 
 Run-Step "DevCert" {

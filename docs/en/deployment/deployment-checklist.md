@@ -48,7 +48,7 @@ Vault Extract seeds no document types ([Document Types and Fields](../documents/
 ### Vision-LLM OCR (the shipped default)
 
 - [ ] A phone photo of a receipt → `Document.Markdown` holds the line items and amounts, not empty text
-- [ ] A photo over 1.5 megapixels → the log shows one downscale line with the original and new size, and the Markdown is not empty ([#692](https://github.com/dignite-projects/vault-extract/issues/692))
+- [ ] A photo over 1.5 megapixels → the log shows one downscale line with the original and new size, and the Markdown is not empty ([#692](https://github.com/dignite-projects/vault/issues/692))
 - [ ] A scanned (image-only) PDF of several pages → one transcription per page, joined; a PDF over `VisionLlmOcr:MaxPdfPages` fails loudly instead of dropping pages
 - [ ] On Linux: `SkiaSharp.NativeAssets.Linux` is referenced and `libfontconfig1` is installed, so scanned PDF pages rasterize ([Vision-LLM OCR](../text-extraction/ocr-vision-llm.md#linux-deployment))
 - [ ] Token usage appears in the telemetry backend (`gen_ai.client.token.usage`)

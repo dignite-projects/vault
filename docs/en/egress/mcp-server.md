@@ -172,7 +172,7 @@ The validator runs before the tenant lookup, so a denied caller cannot tell an u
 
 ## Rate Limiting
 
-The `/mcp` endpoint is rate-limited per client IP ([#433](https://github.com/dignite-projects/vault-extract/issues/433)), a backstop against abuse that also covers the unauthenticated discovery `401`. It is on by default with generous limits; an over-limit request gets `429`. Configure it under `Mcp:RateLimit`:
+The `/mcp` endpoint is rate-limited per client IP ([#433](https://github.com/dignite-projects/vault/issues/433)), a backstop against abuse that also covers the unauthenticated discovery `401`. It is on by default with generous limits; an over-limit request gets `429`. Configure it under `Mcp:RateLimit`:
 
 ```jsonc
 "Mcp": {

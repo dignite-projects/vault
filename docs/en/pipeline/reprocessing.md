@@ -63,7 +63,7 @@ To change a document's **type**, use the edit control beside the type on the det
 
 ## Single-Document Re-parse
 
-**Re-parse** ([#660](https://github.com/dignite-projects/vault-extract/issues/660), `ReparseAsync`) re-runs text extraction from the document's stored original file, then runs it through classification and field extraction exactly as a fresh upload would — container detection and embedded-document routing included. Use it when the *text* is wrong: a parser fix that would read the file better now, an OCR result that came back truncated or incomplete, or a changed host OCR configuration you want one document to pick up.
+**Re-parse** ([#660](https://github.com/dignite-projects/vault/issues/660), `ReparseAsync`) re-runs text extraction from the document's stored original file, then runs it through classification and field extraction exactly as a fresh upload would — container detection and embedded-document routing included. Use it when the *text* is wrong: a parser fix that would read the file better now, an OCR result that came back truncated or incomplete, or a changed host OCR configuration you want one document to pick up.
 
 - **Replaced as one unit**: `Markdown`, `Title`, `Language` and the extraction metadata. Operator Markdown corrections are overwritten.
 - **Classification always runs**, even over an operator-confirmed type, and may land the document in a different type or in the review queue. If it gets the type wrong, fix it with the type editor.
@@ -111,7 +111,7 @@ Batch and progress are internal operational state — they are **not** part of t
 
 ## Out of Scope
 
-- **Batch re-OCR of existing documents** ([#396](https://github.com/dignite-projects/vault-extract/issues/396), won't fix). Text extraction is the most upstream stage and cascades into everything below it; re-running it across the store after a configuration change would rewrite documents that were already fine, at the highest cost. Re-parse one document at a time instead.
+- **Batch re-OCR of existing documents** ([#396](https://github.com/dignite-projects/vault/issues/396), won't fix). Text extraction is the most upstream stage and cascades into everything below it; re-running it across the store after a configuration change would rewrite documents that were already fine, at the highest cost. Re-parse one document at a time instead.
 
 ## See Also
 

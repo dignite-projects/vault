@@ -76,7 +76,7 @@ The prompt language follows `Vault:ExtractBehavior:DefaultLanguage` (see [ai-pro
 
 Operator confirmation/correction (`ConfirmClassificationAsync` / `ReclassifyAsync`) requires text extraction to have already completed — the same `Document.Markdown` precondition as `ReparseAsync` — and throws `NotTextExtracted` otherwise, so a type can never be confirmed on a document that has no text yet to run the field-extraction cascade against.
 
-On the detail page both are one control: the type editor beside the type badge ([#660](https://github.com/dignite-projects/vault-extract/issues/660)), which the review banner's *Confirm classification* button also opens. Saving writes the chosen type as operator-confirmed and re-extracts fields for it — no re-parse and no LLM classification. To have the LLM classify a document again, re-parse it ([reprocessing.md](reprocessing.md)); there is no longer a single-document action that re-classifies the existing text without re-parsing it.
+On the detail page both are one control: the type editor beside the type badge ([#660](https://github.com/dignite-projects/vault/issues/660)), which the review banner's *Confirm classification* button also opens. Saving writes the chosen type as operator-confirmed and re-extracts fields for it — no re-parse and no LLM classification. To have the LLM classify a document again, re-parse it ([reprocessing.md](reprocessing.md)); there is no longer a single-document action that re-classifies the existing text without re-parsing it.
 
 ## Declared Type at Upload
 

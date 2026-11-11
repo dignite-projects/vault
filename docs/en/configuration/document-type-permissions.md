@@ -27,7 +27,7 @@ They are built on ABP's [resource-based authorization](https://abp.io/docs/lates
 
 The four resource permission names are prefixed with the resource name `Dignite.Vault.Extract.Documents.DocumentTypes.DocumentType`. The resource is the `DocumentType` entity; the resource **key** is its immutable `Id`.
 
-`ManagePermissions` is deliberately **not** `DocumentTypes.Update`; the rationale is recorded in [#629](https://github.com/dignite-projects/vault-extract/issues/629).
+`ManagePermissions` is deliberately **not** `DocumentTypes.Update`; the rationale is recorded in [#629](https://github.com/dignite-projects/vault/issues/629).
 
 Every one of those strings is a **frozen contract** once the first grant row exists — the same discipline the `Extract:*` error codes follow. They are persisted verbatim in `AbpResourcePermissionGrants`; renaming any one of them orphans every existing grant silently. In particular the resource name must stay equal to `typeof(DocumentType).FullName`, because ABP derives it from the runtime type of the object handed to the authorization service. A unit test asserts that equality so an entity rename fails the build instead of the ACL.
 
@@ -104,7 +104,7 @@ The module-wide column of each row is a set, and any member admits. Every row ha
 
 Reclassifying a document from type A to type B needs two rows: **Edit** on A (it is an edit of that document) and **Declare a type** on B (it is a decision about B), or a module-wide permission in place of either. Owning the document satisfies the first and never the second — owning a document is not a licence to move it into a type you were never granted.
 
-Re-parse (`ReparseAsync`, the detail page's *Re-parse*, [#660](https://github.com/dignite-projects/vault-extract/issues/660)) re-runs classification, so it needs the same two rows: **Edit** on the document, and **Declare a type** on the empty subject, because the classifier picks the target and it may be any type of the layer. That leaves `ConfirmClassification` or `Documents.Upload` as the only ways in — the same judgment an untyped upload gets, for the same reason. A caller whose right to assign types is per type uses the manual path instead and names one their grant covers.
+Re-parse (`ReparseAsync`, the detail page's *Re-parse*, [#660](https://github.com/dignite-projects/vault/issues/660)) re-runs classification, so it needs the same two rows: **Edit** on the document, and **Declare a type** on the empty subject, because the classifier picks the target and it may be any type of the layer. That leaves `ConfirmClassification` or `Documents.Upload` as the only ways in — the same judgment an untyped upload gets, for the same reason. A caller whose right to assign types is per type uses the manual path instead and names one their grant covers.
 
 ### The Owner Arm Has Three Values, and Review Is Why
 
@@ -141,7 +141,7 @@ Stays module-wide only, by decision: permanent delete (irreversible, and it dest
 
 - **Derived sub-documents inherit the origin's owner.** Segmentation runs in a background job with no principal, so ABP would leave `CreatorId` null and the sub-documents of a bundle would be invisible to the person who uploaded the bundle. `Document.CreateDerived` takes the origin's `CreatorId`; ABP's audit setter returns early when `CreatorId` already has a value, so the explicit value survives.
 
-  Sub-documents split out **before** the upgrade have no owner (they were spawned with no principal and no inherited creator); the one-off backfill that corrects them is the deployment note in the [CHANGELOG](https://github.com/dignite-projects/vault-extract/blob/main/CHANGELOG.md) entry for #635.
+  Sub-documents split out **before** the upgrade have no owner (they were spawned with no principal and no inherited creator); the one-off backfill that corrects them is the deployment note in the [CHANGELOG](https://github.com/dignite-projects/vault/blob/main/CHANGELOG.md) entry for #635.
 - **Machine identities have no owner.** A client-credentials token has no `sub`, so `ICurrentUser.Id` is null and the ownership arm can never match. Such a principal reaches documents only through module-wide permissions or per-type grants. Today's MCP client is Authorization Code + PKCE, so real MCP callers are users and do carry ownership.
 - **Not transferable, and there is no UI for it.** Out of scope.
 - **Revoking `Upload` does not retract ownership.** Nothing short of removing entry stops an uploader from editing or soft-deleting their own document, including one that has already fired `DocumentReadyEto`. Approval workflows belong downstream, and downstream already handles `DocumentDeletedEto`.

@@ -124,7 +124,7 @@ jobs:
 
       # Pre-release builds go to GitHub Packages only (private to the org, authenticated with the
       # workflow's built-in GITHUB_TOKEN). The package's <RepositoryUrl> in common.props links it
-      # to dignite-projects/vault-extract, which GitHub Packages requires for the push. Symbols are
+      # to dignite-projects/vault, which GitHub Packages requires for the push. Symbols are
       # embedded in the DLLs, so ./artifacts holds only .nupkg files and the push is .nupkg-only.
       - name: Push to GitHub Packages (pre-release)
         if: steps.channel.outputs.channel == 'preview'
