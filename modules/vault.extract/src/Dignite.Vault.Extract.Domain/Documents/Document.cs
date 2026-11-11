@@ -212,10 +212,10 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
     /// removed once the v3 data migration ran (#561, #593).
     /// <para>
     /// This is FlexFields' own dictionary, deliberately <b>not</b> ABP's <c>ExtraProperties</c>: kept
-    /// isolated from that shared bag so no other module can collide with a tenant's field names. Note
-    /// that it is not the untyped extension bag CLAUDE.md forbids on this aggregate either — every key in
-    /// it is constrained by a real <see cref="Fields.Field"/> definition, which is exactly what the
-    /// forbidden <c>Dictionary&lt;string, object&gt;</c> extension bag would not have been.
+    /// isolated from that shared bag so no other module can collide with a tenant's field names. It is
+    /// a typed bag, not an open extension slot: every key in it is constrained by a real
+    /// <see cref="Fields.Field"/> definition with a declared type, which a plain
+    /// <c>Dictionary&lt;string, object&gt;</c> would not give.
     /// </para>
     /// <para>
     /// The derived <c>DocumentFlexFieldIndex</c> table alongside it is never authoritative: every row in

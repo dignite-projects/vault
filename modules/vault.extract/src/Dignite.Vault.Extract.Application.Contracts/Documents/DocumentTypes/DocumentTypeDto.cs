@@ -29,7 +29,7 @@ public class DocumentTypeDto : EntityDto<Guid>, IHasResourcePermissions
     /// Every other endpoint returning this DTO (<c>GetDeletedAsync</c>, <c>CreateAsync</c>, <c>UpdateAsync</c>,
     /// <c>RestoreAsync</c>) leaves it empty — an empty dictionary there says nothing about the caller's grants.
     /// <para>
-    /// This is <b>not</b> the unconstrained extension bag CLAUDE.md forbids: it lives on a read DTO rather
+    /// This is <b>not</b> an open extension bag: it lives on a read DTO rather
     /// than on <c>Document</c>, it is never persisted, and every key is a registered permission definition —
     /// the populator enumerates them from <c>IPermissionDefinitionManager</c>, so nothing can write an
     /// arbitrary key into it.
