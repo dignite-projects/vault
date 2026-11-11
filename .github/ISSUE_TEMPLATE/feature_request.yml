@@ -26,15 +26,18 @@ body:
   - type: dropdown
     id: boundary
     attributes:
-      label: Does this touch a channel boundary?
+      label: Is this a boundary change?
       description: >
-        OCR / text-extraction pipeline, exit contracts (REST / MCP / EventBus / Webhook, event payloads),
-        the field architecture, the document-type tier system, the Markdown-first contract, or the security
-        covenant. Boundary-touching changes are design decisions that must reach consensus in this issue
-        before any code is written (CONTRIBUTING.md → Issue-first principle).
+        A boundary change alters a contract visible outside its module: exit contracts (REST / MCP /
+        EventBus / Webhook, event payloads), a module's public API or the module-reference rules,
+        serialized string contracts, or a rule in CLAUDE.md / .claude/rules/. Typical cases are the
+        OCR / text-extraction pipeline, the field architecture, the document-type tier system, the
+        Markdown-first contract and the security covenant. Boundary changes are design decisions that
+        must reach consensus in this issue before the implementing PR is opened; a throwaway spike may
+        come first (CONTRIBUTING.md → Issue-first principle).
       options:
-        - "No — pure implementation detail (bug fix / wording / internal refactor)"
-        - "Yes — touches a channel boundary (needs design consensus here first)"
+        - "No — implementation detail (bug fix / wording / internal refactor / new provider behind an existing contract)"
+        - "Yes — changes a contract outside its module (needs design consensus here first)"
         - "Not sure"
     validations:
       required: true

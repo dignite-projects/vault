@@ -11,10 +11,11 @@
 
 <!--
   Link the issue this PR addresses (e.g. "Closes #123").
-  Required for any change that touches a channel boundary — the OCR / text-extraction
-  pipeline, exit contracts (REST / MCP / EventBus / Webhook, event payloads), the field
-  architecture, the document-type tier system, the Markdown-first contract, or the
-  security covenant. Those must reach consensus in an issue first (CONTRIBUTING.md → Issue-first principle).
+  Required for a boundary change — one that alters a contract visible outside its module:
+  exit contracts (REST / MCP / EventBus / Webhook, event payloads), a module's public API or
+  the module-reference rules, serialized string contracts, or a rule in CLAUDE.md /
+  .claude/rules/. Those must reach consensus in an issue before this PR is opened
+  (CONTRIBUTING.md → Issue-first principle).
 -->
 
 ## Checklist
@@ -24,4 +25,4 @@
 - [ ] Follows the conventions in `.claude/rules/` and CLAUDE.md (dependency direction, ABP patterns, Markdown-first, LLM-call security covenant)
 - [ ] Documentation updated if behavior, configuration, or exit contracts changed
 - [ ] No middleware configured outside the host application
-- [ ] For boundary-touching changes: a GitHub Issue exists and consensus was reached before coding
+- [ ] For boundary changes: a GitHub Issue exists and consensus was reached before this PR was opened
