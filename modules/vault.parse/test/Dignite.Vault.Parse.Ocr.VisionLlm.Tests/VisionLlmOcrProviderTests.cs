@@ -210,7 +210,7 @@ public class VisionLlmOcrProviderTests
         _options.MaxPdfPages = 2;
         _rasterizer.GetPageCount(Arg.Any<byte[]>()).Returns(5);
 
-        await Should.ThrowAsync<InvalidOperationException>(() =>
+        await Should.ThrowAsync<InvalidDataException>(() =>
             CreateProvider().RecognizeAsync(
                 new MemoryStream(FakePdf()),
                 new OcrOptions { ContentType = "application/pdf" }));

@@ -77,7 +77,7 @@ Provider behaviour knobs (the model id / endpoint / key are host `ConfigureAI` c
 | --- | --- | --- |
 | `MaxOutputTokens` | `4096` | Hard cap on tokens generated per image/page. Bounds worst-case cost **and** the length of a runaway loop |
 | `Temperature` | `0` | Deterministic transcription; reduces hallucination/looping |
-| `MaxPdfPages` | `30` | Max pages rasterized per PDF. Exceeding it throws (fails loudly) rather than silently dropping pages |
+| `MaxPdfPages` | `30` | Max pages rasterized per PDF. Exceeding it throws (fails loudly) rather than silently dropping pages: the parse run ends **Failed** without automatic retries, and **Retry** works once the limit is raised |
 | `MaxImagePixels` | `1500000` | Most pixels (width × height) of an image sent to the model; a larger one is [scaled down](#large-images-are-shrunk-first) first. `0` or less sends images as they are |
 | `MaxConsecutiveRepeatedLines` | `24` | Guard heuristic 1: trip on this many identical consecutive lines. Values below 2 are treated as 2 (strictest); set a very large value to disable |
 | `MinDistinctLineRatio` | `0.3` | Guard heuristic 2: trip if distinct/total line ratio drops below this over a large body |

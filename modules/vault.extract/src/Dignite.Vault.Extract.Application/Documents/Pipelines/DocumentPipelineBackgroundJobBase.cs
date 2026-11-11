@@ -70,23 +70,37 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
     /// for about two days before abandoning the job (anti-pattern D in <c>.claude/rules/llm-call-anti-patterns.md</c>):
     /// the 2026-11-10 self-test saw four queued jobs of one document all re-run once the cause was fixed. The run is
     /// already <c>Failed</c> and retryable, so an operator retries it once the cause (configuration, a provider limit)
-    /// is fixed. Every other failure keeps returning <c>false</c>, and the caller rethrows for ABP to retry.
+    /// is fixed. The second case is an input that is itself invalid or over a configured limit
+    /// (<see cref="ProviderFailureClassifier.IsInvalidInput"/>: an <see cref="System.IO.InvalidDataException"/> from the
+    /// text-extraction stack, e.g. a corrupt workbook or a PDF over the OCR page limit), which fails the same way on
+    /// every retry. Every other failure keeps returning <c>false</c>, and the caller rethrows for ABP to retry.
     /// </summary>
     protected virtual bool EndOnPermanentProviderFailure(Exception exception, Guid documentId, string pipelineCode)
     {
-        if (!ProviderFailureClassifier.IsPermanent(exception))
+        if (ProviderFailureClassifier.IsPermanent(exception))
         {
-            return false;
+            ProviderFailureClassifier.TryGetHttpStatus(exception, out var status);
+            Logger.LogWarning(
+                exception,
+                "The provider refused the {PipelineCode} request for document {DocumentId} with HTTP {Status}. The run is " +
+                "Failed and the job is not retried, because the same request would be refused again; fix the cause, then " +
+                "retry the run.",
+                pipelineCode, documentId, status);
+            return true;
         }
 
-        ProviderFailureClassifier.TryGetHttpStatus(exception, out var status);
-        Logger.LogWarning(
-            exception,
-            "The provider refused the {PipelineCode} request for document {DocumentId} with HTTP {Status}. The run is " +
-            "Failed and the job is not retried, because the same request would be refused again; fix the cause, then " +
-            "retry the run.",
-            pipelineCode, documentId, status);
-        return true;
+        if (ProviderFailureClassifier.IsInvalidInput(exception))
+        {
+            Logger.LogWarning(
+                exception,
+                "The {PipelineCode} input of document {DocumentId} is itself invalid or over a configured limit. The run is " +
+                "Failed and the job is not retried, because the same input would fail again; replace the file or raise " +
+                "the limit, then retry the run.",
+                pipelineCode, documentId);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

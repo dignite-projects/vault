@@ -279,6 +279,47 @@ public class PdfExtractor_Tests
     }
 
     [Fact]
+    public async Task Keeps_the_text_layer_when_an_embedded_image_OCR_times_out()
+    {
+        // A provider timeout surfaces as TaskCanceledException while the caller's token is NOT cancelled:
+        // it is a figure failure, not a shutdown.
+        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+            .Throws(new TaskCanceledException());
+
+        var png = TinyPng.CreateSolid(32, 32);
+        var pdf = PdfFixtures.Build(
+            texts: new[] { ("DIGITALBODYTEXT", 700.0) },
+            images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
+
+        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+
+        result.Markdown.ShouldContain("DIGITALBODYTEXT");
+        result.IsComplete.ShouldBeFalse();
+        result.IncompleteReason.ShouldNotBeNull();
+        result.IncompleteReason!.ShouldContain("OCR");
+    }
+
+    [Fact]
+    public async Task Propagates_cancellation_of_the_callers_token_raised_during_figure_OCR()
+    {
+        using var cts = new CancellationTokenSource();
+        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<OcrResult>>(_ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        var png = TinyPng.CreateSolid(32, 32);
+        var pdf = PdfFixtures.Build(
+            texts: new[] { ("DIGITALBODYTEXT", 700.0) },
+            images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
+
+        await Should.ThrowAsync<OperationCanceledException>(async () =>
+            await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext(), cts.Token));
+    }
+
+    [Fact]
     public async Task Passes_empty_language_hints_to_figure_ocr_when_the_context_has_none()
     {
         StubOcr("FIGURE");

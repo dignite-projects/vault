@@ -112,7 +112,7 @@ public class AzureDocumentIntelligenceOcrProvider : IOcrProvider, ITransientDepe
                 .SelectMany(p => p.Lines ?? [])
                 .Select(l => l.Content)
                 .Where(t => !string.IsNullOrWhiteSpace(t));
-            markdown = string.Join(Environment.NewLine + Environment.NewLine, paragraphs);
+            markdown = string.Join("\n\n", paragraphs);
         }
 
         return markdown ?? string.Empty;

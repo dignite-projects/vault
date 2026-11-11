@@ -12,26 +12,25 @@ public class PdfReadingOrder_Tests
     // PdfRectangle(left, bottom, right, top); PDF origin is bottom-left (larger Y = higher on the page).
 
     [Fact]
-    public void FindNearestCaptionIndex_picks_the_closest_line_by_squared_centroid_distance()
+    public void RenderPage_with_no_words_a_ruled_grid_and_a_figure_renders_the_figure()
     {
-        var lines = new List<PdfReadingOrder.TextLine>
+        // 3 vertical x 3 horizontal rules = a 2x2 grid.
+        var rulingBounds = new List<PdfRectangle>
         {
-            new(new PdfRectangle(0, 800, 100, 812), "far above"),
-            new(new PdfRectangle(0, 400, 100, 412), "just below the image"),
-            new(new PdfRectangle(0, 50, 100, 62), "far below")
+            new(49.5, 100, 50.5, 300), new(149.5, 100, 150.5, 300), new(249.5, 100, 250.5, 300),
+            new(50, 99.5, 250, 100.5), new(50, 199.5, 250, 200.5), new(50, 299.5, 250, 300.5)
+        };
+        PdfRulingLines.DetectGrids(rulingBounds).ShouldNotBeEmpty();
+
+        var figures = new List<PdfReadingOrder.Figure>
+        {
+            new(new PdfRectangle(60, 110, 140, 190), "FIGURE-TRANSCRIPTION-XYZ")
         };
 
-        var image = new PdfRectangle(0, 420, 100, 520); // centroid ≈ (50, 470)
+        var md = PdfReadingOrder.RenderPage(
+            Array.Empty<UglyToad.PdfPig.Content.Word>(), figures, true, null, rulingBounds, out _);
 
-        PdfReadingOrder.FindNearestCaptionIndex(image, lines).ShouldBe(1);
-    }
-
-    [Fact]
-    public void FindNearestCaptionIndex_returns_null_when_there_are_no_lines()
-    {
-        PdfReadingOrder.FindNearestCaptionIndex(
-            new PdfRectangle(0, 0, 10, 10),
-            Array.Empty<PdfReadingOrder.TextLine>()).ShouldBeNull();
+        md.ShouldContain("FIGURE-TRANSCRIPTION-XYZ");
     }
 
     [Fact]

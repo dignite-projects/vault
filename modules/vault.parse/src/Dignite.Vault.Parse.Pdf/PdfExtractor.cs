@@ -229,14 +229,16 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
                             },
                             cancellationToken);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                     {
                         // A single figure's OCR failing (provider timeout / rate-limit / auth / one bad image)
                         // must NOT discard the digital text layer already extracted — figure OCR is an
                         // auxiliary augmentation here, not the document's primary payload (the #210/#268
                         // "an auxiliary step must not break the main pipeline" principle). Skip this figure
-                        // and mark the result incomplete. OperationCanceledException still propagates so a
-                        // host/job shutdown aborts promptly.
+                        // and mark the result incomplete. A cancellation of the caller's token still
+                        // propagates so a host/job shutdown aborts promptly; an OperationCanceledException
+                        // raised while that token is not cancelled is a provider timeout (HttpClient surfaces
+                        // it as TaskCanceledException) and is a figure failure like any other.
                         Logger.LogWarning(ex, "Embedded-image OCR failed; keeping the text layer, skipping this figure.");
                         failedFigureOcr++;
                         continue;

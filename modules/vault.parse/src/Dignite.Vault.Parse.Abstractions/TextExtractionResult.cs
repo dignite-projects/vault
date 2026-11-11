@@ -5,7 +5,7 @@ public class TextExtractionResult
     /// <summary>
     /// Structured Markdown output. Empty string when the provider recognizes no content.
     /// This is the <b>only</b> text payload of the Parse pipeline; downstream consumers that
-    /// need plain text should project it through <see cref="Dignite.Vault.Extract.Documents.MarkdownStripper"/>.
+    /// need plain text should project it through <c>Dignite.Vault.Extract.Documents.MarkdownStripper</c>.
     /// </summary>
     public string Markdown { get; set; } = string.Empty;
 

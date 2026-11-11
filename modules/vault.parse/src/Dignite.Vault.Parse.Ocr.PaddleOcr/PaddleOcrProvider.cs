@@ -98,7 +98,7 @@ public class PaddleOcrProvider : IOcrProvider, ITransientDependency
         content.Add(new StringContent(modelName), "model_name");
 
         var client = _httpClientFactory.CreateClient(VaultParsePaddleOcrModule.HttpClientName);
-        var response = await client.PostAsync($"{_options.Endpoint.TrimEnd('/')}/ocr", content, cancellationToken);
+        using var response = await client.PostAsync($"{_options.Endpoint.TrimEnd('/')}/ocr", content, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -133,7 +133,7 @@ public class PaddleOcrProvider : IOcrProvider, ITransientDependency
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
             .Where(line => line.Length > 0);
-        return string.Join(Environment.NewLine + Environment.NewLine, paragraphs);
+        return string.Join("\n\n", paragraphs);
     }
 
     private sealed class PaddleOcrResponse

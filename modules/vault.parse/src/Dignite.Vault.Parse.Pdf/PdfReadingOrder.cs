@@ -353,34 +353,6 @@ internal static class PdfReadingOrder
     }
 
     /// <summary>
-    /// Index of the text line nearest the image by RAGFlow-style squared centroid distance
-    /// (<c>dis = dx² + dy²</c>), or <c>null</c> when there are no lines.
-    /// </summary>
-    public static int? FindNearestCaptionIndex(PdfRectangle imageBounds, IReadOnlyList<TextLine> lines)
-    {
-        if (lines.Count == 0)
-        {
-            return null;
-        }
-
-        var (ix, iy) = Centroid(imageBounds);
-        var best = -1;
-        var bestDistance = double.MaxValue;
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var (lx, ly) = Centroid(lines[i].Bounds);
-            var distance = Sq(lx - ix) + Sq(ly - iy);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-
-        return best;
-    }
-
-    /// <summary>
     /// Renders the page to Markdown: text lines folded into gap-delimited paragraphs, figure
     /// transcriptions inlined at their reading position. A figure whose nearest line reads like a caption
     /// (and is close enough) consumes that line and renders it as the figure block's label, so the caption
@@ -689,7 +661,9 @@ internal static class PdfReadingOrder
         // column — UNLESS a drawn grid is present: a small ruled table can land in a single segmentation block,
         // and its grid still reconstructs it (the block path below claims it as a lattice table). Without a
         // grid this stays the #329 single-block limitation (no whitespace table reconstruction on one block).
-        if (orderedBlocks.Count <= 1 && grids.Count == 0)
+        // With no text blocks there is nothing for a lattice to claim, so the flat render is the correct output
+        // (and AssignFiguresToBlocks requires a non-empty block list).
+        if (orderedBlocks.Count == 0 || (orderedBlocks.Count <= 1 && grids.Count == 0))
         {
             return Render(pageLines, figures, headingScale, paragraphModel);
         }

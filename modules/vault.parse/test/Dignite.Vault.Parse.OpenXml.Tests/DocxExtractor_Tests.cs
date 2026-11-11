@@ -360,6 +360,25 @@ public class DocxExtractor_Tests
     }
 
     [Fact]
+    public async Task Keeps_document_text_when_an_embedded_image_OCR_times_out()
+    {
+        // A provider timeout surfaces as TaskCanceledException while the caller's token is NOT cancelled.
+        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+            .Throws(new TaskCanceledException());
+
+        var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
+            .Paragraph("DOCBODYTEXT")
+            .Image(Png(alt: null)));
+
+        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+
+        result.Markdown.ShouldContain("DOCBODYTEXT");
+        result.IsComplete.ShouldBeFalse();
+        result.IncompleteReason.ShouldNotBeNull();
+        result.IncompleteReason!.ShouldContain("OCR");
+    }
+
+    [Fact]
     public async Task Skips_vector_images_and_marks_incomplete()
     {
         StubOcr("SHOULD_NOT_BE_CALLED");

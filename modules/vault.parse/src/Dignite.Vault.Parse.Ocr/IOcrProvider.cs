@@ -9,7 +9,7 @@ namespace Dignite.Vault.Parse.Ocr;
 /// Third-party integrations for the Extract text extraction pipeline only need to reference
 /// <c>Dignite.Vault.Parse.Ocr</c> to obtain <see cref="IOcrProvider"/> + <see cref="OcrOptions"/> +
 /// <see cref="OcrResult"/>. They do not need to reference <c>Dignite.Vault.Parse</c>
-/// (the orchestrator) or <c>Dignite.Vault.Extract.Abstractions</c> (the top-level ITextExtractor
+/// (the orchestrator) or <c>Dignite.Vault.Parse.Abstractions</c> (the top-level ITextExtractor
 /// contract).
 /// </summary>
 /// <remarks>

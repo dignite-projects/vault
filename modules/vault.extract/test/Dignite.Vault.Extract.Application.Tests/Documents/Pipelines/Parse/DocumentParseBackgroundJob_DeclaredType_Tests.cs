@@ -159,6 +159,35 @@ public class DocumentParseBackgroundJob_DeclaredType_Tests
         doc.ReviewDisposition.ShouldBe(DocumentReviewDisposition.NotReviewed);
     }
 
+    [Fact]
+    public async Task DeclaredType_With_Empty_Parse_Output_Falls_Back_To_Automatic_Classification()
+    {
+        var doc = CreateDocument();
+        // The declared type exists, so only the empty parse output can trigger the fallback.
+        _pipelineRunManager.DeclareDocumentType(doc, DocumentParseDeclaredTypeJobTestModule.InvoiceTypeId);
+        SetupDocumentRepository(doc);
+
+        var run = await _pipelineJobScheduler.QueueAsync(doc, VaultExtractPipelines.Parse);
+        StubExtraction(string.Empty);
+
+        await _job.ExecuteAsync(new DocumentParseJobArgs { DocumentId = doc.Id, PipelineRunId = run.Id });
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Any<DocumentClassificationJobArgs>(), Arg.Any<BackgroundJobPriority>(), Arg.Any<TimeSpan?>());
+        await _eventBus.DidNotReceive().PublishAsync(Arg.Any<DocumentClassifiedEto>(), Arg.Any<bool>());
+
+        // No manual classification was applied, so no field-extraction cascade exists.
+        await _backgroundJobManager.DidNotReceive().EnqueueAsync(
+            Arg.Any<DocumentFieldExtractionJobArgs>(), Arg.Any<BackgroundJobPriority>(), Arg.Any<TimeSpan?>());
+        var feRun = await _runRepository.FindLatestByDocumentAndCodeAsync(
+            doc.Id, VaultExtractPipelines.FieldExtraction);
+        feRun.ShouldBeNull();
+
+        doc.DocumentTypeId.ShouldBeNull();
+        doc.ClassificationConfidence.ShouldBe(0d);
+        doc.ReviewDisposition.ShouldBe(DocumentReviewDisposition.NotReviewed);
+    }
+
     private void SetupDocumentRepository(Document doc)
     {
         _documentRepository.GetAsync(doc.Id, false, Arg.Any<CancellationToken>()).Returns(doc);

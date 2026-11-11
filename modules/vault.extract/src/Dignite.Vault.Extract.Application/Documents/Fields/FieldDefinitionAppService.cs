@@ -217,6 +217,7 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
 
         var oldName = entity.Name;
         var wasSearchable = entity.IsSearchable;
+        var wasUniqueKey = entity.IsUniqueKey;
         var renamed = !string.Equals(input.Name, oldName, StringComparison.Ordinal);
         if (renamed)
         {
@@ -282,6 +283,19 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
             // has to drop the rows that now would be. Re-deriving the whole index is a complete migration
             // for either direction, and cheaper to reason about than trying to patch just this field's rows.
             await _indexManager.RebuildAsync();
+        }
+
+        if (wasUniqueKey && !entity.IsUniqueKey)
+        {
+            // Same reasoning as DeleteAsync: turning the flag off removes a unique-key field from the schema exactly
+            // as deleting the field does. Always enqueue; the job re-evaluates the final active schema when it runs and
+            // only clears the duplicate basis when no unique-key field remains.
+            await _backgroundJobManager.EnqueueAsync(
+                new DuplicateBasisCleanupArgs
+                {
+                    DocumentTypeId = entity.DocumentTypeId,
+                    TenantId = entity.TenantId
+                });
         }
 
         return ObjectMapper.Map<Field, FieldDefinitionDto>(entity);

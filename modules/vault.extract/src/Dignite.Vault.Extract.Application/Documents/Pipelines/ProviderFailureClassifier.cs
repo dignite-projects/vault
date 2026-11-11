@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Reflection;
 
@@ -20,6 +21,10 @@ namespace Dignite.Vault.Extract.Documents.Pipelines;
 /// <c>HttpClient</c>, e.g. PaddleOCR), and the <c>Status</c> of <c>System.ClientModel.ClientResultException</c>
 /// (OpenAI SDK, so every <c>IChatClient</c> over it) or <c>Azure.RequestFailedException</c> (Azure SDKs). The last
 /// two are matched by type name so that this layer takes no dependency on either SDK.
+/// </para>
+/// <para>
+/// <see cref="IsInvalidInput"/> covers the other permanent case, which carries no HTTP status: the document itself
+/// is invalid or over a configured limit (<see cref="InvalidDataException"/>).
 /// </para>
 /// </summary>
 public static class ProviderFailureClassifier
@@ -43,6 +48,45 @@ public static class ProviderFailureClassifier
            && status is >= 400 and < 500
            && status != 408
            && status != 429;
+
+    /// <summary>
+    /// <c>true</c> when <paramref name="exception"/> or anything it wraps is an <see cref="InvalidDataException"/>:
+    /// the text-extraction stack's marker for an input that is itself invalid or over a configured limit (a corrupt or
+    /// unsafe workbook, a PDF with more pages than the OCR provider is configured to take). The same input fails the
+    /// same way on every retry, so the job ends instead of retrying; the run stays Failed and can be retried once the
+    /// file is replaced or the limit is raised. Not part of <see cref="IsPermanent"/>, which is about a provider's
+    /// HTTP answer only.
+    /// </summary>
+    public static bool IsInvalidInput(Exception exception)
+        => IsInvalidInput(exception, 0);
+
+    private static bool IsInvalidInput(Exception? exception, int depth)
+    {
+        if (exception == null || depth > MaxChainDepth)
+        {
+            return false;
+        }
+
+        if (exception is InvalidDataException)
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregate)
+        {
+            foreach (var inner in aggregate.InnerExceptions)
+            {
+                if (IsInvalidInput(inner, depth + 1))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return IsInvalidInput(exception.InnerException, depth + 1);
+    }
 
     /// <summary>
     /// The first HTTP status found on <paramref name="exception"/> or anything it wraps, if any.

@@ -235,6 +235,32 @@ public class DocumentFieldExtractionBackgroundJob_Tests
     }
 
     /// <summary>
+    /// An <see cref="System.IO.InvalidDataException"/> marks an input that is itself invalid or over a configured
+    /// limit (a corrupt workbook, a PDF over the OCR page limit). It carries no HTTP status, but the same input
+    /// fails the same way on every retry, so the shared <c>EndOnPermanentProviderFailure</c> ends the job for it
+    /// too. Exercised here through the field-extraction job; the parse job, where these failures really come
+    /// from, goes through the same base-class method.
+    /// </summary>
+    [Fact]
+    public async Task An_invalid_input_fails_the_run_and_ends_the_job_without_rethrowing()
+    {
+        var documentId = await SeedClassifiedDocumentAsync("type.invalid-input");
+        _workflow
+            .ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<FieldExtractionWorkflowResult>(
+                new InvalidOperationException(
+                    "wrapped", new System.IO.InvalidDataException("XLSX package failed safety validation."))));
+
+        await _job.ExecuteAsync(new DocumentFieldExtractionJobArgs { DocumentId = documentId, PipelineRunId = null });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var run = await _runRepository.FindLatestByDocumentAndCodeAsync(documentId, VaultExtractPipelines.FieldExtraction);
+            run!.Status.ShouldBe(PipelineRunStatus.Failed);
+        });
+    }
+
+    /// <summary>
     /// Throttling, timeouts and server errors can succeed on a later attempt, so the job still fails the run and
     /// rethrows for ABP to retry.
     /// </summary>

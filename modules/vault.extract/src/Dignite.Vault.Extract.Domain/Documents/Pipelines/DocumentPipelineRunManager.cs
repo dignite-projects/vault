@@ -335,7 +335,7 @@ public class DocumentPipelineRunManager : DomainService
     /// LocalEvent, then re-derive Document.LifecycleStatus. BeginAsync skips the event (run is just starting,
     /// not completing); Complete/Fail/Skip all publish it.
     /// </summary>
-    private async Task PersistAndDeriveAsync(
+    protected virtual async Task PersistAndDeriveAsync(
         Document document,
         DocumentPipelineRun run,
         bool publishCompletion)
@@ -424,6 +424,17 @@ public class DocumentPipelineRunManager : DomainService
             {
                 derivedStatus = DocumentLifecycleStatus.Ready;
             }
+        }
+
+        // An operator rejection dominates the release statuses: RejectReview moved the document to Failed on the
+        // manual-review axis, and no pipeline-run or review-reason change may lift a still-rejected document to
+        // PendingReview or Ready (the Ready transition would publish DocumentReadyEto for a document the operator
+        // refused). Processing is left alone, so a run in flight still shows as such. Only a path that resets
+        // ReviewDisposition — a reclassification or a confirmation — releases the document.
+        if (document.ReviewDisposition == DocumentReviewDisposition.Rejected
+            && (derivedStatus is DocumentLifecycleStatus.Ready or DocumentLifecycleStatus.PendingReview))
+        {
+            derivedStatus = DocumentLifecycleStatus.Failed;
         }
 
         document.TransitionLifecycle(derivedStatus);

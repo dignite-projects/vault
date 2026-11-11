@@ -77,6 +77,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end, with a warning that names the status. The run stays **Failed** and **Retry** works as before, once the cause
   (configuration, a model limit) is fixed. The split follows the provider SDKs' own retry policies, which retry 408,
   429 and 5xx only. A failure without an HTTP status is retried as before.
+- **A file that can never be parsed no longer retries for two days.** A corrupt or unsafe XLSX
+  (`XlsxSafetyGuard`, a failed XLSX conversion) and a scanned PDF with more pages than `VisionLlmOcr:MaxPdfPages`
+  fail the same way on every attempt, but carry no HTTP status, so the parse job kept retrying them. The pipeline
+  jobs now also end on a `System.IO.InvalidDataException` anywhere in the failure
+  (`ProviderFailureClassifier.IsInvalidInput`): the run stays **Failed** and **Retry** works once the file is
+  replaced or the limit raised. `VisionLlmOcrProvider` throws `InvalidDataException` instead of
+  `InvalidOperationException` for the page limit, which is what a custom caller catching that type sees change.
+  Decided without a separate issue: no new public exception type was added, because the VisionLlm provider
+  references only `Dignite.Vault.Parse.Ocr` and a shared type had no natural home. The cost is that an
+  `InvalidDataException` caused by a truncated read also ends the run and needs one manual **Retry**.
+- **A document an operator rejected can no longer come back as Ready.** `RejectReview` moved the document to
+  **Failed**, but the lifecycle is re-derived from the pipeline runs and review reasons after many later actions
+  (allowing a duplicate, editing fields, a field re-extraction, the schema cleanup jobs), and that derivation never
+  looked at the rejection. A rejected document could therefore turn **Ready** and publish `DocumentReadyEto`. A
+  still-rejected document now derives **Failed** wherever it would have derived **Ready** or **PendingReview**; a
+  run in flight still shows **Processing**. Reclassifying or confirming the document resets the rejection and
+  releases it, as before. Those later actions are still allowed on a rejected document; they just no longer change
+  its status. Decided without a separate issue: the code already documented rejection as dominant and did not
+  enforce it.
 
 ## [0.6.0] - 2026-10-29
 

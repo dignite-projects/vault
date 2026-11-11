@@ -424,9 +424,9 @@ public class FieldExtractionService : ITransientDependency
 
             document.ReplaceFieldValidationWarnings(warnings);
 
-            // #491: this run reached the LLM, so an earlier declined run has been superseded. The only way that happens
-            // is the host raising MaxFieldExtractionMarkdownLength — Markdown is write-once (SetMarkdown immutability),
-            // so a document's body can never shrink in place.
+            // #491: this run reached the LLM, so an earlier declined run has been superseded. The decline is
+            // superseded by a raised MaxFieldExtractionMarkdownLength, an operator Markdown correction (#555), or a
+            // re-parse (#660).
             document.SetReviewReason(DocumentReviewReasons.FieldExtractionIncomplete, present: false);
 
             // #284: evaluate required-field missingness at the moment extraction completes and materialize MissingRequiredFields.

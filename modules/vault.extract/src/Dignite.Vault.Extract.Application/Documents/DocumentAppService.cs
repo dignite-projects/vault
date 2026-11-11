@@ -1688,6 +1688,19 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
             });
         }
 
+        // #491: field extraction was declined because the body exceeds MaxFieldExtractionMarkdownLength. The reason is
+        // blocking, so it must be projected like the others: the detail page derives "waiting for reviewer" from the
+        // blocking details, and without this item a document blocked only by this reason explains nothing. No extra
+        // data — the reason bit is enough (the client localizes by the Reason enum).
+        if ((document.ReviewReasons & DocumentReviewReasons.FieldExtractionIncomplete) != DocumentReviewReasons.None)
+        {
+            details.Add(new ReviewReasonDetailDto
+            {
+                Reason = DocumentReviewReasons.FieldExtractionIncomplete,
+                IsBlocking = ReviewReasonPolicy.IsBlocking(DocumentReviewReasons.FieldExtractionIncomplete)
+            });
+        }
+
         // #411: a suspected duplicate. Recompute the candidate document Ids on read (no separate storage) so the
         // operator can open them side by side before allowing or discarding. If the fingerprint no longer collides
         // (the colliding document was deleted in the meantime), the candidate list is empty but the reason — owned by

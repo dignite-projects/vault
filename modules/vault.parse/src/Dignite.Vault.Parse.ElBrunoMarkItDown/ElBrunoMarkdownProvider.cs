@@ -67,8 +67,17 @@ public class ElBrunoMarkdownProvider : IMarkdownTextProvider, ITransientDependen
                     $"Could not convert XLSX to Markdown: {conversion.ErrorMessage ?? "unknown conversion error"}");
             }
 
-            // Still report provider identity so failed results keep provenance.
-            return new TextExtractionResult { ProviderName = ProviderIdentifier };
+            // Still report provider identity so failed results keep provenance, and report the result incomplete (#268) —
+            // the same stance DocxExtractor / PptxExtractor take for a file they cannot open: empty Markdown from a failed
+            // conversion is not a complete extraction of an empty document. For a PDF the orchestrator discards this
+            // result and falls back to whole-page OCR, so the signal is harmless there. The reason is a fixed string: the
+            // converter's own error message comes from a third-party library and must not travel on the egress.
+            return new TextExtractionResult
+            {
+                ProviderName = ProviderIdentifier,
+                IsComplete = false,
+                IncompleteReason = "The file could not be converted (corrupt or unsupported format)."
+            };
         }
 
         if (isXlsx)

@@ -7,9 +7,11 @@ using Dignite.Abp.FlexFields;
 using Dignite.Vault.Extract.FlexFields;
 using Dignite.Vault.Extract.Documents.Duplicates;
 using Dignite.Vault.Extract.Documents.Fields;
+using Dignite.Vault.Extract.Documents.Fields.Cleanup;
 using Dignite.Vault.Extract.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Volo.Abp;
+using Volo.Abp.BackgroundJobs;
 using Volo.Abp.Data;
 using Volo.Abp.Domain.Entities;
 
@@ -59,6 +61,8 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
     /// someone went looking, which is the argument against restating it a third time.
     /// </summary>
     private readonly DocumentTypeUpdater _documentTypeUpdater;
+
+    protected IBackgroundJobManager BackgroundJobManager => LazyServiceProvider.LazyGetRequiredService<IBackgroundJobManager>();
 
     public DocumentTypePackAppService(
         IDocumentTypeRepository documentTypeRepository,
@@ -289,6 +293,7 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
         DocumentTypePackItemResultDto item)
     {
         var searchabilityChanged = false;
+        var uniqueKeyCleared = false;
 
         foreach (var f in fields)
         {
@@ -329,6 +334,7 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
                 CheckSearchable(f.FieldTypeName!, f.IsSearchable);
                 CheckUniqueKey(f.FieldTypeName!, f.IsUniqueKey);
                 var wasSearchable = existing.IsSearchable;
+                var wasUniqueKey = existing.IsUniqueKey;
                 existing.SetDisplayName(f.DisplayName);
                 existing.SetDescription(f.Description);
                 existing.SetFieldTypeName(f.FieldTypeName!);
@@ -341,11 +347,24 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
                 await _fieldDefinitionRepository.UpdateAsync(existing, autoSave: true);
                 item.FieldsUpdated++;
                 searchabilityChanged |= wasSearchable != existing.IsSearchable;
+                uniqueKeyCleared |= wasUniqueKey && !existing.IsUniqueKey;
             }
             else
             {
                 item.FieldsSkipped++;
             }
+        }
+
+        if (uniqueKeyCleared)
+        {
+            // Mirrors FieldDefinitionAppService: a unique key turned off by an import leaves the same stale duplicate
+            // basis a deleted key does. One enqueue per type; the job rechecks the final active schema when it runs.
+            await BackgroundJobManager.EnqueueAsync(
+                new DuplicateBasisCleanupArgs
+                {
+                    DocumentTypeId = documentTypeId,
+                    TenantId = CurrentTenant.Id
+                });
         }
 
         return searchabilityChanged;
