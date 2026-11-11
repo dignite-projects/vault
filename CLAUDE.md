@@ -74,4 +74,4 @@ Code that violates one of these is a defect, not a precedent. https://abp.io/doc
 
 ## Decision record
 
-A design decision that changes a contract visible outside its module is written up in a GitHub Issue. Everything else is recorded in the commit message.
+A decision that changes a contract visible outside its module is recorded where the contract's consumers read it: the pages under `docs/` and `CHANGELOG.md`. Everything else is recorded in the commit message. Neither needs a GitHub Issue.
