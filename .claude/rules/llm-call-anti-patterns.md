@@ -74,7 +74,7 @@ private static async Task<string> SearchAsync(string? keyword, IServiceProvider 
 
 ## Anti-pattern E: switching multi-tenancy context before the authorization check
 
-**Source**: [#524](https://github.com/dignite-projects/vault-extract/issues/524) (found reviewing #519, explicit-tenant MCP support in `McpTenantScope`). **Scope**: any path that both accepts a caller-supplied tenant id and calls `ICurrentTenant.Change(...)` to scope a query to it — the MCP `tenantId` parameter / URI-segment paths.
+**Source**: [#524](https://github.com/dignite-projects/vault/issues/524) (found reviewing #519, explicit-tenant MCP support in `McpTenantScope`). **Scope**: any path that both accepts a caller-supplied tenant id and calls `ICurrentTenant.Change(...)` to scope a query to it — the MCP `tenantId` parameter / URI-segment paths.
 
 **Not the same mistake as B.** B is a *missing* check; here the check runs but is evaluated against the wrong tenant, because it runs *after* the switch. ABP's role-based `PermissionGrant` rows key on the role **name** plus the ambient `TenantId`, so a caller whose token carries a role name that is also granted in the target tenant (e.g. every tenant's seeded `admin`) passes `CheckPolicyAsync` there, though nothing ties that caller to that tenant. The switch itself is legitimate; it silently moves the authorization boundary with it.
 
@@ -108,7 +108,7 @@ public static async Task<...> SearchAsync(
 
 ## Anti-pattern D: an unbounded payload entering a prompt, or leaving on an LLM-facing egress
 
-**Source**: [#491](https://github.com/dignite-projects/vault-extract/issues/491). A cost / availability issue that a correct implementation of B can still commit: B caps *how many rows* a query returns, D caps *how large one payload is*. A tool can honour `Take(20)` and still hand the model a 40 MB body. Scope: any text crossing an LLM boundary — a document body or field value entering a prompt, and any body returned to an MCP client.
+**Source**: [#491](https://github.com/dignite-projects/vault/issues/491). A cost / availability issue that a correct implementation of B can still commit: B caps *how many rows* a query returns, D caps *how large one payload is*. A tool can honour `Take(20)` and still hand the model a 40 MB body. Scope: any text crossing an LLM boundary — a document body or field value entering a prompt, and any body returned to an MCP client.
 
 Four ways to get it wrong:
 

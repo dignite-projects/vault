@@ -157,6 +157,28 @@ public class DocumentAppService_Review_Tests
         detail.MissingFieldNames.ShouldContain("Amount");
     }
 
+    [Fact]
+    public async Task Detail_includes_a_blocking_item_for_FieldExtractionIncomplete()
+    {
+        // #491: FieldExtractionIncomplete is blocking, and the detail page derives "waiting for reviewer" from the
+        // blocking details; a document blocked only by this reason must therefore project exactly this item.
+        var typeId = Guid.NewGuid();
+        var doc = CreateDocument();
+        typeof(Document)
+            .GetMethod("ApplyAutomaticClassificationResult",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(doc, [typeId, 0.99]);
+        doc.SetReviewReason(DocumentReviewReasons.FieldExtractionIncomplete, present: true);
+        StubGet(doc);
+
+        var dto = await _appService.GetAsync(doc.Id);
+
+        dto.ReviewReasons.ShouldBe(DocumentReviewReasons.FieldExtractionIncomplete);
+        var detail = dto.ReviewReasonDetails.ShouldNotBeNull().ShouldHaveSingleItem();
+        detail.Reason.ShouldBe(DocumentReviewReasons.FieldExtractionIncomplete);
+        detail.IsBlocking.ShouldBeTrue();
+    }
+
     /// <summary>
     /// The other half of the same guard, and the half that actually reddens when the presence test is wrong:
     /// a required field the document DOES hold must not be named as missing.

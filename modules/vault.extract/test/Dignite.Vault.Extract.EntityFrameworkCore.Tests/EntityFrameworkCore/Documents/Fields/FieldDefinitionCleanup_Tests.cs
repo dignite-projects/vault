@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
+using Dignite.Vault.Extract.Documents.DocumentTypes.Packs;
 using Dignite.Vault.Extract.Documents.Fields;
 using Dignite.Vault.Extract.Documents.Fields.Cleanup;
 using Microsoft.Extensions.DependencyInjection;
@@ -131,6 +132,76 @@ public class FieldDefinitionCleanup_Tests : VaultExtractTestBase<FieldDefinition
 
         await _backgroundJobManager.DidNotReceive().EnqueueAsync(
             Arg.Any<DuplicateBasisCleanupArgs>(),
+            Arg.Any<BackgroundJobPriority>(),
+            Arg.Any<TimeSpan?>());
+    }
+
+    // === FieldDefinitionAppService.UpdateAsync wiring ===
+
+    [Fact]
+    public async Task Clearing_IsUniqueKey_on_update_enqueues_duplicate_basis_cleanup()
+    {
+        var typeId = await ArrangeTypeAsync();
+        var fieldId = await ArrangeFieldAsync(typeId, "invoice_number", isUniqueKey: true);
+
+        await WithUnitOfWorkAsync(() => _fieldDefinitionAppService.UpdateAsync(
+            fieldId, NewUpdateInput("invoice_number", "invoice_number", isUniqueKey: false)));
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<DuplicateBasisCleanupArgs>(a => a.DocumentTypeId == typeId && a.TenantId == null),
+            Arg.Any<BackgroundJobPriority>(),
+            Arg.Any<TimeSpan?>());
+    }
+
+    [Fact]
+    public async Task Updating_a_field_that_stays_unique_key_does_not_enqueue_duplicate_basis_cleanup()
+    {
+        var typeId = await ArrangeTypeAsync();
+        var fieldId = await ArrangeFieldAsync(typeId, "invoice_number", isUniqueKey: true);
+
+        await WithUnitOfWorkAsync(() => _fieldDefinitionAppService.UpdateAsync(
+            fieldId, NewUpdateInput("invoice_number", "Invoice number (renamed label)", isUniqueKey: true)));
+
+        await _backgroundJobManager.DidNotReceive().EnqueueAsync(
+            Arg.Any<DuplicateBasisCleanupArgs>(),
+            Arg.Any<BackgroundJobPriority>(),
+            Arg.Any<TimeSpan?>());
+    }
+
+    // === DocumentTypePackAppService.ImportAsync wiring ===
+
+    [Fact]
+    public async Task Import_that_clears_IsUniqueKey_enqueues_duplicate_basis_cleanup()
+    {
+        var typeId = await ArrangeTypeAsync();
+        await ArrangeFieldAsync(typeId, "invoice_number", isUniqueKey: true);
+
+        await WithUnitOfWorkAsync(() => GetRequiredService<IDocumentTypePackAppService>().ImportAsync(
+            new ImportDocumentTypePacksInput
+            {
+                Mode = PackImportMode.CreateOrUpdate,
+                Packs = new List<DocumentTypePackDto>
+                {
+                    new()
+                    {
+                        TypeCode = "invoice",
+                        DisplayName = "Invoice",
+                        Fields = new List<DocumentTypePackFieldDto>
+                        {
+                            new()
+                            {
+                                Name = "invoice_number",
+                                DisplayName = "invoice_number",
+                                FieldTypeName = TextFieldType.ControlName,
+                                IsUniqueKey = false
+                            }
+                        }
+                    }
+                }
+            }));
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<DuplicateBasisCleanupArgs>(a => a.DocumentTypeId == typeId && a.TenantId == null),
             Arg.Any<BackgroundJobPriority>(),
             Arg.Any<TimeSpan?>());
     }
@@ -310,6 +381,15 @@ public class FieldDefinitionCleanup_Tests : VaultExtractTestBase<FieldDefinition
     }
 
     // === Arrangement ===
+
+    private static UpdateFieldDefinitionDto NewUpdateInput(string name, string displayName, bool isUniqueKey) =>
+        new()
+        {
+            Name = name,
+            DisplayName = displayName,
+            FieldTypeName = TextFieldType.ControlName,
+            IsUniqueKey = isUniqueKey
+        };
 
     private static FieldValidationWarningCleanupArgs NewWarningArgs(Guid fieldDefinitionId) =>
         new() { FieldDefinitionId = fieldDefinitionId, TenantId = null };

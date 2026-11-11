@@ -408,6 +408,69 @@ public class DocumentPipelineRunManagerTests : VaultExtractDomainTestBase<VaultE
         doc.ReviewDisposition.ShouldBe(DocumentReviewDisposition.NotReviewed);
     }
 
+    // An operator rejection dominates the release statuses: a re-derive (AllowDuplicate, a field edit, a cleanup
+    // job, a run completing) must not lift a still-rejected document to Ready or PendingReview.
+    private async Task<Document> CreateDocumentWithAllKeyRunsSucceededAsync()
+    {
+        var doc = CreateDocument();
+
+        var textRun = await _manager.StartAsync(doc, VaultExtractPipelines.Parse);
+        await _manager.CompleteAsync(doc, textRun);
+        var classRun = await _manager.StartAsync(doc, VaultExtractPipelines.Classification);
+        await _manager.CompleteClassificationAsync(doc, classRun, CreateContractType(), 0.92);
+        var fieldRun = await _manager.StartAsync(doc, VaultExtractPipelines.FieldExtraction);
+        await _manager.CompleteAsync(doc, fieldRun);
+
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Ready);
+        return doc;
+    }
+
+    [Fact]
+    public async Task Rejected_document_stays_Failed_when_re_derived_with_all_runs_succeeded()
+    {
+        var doc = await CreateDocumentWithAllKeyRunsSucceededAsync();
+
+        doc.RejectReview("scan unusable");
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Failed);
+
+        await _manager.ReDeriveLifecycleAsync(doc);
+
+        doc.ReviewDisposition.ShouldBe(DocumentReviewDisposition.Rejected);
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Failed);
+    }
+
+    [Fact]
+    public async Task Rejected_document_stays_Failed_when_re_derived_with_a_blocking_reason()
+    {
+        var doc = await CreateDocumentWithAllKeyRunsSucceededAsync();
+
+        doc.SetReviewReason(DocumentReviewReasons.DuplicateSuspected, present: true);
+        doc.RejectReview("scan unusable");
+
+        await _manager.ReDeriveLifecycleAsync(doc);
+
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Failed);
+    }
+
+    [Fact]
+    public async Task Rejected_document_is_released_once_the_disposition_is_reset()
+    {
+        var doc = await CreateDocumentWithAllKeyRunsSucceededAsync();
+
+        doc.RejectReview("scan unusable");
+        await _manager.ReDeriveLifecycleAsync(doc);
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Failed);
+
+        // A manual confirmation resets the disposition (Rejected -> Confirmed), which releases the document.
+        var run = await _manager.StartAsync(doc, VaultExtractPipelines.Classification);
+        await _manager.CompleteManualClassificationAsync(doc, run, CreateContractType());
+        doc.ReviewDisposition.ShouldBe(DocumentReviewDisposition.Confirmed);
+
+        await _manager.ReDeriveLifecycleAsync(doc);
+
+        doc.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Ready);
+    }
+
     // ────────────────────────────────────────────────────────────────────────────
     // Scenario 9: successful classification followed by LowConfidence clears historical TypeCode and Confidence
     // ────────────────────────────────────────────────────────────────────────────

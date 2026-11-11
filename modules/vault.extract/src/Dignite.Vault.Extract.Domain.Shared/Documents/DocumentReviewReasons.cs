@@ -76,8 +76,8 @@ public enum DocumentReviewReasons
     /// <summary>
     /// One or more type-bound fields carry a <b>validation warning</b> (#527): unified field extraction returned the
     /// field's extracted value <b>together with</b> a warning that the value failed a validation rule declared in the
-    /// field's prompt (e.g. a bank-statement balance-consistency check). The extracted value is preserved on
-    /// <c>DocumentExtractedField</c> so an operator can compare it with the source; the warning text lives on the
+    /// field's prompt (e.g. a bank-statement balance-consistency check). The extracted value is preserved in
+    /// <c>Document.FlexFields</c> so an operator can compare it with the source; the warning text lives on the
     /// separate <c>DocumentFieldValidationWarning</c> child collection and never enters field values, search indexes,
     /// exports, or event payloads (#527 §11). <b>blocking</b>: the extracted result is not yet trustworthy, so Ready is
     /// withheld and the document enters the operator review queue until either a later clean re-extraction replaces the

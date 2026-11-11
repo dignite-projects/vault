@@ -90,8 +90,6 @@ jobs:
 
       # The text-extraction stack the host actually wires (VaultExtractHostModule): the Parse orchestrator
       # plus the managed PdfPig / OpenXML providers. Pure in-memory fixtures; no native or external dependency.
-      # Deliberately absent: Ocr.PaddleOcr.Tests and Ocr.AzureDocumentIntelligence.Tests - both providers are
-      # commented out in the host, so their tests gate nothing that ships. Add them when a provider is enabled.
       - name: Run Parse tests
         run: dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Tests/Dignite.Vault.Parse.Tests.csproj --no-build --configuration Release --verbosity normal
 
@@ -100,6 +98,15 @@ jobs:
 
       - name: Run Parse OpenXml tests
         run: dotnet test modules/vault.parse/test/Dignite.Vault.Parse.OpenXml.Tests/Dignite.Vault.Parse.OpenXml.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      # The host does not wire these two OCR providers, but release.yml packs and publishes both as NuGet
+      # packages, so their tests gate something that ships. Both suites run without a PaddleOCR sidecar or
+      # an Azure endpoint.
+      - name: Run OCR PaddleOcr tests
+        run: dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Ocr.PaddleOcr.Tests/Dignite.Vault.Parse.Ocr.PaddleOcr.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      - name: Run OCR Azure Document Intelligence tests
+        run: dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence.Tests/Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run FlexFields tests
         run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.FlexFields.Tests/Dignite.Vault.Extract.FlexFields.Tests.csproj --no-build --configuration Release --verbosity normal

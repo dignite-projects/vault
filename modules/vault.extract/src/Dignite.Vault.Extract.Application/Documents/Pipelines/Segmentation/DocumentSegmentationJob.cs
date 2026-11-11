@@ -243,8 +243,10 @@ public class DocumentSegmentationJob
         // Detection (external, no UoW): the LLM proposes boundaries; keep the ambient tenant aligned as classification
         // does. A schema-drift / non-JSON structured response is a recoverable bad-output case (mirrors
         // DocumentClassificationBackgroundJob): flag/skip rather than letting the exception fault the job into an
-        // endless ABP retry loop that never reaches a terminal state.
+        // endless ABP retry loop that never reaches a terminal state. A provider's permanent refusal (an HTTP 4xx
+        // other than 408 / 429) is handled the same way, since the identical request would be refused on every retry.
         DocumentSegmentationOutcome? outcome = null;
+        var degradeReason = "the AI sub-document detection response could not be parsed (schema drift)";
         using (_currentTenant.Change(context.TenantId))
         {
             try
@@ -257,11 +259,24 @@ public class DocumentSegmentationJob
                     "AI sub-document detection response failed JSON deserialization for source {SourceId}; flagging/skipping.",
                     context.SourceDocumentId);
             }
+            catch (Exception ex) when (ProviderFailureClassifier.IsPermanent(ex))
+            {
+                // A provider that refused the request itself (an HTTP 4xx other than 408 / 429) refuses the same request on
+                // every retry, so this ends the detection the same way the pipeline jobs end their run
+                // (DocumentPipelineBackgroundJobBase.EndOnPermanentProviderFailure): degrade and return instead of rethrowing
+                // into ABP's retry loop. An operator re-recognition re-runs the split once the cause is fixed. Every other
+                // failure (throttling, timeouts, 5xx, no HTTP status) still propagates and is retried.
+                ProviderFailureClassifier.TryGetHttpStatus(ex, out var status);
+                Logger.LogWarning(ex,
+                    "The provider refused the sub-document detection request for source {SourceId} with HTTP {Status}; flagging/skipping instead of retrying, because the same request would be refused again.",
+                    context.SourceDocumentId, status);
+                degradeReason = $"the provider refused the sub-document detection request (HTTP {status})";
+            }
         }
 
         if (outcome is null)
         {
-            await IncompleteOrSkipAsync(context, "the AI sub-document detection response could not be parsed (schema drift)");
+            await IncompleteOrSkipAsync(context, degradeReason);
             return;
         }
 

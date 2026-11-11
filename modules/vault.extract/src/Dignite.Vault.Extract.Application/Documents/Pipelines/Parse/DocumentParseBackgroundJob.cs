@@ -140,7 +140,7 @@ public class DocumentParseBackgroundJob
                 result = new TextExtractionResult
                 {
                     Markdown = workItem.SeedMarkdown,
-                    ProviderName = workItem.SeedProviderName ?? ScenarioBSegmentSeedProviderName,
+                    ProviderName = ScenarioBSegmentSeedProviderName,
                     IsComplete = true
                 };
             }
@@ -211,7 +211,6 @@ public class DocumentParseBackgroundJob
         // so there is no content drift. Loaded inside this UoW; null (not derived, or the slice is missing/empty)
         // falls back to the normal extraction path in ExecuteAsync.
         string? seedMarkdown = null;
-        string? seedProviderName = null;
         if (document.OriginDocumentId.HasValue && !string.IsNullOrEmpty(document.OriginConstituentKey))
         {
             var segment = await _documentSegmentRepository.FirstOrDefaultAsync(
@@ -219,7 +218,6 @@ public class DocumentParseBackgroundJob
             if (!string.IsNullOrEmpty(segment?.SliceText))
             {
                 seedMarkdown = segment.SliceText;
-                seedProviderName = ScenarioBSegmentSeedProviderName;
             }
         }
 
@@ -230,8 +228,7 @@ public class DocumentParseBackgroundJob
             document.FileOrigin?.BlobName,
             document.FileOrigin?.ContentType,
             document.FileOrigin?.OriginalFileName,
-            seedMarkdown,
-            seedProviderName);
+            seedMarkdown);
     }
 
     private async Task CompleteRunAsync(
@@ -322,6 +319,21 @@ public class DocumentParseBackgroundJob
                     + "longer exists by the time Parse completed; falling back to automatic classification.",
                     document.Id, document.DocumentTypeId);
                 PipelineRunManager.RetractDeclaredType(document);
+            }
+            else if (string.IsNullOrEmpty(document.Markdown))
+            {
+                // The parse produced no text. A type can only be confirmed on a document that has text
+                // (ApplyManualClassificationAsync refuses this case with NotTextExtracted): applying the declaration would
+                // cascade field extraction over an empty body, and since MissingRequiredFields is non-blocking the document
+                // would reach Ready with no fields. Retract the declaration and fall back to automatic classification, which
+                // routes a text-less document to operator review like any other empty upload.
+                var declaredTypeId = document.DocumentTypeId;
+                Logger.LogWarning(
+                    "Document {DocumentId} declared DocumentTypeId {DocumentTypeId} at upload, but Parse produced no "
+                    + "text; retracting the declaration and falling back to automatic classification.",
+                    document.Id, declaredTypeId);
+                PipelineRunManager.RetractDeclaredType(document);
+                declaredType = null;
             }
         }
 
@@ -528,8 +540,7 @@ public class DocumentParseBackgroundJob
         string? BlobName,
         string? ContentType,
         string? OriginalFileName,
-        string? SeedMarkdown,
-        string? SeedProviderName);
+        string? SeedMarkdown);
 }
 
 public class DocumentParseJobArgs

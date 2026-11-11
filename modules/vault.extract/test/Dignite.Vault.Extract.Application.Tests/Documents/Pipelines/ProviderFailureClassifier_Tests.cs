@@ -88,6 +88,28 @@ namespace Dignite.Vault.Extract.Documents
             ProviderFailureClassifier.IsPermanent(new HttpRequestException("connection refused")).ShouldBeFalse();
             ProviderFailureClassifier.TryGetHttpStatus(new TimeoutException(), out _).ShouldBeFalse();
         }
+
+        [Fact]
+        public void IsInvalidInput_recognises_InvalidDataException_anywhere_in_the_chain()
+        {
+            ProviderFailureClassifier.IsInvalidInput(new System.IO.InvalidDataException("x")).ShouldBeTrue();
+            ProviderFailureClassifier.IsInvalidInput(
+                new InvalidOperationException("outer", new System.IO.InvalidDataException("x"))).ShouldBeTrue();
+            ProviderFailureClassifier.IsInvalidInput(
+                new AggregateException(new TimeoutException(), new System.IO.InvalidDataException("x"))).ShouldBeTrue();
+        }
+
+        [Fact]
+        public void IsInvalidInput_is_false_for_other_failures()
+        {
+            ProviderFailureClassifier.IsInvalidInput(new InvalidOperationException("x")).ShouldBeFalse();
+            ProviderFailureClassifier.IsInvalidInput(new TimeoutException()).ShouldBeFalse();
+            ProviderFailureClassifier.IsInvalidInput(
+                new HttpRequestException("x", null, HttpStatusCode.BadRequest)).ShouldBeFalse();
+
+            // The marker is about the input, not the provider's HTTP answer.
+            ProviderFailureClassifier.IsPermanent(new System.IO.InvalidDataException("x")).ShouldBeFalse();
+        }
     }
 }
 

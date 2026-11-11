@@ -128,7 +128,7 @@ public class AzureDocumentIntelligenceOcrProvider_Tests
 
         var result = await Provider(transport).RecognizeAsync(FakeImage(), new OcrOptions());
 
-        result.Markdown.ShouldBe(string.Join(Environment.NewLine + Environment.NewLine, "line A", "line B"));
+        result.Markdown.ShouldBe(string.Join("\n\n", "line A", "line B"));
     }
 
     [Fact]

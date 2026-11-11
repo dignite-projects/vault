@@ -25,7 +25,7 @@ Contract obligations regardless of structure:
 
 **Markdown-first is an engineering default, not a creed.** Out-of-band signals (coordinates, confidence, page metadata, form key-value structure, stamp positions) are **orthogonal** to Markdown. When future needs arise — citation highlighting on the source PDF, stamp localization, form key-value extraction, page-aware QA — they belong as **named, optional, strongly-typed** fields on `TextExtractionResult` (e.g. `IReadOnlyList<PageBlock>? PageBlocks`) or as a separate extractor interface orthogonal to `ITextExtractor`. **Forbidden**: stuffing such signals back into the Markdown string, or adding a `Dictionary<string, object>` extension slot. Each new out-of-band signal needs its own Issue — it's an architecture decision, not a quiet field addition.
 
-Source contract: [`ITextExtractor`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.parse/src/Dignite.Vault.Parse.Abstractions/ITextExtractor.cs), [`IMarkdownTextProvider`](https://github.com/dignite-projects/vault-extract/blob/main/modules/vault.parse/src/Dignite.Vault.Parse/IMarkdownTextProvider.cs).
+Source contract: [`ITextExtractor`](https://github.com/dignite-projects/vault/blob/main/modules/vault.parse/src/Dignite.Vault.Parse.Abstractions/ITextExtractor.cs), [`IMarkdownTextProvider`](https://github.com/dignite-projects/vault/blob/main/modules/vault.parse/src/Dignite.Vault.Parse/IMarkdownTextProvider.cs).
 
 ## Two Extraction Paths
 

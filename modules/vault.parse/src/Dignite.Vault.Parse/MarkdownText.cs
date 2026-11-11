@@ -264,7 +264,9 @@ public static class MarkdownText
     /// Escapes a value placed inside a Markdown <b>table cell</b> so it cannot break the surrounding table:
     /// backslash first (so the pipe-escape we add next is not neutralized by a pre-existing trailing
     /// backslash), then the pipe column separator, and finally collapse any CR/LF to a space (a literal
-    /// newline would split the row). Shared by the chart / DrawingML / Word table renderers.
+    /// newline would split the row). The chart / DrawingML / Word table renderers use
+    /// <see cref="EscapeInlineCell"/> instead; this method has no production caller in this repo and is kept
+    /// as public surface.
     /// </summary>
     public static string EscapeCell(string? text)
     {

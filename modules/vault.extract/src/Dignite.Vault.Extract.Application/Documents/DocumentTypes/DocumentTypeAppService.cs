@@ -298,9 +298,7 @@ public class DocumentTypeAppService : VaultExtractAppService, IDocumentTypeAppSe
             // cascade semantics, so counting it would reject restores whose FINAL active schema is within budget.
             var fieldQueryable = await _fieldDefinitionRepository.GetQueryableAsync();
             var allFields = await AsyncExecuter.ToListAsync(
-                fieldQueryable.Where(f =>
-                    f.TenantId == entity.TenantId &&
-                    f.DocumentTypeId == entity.Id));
+                fieldQueryable.Where(f => f.DocumentTypeId == entity.Id));
             var fieldsToRestore = new List<Field>();
             foreach (var field in allFields.Where(f => f.IsDeleted))
             {

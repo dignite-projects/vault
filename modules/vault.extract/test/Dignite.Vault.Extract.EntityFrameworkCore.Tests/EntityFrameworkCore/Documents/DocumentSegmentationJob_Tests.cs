@@ -705,6 +705,46 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
     }
 
     [Fact]
+    public async Task Provider_permanent_refusal_flags_the_container_and_does_not_throw()
+    {
+        // A provider's HTTP 4xx (other than 408 / 429) refuses the same request on every retry: the job degrades like
+        // a schema-drift response instead of rethrowing into ABP's retry loop.
+        var containerId = await ArrangeContainerAsync("Invoice A first\nInvoice B second");
+        _workflow.RunAsync(Arg.Any<string>(), Arg.Any<SubDocumentDetectionContext>(), Arg.Any<CancellationToken>())
+            .Returns<DocumentSegmentationOutcome>(_ =>
+                throw new System.Net.Http.HttpRequestException("bad request", null, System.Net.HttpStatusCode.BadRequest));
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            (await _documentRepository.GetAsync(containerId)).ReviewReasons
+                .ShouldBe(DocumentReviewReasons.SegmentationIncomplete);
+            (await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId)).ShouldBeEmpty();
+            (await _documentRepository.GetListAsync(d => d.OriginDocumentId == containerId)).ShouldBeEmpty();
+        });
+    }
+
+    [Fact]
+    public async Task Provider_transient_failure_still_propagates()
+    {
+        // A 5xx is retryable: it must still reach ABP's retry loop, and the container is not flagged.
+        var containerId = await ArrangeContainerAsync("Invoice A first\nInvoice B second");
+        _workflow.RunAsync(Arg.Any<string>(), Arg.Any<SubDocumentDetectionContext>(), Arg.Any<CancellationToken>())
+            .Returns<DocumentSegmentationOutcome>(_ =>
+                throw new System.Net.Http.HttpRequestException("unavailable", null, System.Net.HttpStatusCode.ServiceUnavailable));
+
+        await Should.ThrowAsync<System.Net.Http.HttpRequestException>(() =>
+            _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId }));
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            ((await _documentRepository.GetAsync(containerId)).ReviewReasons & DocumentReviewReasons.SegmentationIncomplete)
+                .ShouldBe(DocumentReviewReasons.None);
+        });
+    }
+
+    [Fact]
     public async Task Spawn_Failure_Flags_Container_And_Leaves_Segments_Pending()
     {
         // #346 fix: Phase B failures are not silent either — the container is flagged before the rethrow so an

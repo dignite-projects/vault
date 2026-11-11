@@ -88,9 +88,8 @@ public class FieldExtractionWorkflow : ITransientDependency
         // invoice number, and expiration date may appear anywhere in the document; character-based tail truncation silently misses key fields.
         // This intentionally differs from classification: DocumentClassificationWorkflow can usually classify from front-section semantics
         // and therefore truncates by MaxTextLengthPerExtraction. Field extraction needs full coverage.
-        // Token cost / context window for oversized documents is the responsibility of the host-selected model + provider.
-        // The channel layer does not pre-truncate, because pre-truncation disguises "missed extraction" as "successful extraction",
-        // which is harder to diagnose than a direct provider error.
+        // The body is not truncated here because a field can sit anywhere; the caller gates the call on
+        // VaultExtractBehaviorOptions.MaxFieldExtractionMarkdownLength (#491, FieldExtractionService) instead.
         //
         // Keep the system role as a **compile-time constant** to prevent prompt injection
         // (CLAUDE.md "Security covenant / Description and Instructions must be compile-time constants").
@@ -379,17 +378,6 @@ public class FieldExtractionWorkflow : ITransientDependency
             ["required"] = required,
             ["additionalProperties"] = false
         };
-    }
-
-    private static JsonArray JsonTypes(params string[] types)
-    {
-        var result = new JsonArray();
-        foreach (var type in types)
-        {
-            result.Add(type);
-        }
-
-        return result;
     }
 
     private FieldExtractionWorkflowResult ParseResult(

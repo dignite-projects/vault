@@ -1,4 +1,5 @@
 using System;
+using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.MultiTenancy;
@@ -124,5 +125,5 @@ public class DocumentPipelineRun : AggregateRoot<Guid>, IMultiTenant
     private static string? Truncate(string? value) =>
         value is null || value.Length <= DocumentPipelineRunConsts.MaxStatusMessageLength
             ? value
-            : value[..DocumentPipelineRunConsts.MaxStatusMessageLength];
+            : TextTruncator.AtCharBoundary(value, DocumentPipelineRunConsts.MaxStatusMessageLength);
 }

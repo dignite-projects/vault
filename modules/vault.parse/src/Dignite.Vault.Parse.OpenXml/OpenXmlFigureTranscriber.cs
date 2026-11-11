@@ -106,13 +106,15 @@ internal static class OpenXmlFigureTranscriber
                 },
                 cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // A single figure's OCR failing (provider timeout / rate-limit / auth / one bad image) must NOT
             // discard the text already extracted — figure OCR is an auxiliary augmentation, not the primary
             // payload (the #210/#268 "auxiliary step must not break the main pipeline" principle). Skip this
-            // figure and trip the signal. OperationCanceledException still propagates so a host/job shutdown
-            // aborts promptly.
+            // figure and trip the signal. A cancellation of the caller's token still propagates so a host/job
+            // shutdown aborts promptly; an OperationCanceledException raised while that token is not cancelled
+            // is a provider timeout (HttpClient surfaces it as TaskCanceledException) and is a figure failure
+            // like any other.
             logger.LogWarning(ex, "Embedded-image OCR failed; keeping the extracted text, skipping this figure.");
             state.FailedFigureOcr++;
             return null;

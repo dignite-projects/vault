@@ -360,6 +360,25 @@ public class DocxExtractor_Tests
     }
 
     [Fact]
+    public async Task Keeps_document_text_when_an_embedded_image_OCR_times_out()
+    {
+        // A provider timeout surfaces as TaskCanceledException while the caller's token is NOT cancelled.
+        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+            .Throws(new TaskCanceledException());
+
+        var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
+            .Paragraph("DOCBODYTEXT")
+            .Image(Png(alt: null)));
+
+        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+
+        result.Markdown.ShouldContain("DOCBODYTEXT");
+        result.IsComplete.ShouldBeFalse();
+        result.IncompleteReason.ShouldNotBeNull();
+        result.IncompleteReason!.ShouldContain("OCR");
+    }
+
+    [Fact]
     public async Task Skips_vector_images_and_marks_incomplete()
     {
         StubOcr("SHOULD_NOT_BE_CALLED");
@@ -528,6 +547,50 @@ public class DocxExtractor_Tests
         result.Markdown.ShouldContain("| Name | Amount |");
         result.Markdown.ShouldContain("| --- | --- |");
         result.Markdown.ShouldContain("| Widget | 42 |");
+    }
+
+    [Fact]
+    public async Task Renders_a_table_nested_in_a_cell_as_its_own_table_after_the_host()
+    {
+        var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
+            .TableWithNestedTable("HOSTCELL", new IReadOnlyList<string>[]
+            {
+                new[] { "NESTED-A", "NESTED-B" },
+                new[] { "NESTED-C", "NESTED-D" }
+            }));
+
+        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+
+        result.Markdown.ShouldContain("NESTED-A");
+        result.Markdown.ShouldContain("NESTED-B");
+        result.Markdown.ShouldContain("NESTED-C");
+        result.Markdown.ShouldContain("NESTED-D");
+        result.Markdown.ShouldContain("HOSTCELL");
+
+        // The nested text must not bleed into the host cell's own row line.
+        var hostLine = Array.Find(result.Markdown.Split('\n'), l => l.Contains("HOSTCELL"));
+        hostLine.ShouldNotBeNull();
+        hostLine.ShouldNotContain("NESTED-A");
+
+        // The nested table is its own block after the host.
+        result.Markdown.IndexOf("NESTED-A", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.Markdown.IndexOf("HOSTCELL", StringComparison.Ordinal));
+        result.IsComplete.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Renders_a_table_nested_two_levels_deep_once()
+    {
+        var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
+            .TableWithNestedTable("HOSTCELL", new IReadOnlyList<string>[]
+            {
+                new[] { "NESTED-A", "NESTED-B" },
+                new[] { "NESTED-C", "NESTED-D" }
+            }, deepestText: "DEEPEST"));
+
+        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+
+        CountOccurrences(result.Markdown, "DEEPEST").ShouldBe(1);
     }
 
     [Fact]
@@ -989,6 +1052,33 @@ public class DocxExtractor_Tests
         result.Markdown.ShouldContain("Orphan ref[^fn2]");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("footnote/endnote reference");
+    }
+
+    [Fact]
+    public async Task Keeps_document_text_when_the_footnotes_part_is_malformed()
+    {
+        var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
+            .Footnote("BODYTEXT", 2, "The footnote text."));
+
+        // Corrupt the footnotes part so it is not well-formed XML (truncated).
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(docx, 0, docx.Length);
+            using (var package = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(stream, true))
+            {
+                var footnotesPart = package.MainDocumentPart!.FootnotesPart!;
+                using var garbage = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("<w:footnotes"));
+                footnotesPart.FeedData(garbage);
+            }
+
+            docx = stream.ToArray();
+        }
+
+        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+
+        result.Markdown.ShouldContain("BODYTEXT");
+        result.IsComplete.ShouldBeFalse();
+        result.IncompleteReason.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]

@@ -68,7 +68,7 @@ public class PaddleOcrProvider_Tests
         var result = await provider.RecognizeAsync(FakeImage(), new OcrOptions());
 
         var expected = string.Join(
-            Environment.NewLine + Environment.NewLine,
+            "\n\n",
             "line one", "line two", "line three");
         result.Markdown.ShouldBe(expected);
         // provider_name absent → defaults to "PaddleOCR".

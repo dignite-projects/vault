@@ -16,7 +16,7 @@ Dignite Vault Extract delegates every chat-completion call to `Microsoft.Extensi
 
 The split keeps credentials (`ApiKey`) out of any `IOptions<>` that reaches application code, and lets operators tune behavior without touching the provider. Every LLM feature (classification, field extraction, sub-document segmentation, title generation, cabinet suggestion and the admin-side drafting helpers) shares the same provider registration.
 
-> Dignite Vault Extract is a channel layer. It has no chat, RAG or agentic tool-calling path (removed in [#166](https://github.com/dignite-projects/vault-extract/issues/166)). Its LLM call sites are background pipeline workflows plus a few admin-facing drafting helpers. A downstream RAG or chat consumer registers its own `IChatClient` against its own provider.
+> Dignite Vault Extract is a channel layer. It has no chat, RAG or agentic tool-calling path (removed in [#166](https://github.com/dignite-projects/vault/issues/166)). Its LLM call sites are background pipeline workflows plus a few admin-facing drafting helpers. A downstream RAG or chat consumer registers its own `IChatClient` against its own provider.
 
 ## Required before first run
 

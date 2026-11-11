@@ -75,11 +75,11 @@ Fields are organized into two kinds: **system common fields** (auto-produced by 
 1. **There is forever only one text-typed field: `Markdown`** (written once by the first parse — `Document.SetMarkdown` enforces it; afterwards only an operator correction (#555) or a re-parse (#660) replaces it). Any derived text (Summary / Outline / SectionsJson) is projected on the consumer side via `MarkdownStripper.Strip`, **not persisted**. `Title` is a display snapshot derived from Markdown, replaced only together with it by a re-parse — not a new text payload.
 2. **Non-text fields are judged by "generic truth source vs. business-specific"**: generic ones (e.g. `PageBlocks`) may be added to `Document` (still requires an Issue to discuss shape); business-specific ones (contract amount / invoice number / ID-card name) are stored by downstream consumers in their own aggregate roots — **`Document` is not polluted**.
 3. **Forbidden**: adding an **unconstrained** `Dictionary<string,object>` generic extension bag to `Document` / `TextExtractionResult` / event payloads; **forbidden** to introduce a parallel plain-text field.
-   - *What "unconstrained" excludes* (#558): `Document.FlexFields` is a `FlexFieldDictionary` (a `Dictionary<string,object>`) and is **allowed**, because every key in it is a `Field.Name` backed by a persisted field definition with a declared field type — the schema lives in `VaultFields`, not in the bag. The rule targets a bag anyone can write an arbitrary key into, which is what makes a payload unreviewable and undeletable. A bag whose keys are enumerable from a definition table is the opposite. Adding a *second* bag, or widening this one to accept keys with no definition, is still forbidden.
+   - `Document.FlexFields` (#558) is the one **allowed** bag: every key is a `Field.Name` backed by a persisted field definition with a declared type, so its keys are enumerable from `VaultFields`. Adding a *second* bag, or letting this one accept a key with no definition, is still forbidden.
 
 > Full system-field table, text-extraction provenance (#210), and mechanism-B implementation form (field architecture v3, #558/#559/#562: the `Dignite.Abp.FlexFields` kernel — `Field : IFlexField` + the `Document.FlexFields` value bag + the derived `DocumentFlexFieldIndex`, with `FieldTypeName` + `Configuration` in place of a data-type enum): see `.claude/rules/field-architecture.md` (auto-loaded when editing Document / field code).
 
-> Sub-document segmentation (a **container** document → derived sub-documents; also a concrete document → its embedded standalone documents, #494): the two-representation model (`DocumentSegment` ledger + derived `Document`), the two-`Kind` red line, and the field lifecycle contract — see `.claude/rules/sub-document-segmentation.md` (decision record #390, auto-loaded when editing Segmentation / `DerivedDocumentSpawner` / `ContainerMarker*` / `DocumentSegment*` code). Relevant to egress too: a container is suppressed from `DocumentReadyEto` (#346); only its sub-documents fire it, each carrying `OriginDocumentId`. A sub-document of either `Kind` carries **no `FileOrigin`** (#487 reverted #481's required-`FileOrigin` back to nullable): it is a Markdown slice seeded from its ledger row, and a consumer reaches its source by following `OriginDocumentId` to the parent's blob.
+> Sub-document segmentation (a **container** document → derived sub-documents; also a concrete document → its embedded standalone documents, #494): the two-representation model (`DocumentSegment` ledger + derived `Document`), the two-`Kind` red line, and the field lifecycle contract — see `.claude/rules/sub-document-segmentation.md` (decision record #390, auto-loaded when editing Segmentation / `DerivedDocumentSpawner` / `ContainerMarker*` / `DocumentSegment*` code). Relevant to egress too: a container is suppressed from `DocumentReadyEto` (#346); only its sub-documents fire it, each carrying `OriginDocumentId`. A sub-document of either `Kind` carries **no `FileOrigin`** (#487): it is a Markdown slice seeded from its ledger row, and a consumer reaches its source by following `OriginDocumentId` to the parent's blob.
 
 ## Egress contracts
 
@@ -87,7 +87,7 @@ Three live egress channels: **REST API** (HTTP, generic programmatic access) / *
 
 **Multi-stage events** (thin payloads — ID + key metadata, downstream pulls details back): `DocumentUploadedEto` → `DocumentTextExtractedEto` → `DocumentClassifiedEto` → `DocumentReadyEto`; plus lifecycle events `DocumentDeletedEto` / `DocumentRestoredEto` / `DocumentPermanentlyDeletedEto` (orthogonal to the pipeline).
 
-**Ready gate**: **only `DocumentReadyEto` is gated** — it fires once the document carries **no blocking review reason** (`ReviewReasonPolicy.Blocking`, the single declaration point): a confirmed type (classification confidence ≥ that type's `ConfidenceThreshold`, or manual confirmation), no suspected duplicate (#411), and field extraction not declined for an oversized body (#491). Documents that fail are still stored, early-stage events still fire, and they enter the operator review queue. Primary downstream consumers subscribe to `DocumentReadyEto` by default.
+**Ready gate**: **only `DocumentReadyEto` is gated** — it fires once the document carries **no blocking review reason**. `ReviewReasonPolicy.Blocking` is the single declaration point of which reasons block (today: unconfirmed type, suspected duplicate, field extraction declined for size, unresolved field validation warning). Documents that fail are still stored, early-stage events still fire, and they enter the operator review queue. Primary downstream consumers subscribe to `DocumentReadyEto` by default.
 
 **Delivery semantics**: ABP transactional outbox → **at-least-once, events are never lost**; dedup / replacement is the downstream's responsibility via `EventTime` idempotency; the channel layer maintains no event state table and does no in-flight replacement.
 
@@ -99,16 +99,15 @@ Before touching these boundaries, stop and open an Issue to discuss:
 
 - **RAG application layer**: ❌ vectorization / vector storage / retrieval engine / Chat·RAG Q&A·NL search / Agent·Workflow orchestration / MCP **client** (server only, no calling external MCP tools) / standardized chunking
 - **Business layer**: ❌ preset schemas for business field extraction (contract amount / invoice number, etc. — customers configure via mechanism B) / preset industry-vertical import templates / business workflows (approval / renewal) / business-system-specific connectors / business modules (contract·invoice·HR management, etc. — built by downstream)
-- **Configuration layer**: ❌ letting end customers configure the LLM provider / API key (configured at the host deployment layer)
+- **Configuration layer**: ❌ letting end customers configure the LLM provider / API key (see the key constraint under Architecture)
 
 ## Markdown-first (mandatory)
 
 Markdown is the **sole text payload** of the egress:
 
 - **Providers must output Markdown** — `ITextExtractor` / `IMarkdownTextProvider` / `IOcrProvider` implementations must not fall back to a plain-text path; plain-text-to-Markdown fallback is done inside the provider, and `OcrResult` / `TextExtractionResult` **expose no RawText field**
-- **Persistence**: `Document.Markdown` is the only text field on the aggregate root; **forbidden** to introduce a parallel plain-text field on `Document` / event payloads
-- **Plain-text projection**: computed on demand on the consumer side via `MarkdownStripper.Strip(...)`, **not persisted**, not exposed side-by-side in contracts
-- **Out-of-band signals are orthogonal to Markdown**: coordinates / confidence / page metadata / form key-value, etc., if needed in future, as **named, strongly-typed, nullable** independent extension fields (e.g. `PageBlocks`); **open a separate Issue per signal**; **forbidden** to use a `Dictionary<string,object>` generic extension bag
+- **Persistence and plain-text projection**: field-extension constraints 1 and 3 above — `Document.Markdown` is the only text field, plain text is projected on demand via `MarkdownStripper.Strip(...)` and never persisted or exposed side by side
+- **Out-of-band signals are orthogonal to Markdown**: coordinates / confidence / page metadata / form key-value, etc., if needed in future, as **named, strongly-typed, nullable** independent extension fields (e.g. `PageBlocks`); **open a separate Issue per signal**
 
 > Markdown trade-offs for structured vs. unstructured documents, provider translation responsibility, and out-of-band signal extension decisions: see `.claude/rules/text-extraction.md`.
 
@@ -124,7 +123,7 @@ Apply to built-in LLM classification, unified field extraction (mechanism B), ti
 
 ## ABP conventions
 
-Verified against the code on 2026-09-21: nothing in `modules/vault.extract/src` / `src/Dignite.Vault.Extract.Host` violates any of these today — keep it that way. (Generic ABP tutorial rules were removed from `.claude/rules/`; https://abp.io/docs/latest is the reference for anything not listed here.)
+These are normative: code that violates one is a defect to fix, not a precedent to copy. https://abp.io/docs/latest is the reference for anything not listed here.
 
 - **`virtual`**: every public/protected method on application services and domain services (`*Manager`) is `virtual`, because packaged modules are overridden by consumers. Helpers are `protected virtual`, not `private`.
 - **Time**: `Clock.Now` / `IClock`, never `DateTime.Now` / `UtcNow`.
@@ -135,11 +134,10 @@ Verified against the code on 2026-09-21: nothing in `modules/vault.extract/src` 
 - **Async all the way**: no `.Result` / `.Wait()`.
 - **Authorization**: permission-based, never hard-coded role checks. The documents domain has its own access-rule table and must not use `[Authorize]` — read `.claude/rules/authorization.md` before touching it.
 - **Multi-tenancy**: never hand-write `TenantId` predicates (ABP's global filter does it); `CurrentTenant.Change(...)` only inside a `using`.
-- **Tests**: ABP integration-style (test base + in-memory SQLite), Shouldly assertions, NSubstitute for LLM / OCR / blob doubles. One project: `dotnet test modules/vault.extract/test/<Project>/<Project>.csproj` (the whole core suite runs in about a minute); Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`.
+- **Tests**: ABP integration-style (test base + in-memory SQLite), Shouldly assertions, NSubstitute for LLM / OCR / blob doubles. One project: `dotnet test modules/<module>/test/<Project>/<Project>.csproj` (`<module>` is `vault.extract` or `vault.parse`; the whole core suite runs in about a minute); Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`.
 
 ## Working rules
 
-1. Development follows the conventions above and the path-scoped rules under `.claude/rules/` (they auto-load by `paths:` when you touch production code under `modules/vault.extract/src` / `src/Dignite.Vault.Extract.Host`; when modifying ABP BackgroundJob / JobArgs you must read `.claude/rules/background-jobs.md`)
-2. Do not configure middleware in core ABP modules — only in the host
-3. **Decide whether an Issue is needed before changing**: changes touching channel boundaries (OCR pipeline / egress contracts / field architecture / document-type system / Markdown-first / security conventions), module boundaries, or Slice tasks — **stop first and tell the user to open a GitHub Issue before proceeding**; pure implementation-detail fixes (bug fixes, wording corrections) are recorded directly in the commit message
-4. **Downstream-consumer questions**: business modules (contract / invoice management, etc.) are out of Dignite Vault Extract scope. For discussions involving downstream-consumer implementation, explicitly state it is out-of-scope; Dignite Vault Extract only guarantees stable egress contracts
+1. Development follows the conventions above and the path-scoped rules under `.claude/rules/`. They auto-load by `paths:` only when a matching file is touched, so before changing a mechanism read its rule file even if the file you are editing does not match (e.g. `background-jobs.md` before any BackgroundJob / JobArgs change)
+2. **Record boundary decisions in an Issue before implementing**: changes touching channel boundaries (OCR pipeline / egress contracts / field architecture / document-type system / Markdown-first / security conventions) or module boundaries get a GitHub Issue that states the decision and its reasoning, opened before the code; pure implementation-detail fixes (bug fixes, wording corrections) are recorded directly in the commit message
+3. **Downstream-consumer questions** are out of scope (see Layer 2): say so, and keep to what the egress contracts guarantee

@@ -65,7 +65,7 @@ Run this check when any of the following is true:
 
    - `modules/vault.extract/src/Dignite.Vault.Extract.Domain/Documents/Document.cs`
    - `modules/vault.extract/src/Dignite.Vault.Extract.Application.Contracts/Documents/DocumentDto.cs`
-   - `modules/vault.extract/src/Dignite.Vault.Extract.EntityFrameworkCore/EntityFrameworkCore/ExtractDbContextModelCreatingExtensions.cs` (the `builder.Entity<Document>` block)
+   - `modules/vault.extract/src/Dignite.Vault.Extract.EntityFrameworkCore/EntityFrameworkCore/VaultExtractDbContextModelCreatingExtensions.cs` (the `builder.Entity<Document>` block)
 
 2. **Classify ownership for each field**
 

@@ -250,6 +250,21 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
                         blocks.Add(renderedTable!);
                     }
 
+                    // A Markdown table cell can't host another table, so a table nested inside a cell is rendered as its own
+                    // table block AFTER its host — the same treatment as an in-cell figure below: content preserved over its
+                    // exact in-cell position, rather than silently dropped. Descendants() yields every nesting depth in document order,
+                    // and Render only reads a table's OWN cell text (CellText skips paragraphs of a deeper table), so each nested
+                    // table's text is emitted exactly once.
+                    foreach (var nestedTable in table.Descendants<W.Table>())
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var renderedNested = WordTableRenderer.Render(nestedTable, state.NoteReferences);
+                        if (!string.IsNullOrWhiteSpace(renderedNested))
+                        {
+                            blocks.Add(renderedNested!);
+                        }
+                    }
+
                     // A Markdown table cell can't host a multi-line transcription / chart block, so a figure
                     // inside a cell is extracted as its own block AFTER the table — content preserved (over its
                     // exact in-cell position), a failure still trips #268, rather than being silently dropped.
@@ -489,15 +504,56 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
             return;
         }
 
-        var footnotes = BuildNoteBodyMap(mainPart.FootnotesPart?.Footnotes?.Elements<W.Footnote>());
-        var endnotes = BuildNoteBodyMap(mainPart.EndnotesPart?.Endnotes?.Elements<W.Endnote>());
+        // The notes pass is guarded like the body walk (#268): OpenXML parses lazily, so a malformed notes part
+        // can fault on access. A failed lookup becomes null, which makes every reference of that kind fall into
+        // the "could not be resolved" branch below (counted in FailedNotes) instead of failing the document.
+        IReadOnlyDictionary<long, W.FootnoteEndnoteType>? footnotes;
+        try
+        {
+            footnotes = BuildNoteBodyMap(mainPart.FootnotesPart?.Footnotes?.Elements<W.Footnote>());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Failed to read the {Kind} part; its notes cannot be resolved.", "footnotes");
+            footnotes = null;
+        }
+
+        IReadOnlyDictionary<long, W.FootnoteEndnoteType>? endnotes;
+        try
+        {
+            endnotes = BuildNoteBodyMap(mainPart.EndnotesPart?.Endnotes?.Elements<W.Endnote>());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Failed to read the {Kind} part; its notes cannot be resolved.", "endnotes");
+            endnotes = null;
+        }
 
         // #457: a hyperlink inside a note body is a relationship of the FootnotesPart / EndnotesPart, not the
         // main part, so it must be resolved against the owning part's own id -> uri map. Built once per part,
         // mirroring the body-path cache (#318). A missing part yields no map here, but that pairs with a null
         // body map above (the note is then unresolvable), so a resolved note always has its part's map in hand.
-        var footnoteHyperlinkUris = mainPart.FootnotesPart is { } footnotesPart ? BuildHyperlinkUris(footnotesPart) : null;
-        var endnoteHyperlinkUris = mainPart.EndnotesPart is { } endnotesPart ? BuildHyperlinkUris(endnotesPart) : null;
+        IReadOnlyDictionary<string, string?>? footnoteHyperlinkUris;
+        try
+        {
+            footnoteHyperlinkUris = mainPart.FootnotesPart is { } footnotesPart ? BuildHyperlinkUris(footnotesPart) : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Failed to read the {Kind} part; its notes cannot be resolved.", "footnotes");
+            footnoteHyperlinkUris = null;
+        }
+
+        IReadOnlyDictionary<string, string?>? endnoteHyperlinkUris;
+        try
+        {
+            endnoteHyperlinkUris = mainPart.EndnotesPart is { } endnotesPart ? BuildHyperlinkUris(endnotesPart) : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Failed to read the {Kind} part; its notes cannot be resolved.", "endnotes");
+            endnoteHyperlinkUris = null;
+        }
 
         var seen = new HashSet<NoteReference>();
         foreach (var reference in state.NoteReferences)
@@ -522,8 +578,17 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
             }
 
             var hyperlinkUris = isFootnote ? footnoteHyperlinkUris : endnoteHyperlinkUris;
-            var body = await RenderNoteBodyAsync(note, mainPart, hyperlinkUris, state, cancellationToken);
-            blocks.Add(FormatNoteDefinition(reference.Marker, body));
+            try
+            {
+                var body = await RenderNoteBodyAsync(note, mainPart, hyperlinkUris, state, cancellationToken);
+                blocks.Add(FormatNoteDefinition(reference.Marker, body));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Same stance as a body block: one malformed note is skipped and counted, it does not fail the document.
+                Logger.LogWarning(ex, "Failed to render a {Kind} body (id {Id}); skipping it.", reference.Kind, reference.Id);
+                state.FailedNotes++;
+            }
         }
     }
 

@@ -120,7 +120,7 @@
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.ElBrunoMarkItDown\Dignite.Vault.Parse.ElBrunoMarkItDown.csproj" />
     <!-- OCR provider — IOcrProvider implementations are mutually exclusive; enable only one.
          Current default: VisionLlm (photos / thermal receipts / image-only PDFs, #259).
-         When switching back to local PaddleOCR or Azure, update both ExtractHostModule [DependsOn]
+         When switching back to local PaddleOCR or Azure, update both VaultExtractHostModule [DependsOn]
          and the ConfigureAI keyed client wiring. See docs/en/text-extraction/ocr-vision-llm.md. Linux containers also
          require SkiaSharp.NativeAssets.Linux + libfontconfig1 (see the Linux deployment section). -->
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.Ocr.VisionLlm\Dignite.Vault.Parse.Ocr.VisionLlm.csproj" />

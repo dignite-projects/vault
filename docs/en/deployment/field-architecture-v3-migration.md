@@ -8,15 +8,15 @@
 # Field Architecture v2 → v3 Migration
 
 Runbook for upgrading a deployment across the field-storage change of the `0.5.0` line
-([#558](https://github.com/dignite-projects/vault-extract/issues/558),
-[#561](https://github.com/dignite-projects/vault-extract/issues/561)). Read it before upgrading a
+([#558](https://github.com/dignite-projects/vault/issues/558),
+[#561](https://github.com/dignite-projects/vault/issues/561)). Read it before upgrading a
 deployment that already holds extracted field values — a package upgrade alone does **not** migrate
 them, and nothing in the tooling reminds you.
 
 > **Which build to run this on.** The data migrator exists only in **`0.5.0-preview.1` and
 > `0.5.0-preview.2`**, the two releases in which the v2 and v3 storage coexist. They were published
 > to GitHub Packages, not to NuGet.org. From `0.5.0-preview.4` on — `0.5.0` included — the v2 tables
-> are dropped ([#593](https://github.com/dignite-projects/vault-extract/issues/593)) and the migrator
+> are dropped ([#593](https://github.com/dignite-projects/vault/issues/593)) and the migrator
 > is gone. So: upgrade the 0.3.x deployment to one of those two previews, complete this runbook and
 > its verification, and only then move to `0.5.0` or later. Skipping it loses every field value while
 > the upgrade reports success.
@@ -42,7 +42,7 @@ them, and nothing in the tooling reminds you.
 `VaultDocumentExtractedFields` keep every row and are **not** dropped. That is deliberate — while
 they hold their rows they are the rollback path, and a stronger one than any tag, because the data is
 still there. Dropping them was a separate, later change
-([#593](https://github.com/dignite-projects/vault-extract/issues/593), shipped in `0.5.0-preview.4`).
+([#593](https://github.com/dignite-projects/vault/issues/593), shipped in `0.5.0-preview.4`).
 
 ## What Runs the Migration
 
@@ -121,7 +121,7 @@ recomputes fingerprints per layer. A downstream with its own `DbContext` runs it
 (`vault`: its `DbMigrator`).
 
 **Fingerprint recomputation is required, not optional.** `Document.FieldFingerprint` is a stored
-SHA-256 that drives duplicate detection ([#411](https://github.com/dignite-projects/vault-extract/issues/411)),
+SHA-256 that drives duplicate detection ([#411](https://github.com/dignite-projects/vault/issues/411)),
 and v3 hashes it from the value bag where v2 hashed it from value rows in `Order` sequence.
 Duplicates are decided by string equality of that stored hash, so leaving it unrecomputed silently
 partitions the corpus: every document keeps its v2 fingerprint until it is re-extracted, and then
@@ -265,7 +265,7 @@ result set.
 
 Do **not** drop `VaultFieldDefinitions` or `VaultDocumentExtractedFields` by hand. They are the
 rollback path until you upgrade past `0.5.0-preview.2`; the migration of
-[#593](https://github.com/dignite-projects/vault-extract/issues/593) (`0.5.0-preview.4`) drops them.
+[#593](https://github.com/dignite-projects/vault/issues/593) (`0.5.0-preview.4`) drops them.
 
 ## Rollback
 
@@ -296,4 +296,4 @@ apply it, invoke the migrator from your own migration path, and complete the ver
 
 - [Deployment](deployment.md)
 - [Document Types and Fields](../documents/document-types.md)
-- [CHANGELOG](https://github.com/dignite-projects/vault-extract/blob/main/CHANGELOG.md) — `0.5.0-preview.1` to `0.5.0-preview.4`
+- [CHANGELOG](https://github.com/dignite-projects/vault/blob/main/CHANGELOG.md) — `0.5.0-preview.1` to `0.5.0-preview.4`

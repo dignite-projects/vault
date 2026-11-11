@@ -353,34 +353,6 @@ internal static class PdfReadingOrder
     }
 
     /// <summary>
-    /// Index of the text line nearest the image by RAGFlow-style squared centroid distance
-    /// (<c>dis = dx² + dy²</c>), or <c>null</c> when there are no lines.
-    /// </summary>
-    public static int? FindNearestCaptionIndex(PdfRectangle imageBounds, IReadOnlyList<TextLine> lines)
-    {
-        if (lines.Count == 0)
-        {
-            return null;
-        }
-
-        var (ix, iy) = Centroid(imageBounds);
-        var best = -1;
-        var bestDistance = double.MaxValue;
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var (lx, ly) = Centroid(lines[i].Bounds);
-            var distance = Sq(lx - ix) + Sq(ly - iy);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-
-        return best;
-    }
-
-    /// <summary>
     /// Renders the page to Markdown: text lines folded into gap-delimited paragraphs, figure
     /// transcriptions inlined at their reading position. A figure whose nearest line reads like a caption
     /// (and is close enough) consumes that line and renders it as the figure block's label, so the caption
@@ -560,9 +532,12 @@ internal static class PdfReadingOrder
     /// Stitches consecutive same-level heading blocks into one heading (#403): a heading that wrapped across
     /// visual lines / reading bands is rendered as adjacent <c>#…</c> blocks, and here they merge so e.g. the
     /// title's trailing 「書」 rejoins its title line. Operates by splitting on the blank-line block separator
-    /// and re-joining it, so every non-heading block (paragraph, figure span) is returned unchanged.
+    /// and re-joining it, so every non-heading block (paragraph) is returned unchanged. Figure spans are skipped
+    /// by tracking the <c>*[Image OCR]*</c> … <c>*[End OCR]*</c> markers (a transcription is the OCR provider's own
+    /// Markdown and may contain blank lines), so a transcription's own headings are never merged and no heading
+    /// merges into or across a figure.
     /// </summary>
-    private static string MergeAdjacentHeadings(string pageMarkdown)
+    internal static string MergeAdjacentHeadings(string pageMarkdown)
     {
         if (pageMarkdown.Length == 0)
         {
@@ -571,10 +546,29 @@ internal static class PdfReadingOrder
 
         var blocks = pageMarkdown.Split("\n\n");
         var merged = new List<string>(blocks.Length);
+        var insideFigure = false;
+        var previousIsMergeTarget = false;
         foreach (var block in blocks)
         {
+            var startedInsideFigure = insideFigure;
+            var sawMarker = false;
+            foreach (var line in block.Split('\n'))
+            {
+                if (ImageOcrMarkup.IsOpenLine(line))
+                {
+                    insideFigure = true;
+                    sawMarker = true;
+                }
+                else if (ImageOcrMarkup.IsCloseLine(line))
+                {
+                    insideFigure = false;
+                    sawMarker = true;
+                }
+            }
+
+            var touchesFigure = startedInsideFigure || insideFigure || sawMarker;
             var level = HeadingLevelOf(block);
-            if (level > 0 && merged.Count > 0 && HeadingLevelOf(merged[^1]) == level)
+            if (!touchesFigure && level > 0 && merged.Count > 0 && previousIsMergeTarget && HeadingLevelOf(merged[^1]) == level)
             {
                 // Append this heading line's text (after its duplicate "#…<space>" prefix) to the open heading.
                 merged[^1] = merged[^1] + " " + block[(level + 1)..];
@@ -583,6 +577,8 @@ internal static class PdfReadingOrder
             {
                 merged.Add(block);
             }
+
+            previousIsMergeTarget = !touchesFigure;
         }
 
         return string.Join("\n\n", merged);
@@ -689,7 +685,9 @@ internal static class PdfReadingOrder
         // column — UNLESS a drawn grid is present: a small ruled table can land in a single segmentation block,
         // and its grid still reconstructs it (the block path below claims it as a lattice table). Without a
         // grid this stays the #329 single-block limitation (no whitespace table reconstruction on one block).
-        if (orderedBlocks.Count <= 1 && grids.Count == 0)
+        // With no text blocks there is nothing for a lattice to claim, so the flat render is the correct output
+        // (and AssignFiguresToBlocks requires a non-empty block list).
+        if (orderedBlocks.Count == 0 || (orderedBlocks.Count <= 1 && grids.Count == 0))
         {
             return Render(pageLines, figures, headingScale, paragraphModel);
         }

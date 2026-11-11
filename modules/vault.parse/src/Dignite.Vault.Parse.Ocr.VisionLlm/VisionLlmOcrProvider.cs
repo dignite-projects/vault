@@ -217,7 +217,10 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
 
         if (pageCount > _options.MaxPdfPages)
         {
-            throw new InvalidOperationException(
+            // InvalidDataException, not InvalidOperationException: the page count is a permanent property of this input
+            // under the current configuration, and a consumer's retry policy can tell it from a transient failure by the
+            // type (Vault Extract ends the parse run instead of retrying it).
+            throw new InvalidDataException(
                 $"VisionLlm OCR: PDF has {pageCount} pages, exceeding the configured MaxPdfPages={_options.MaxPdfPages}. " +
                 "Each page is a separate paid vision-LLM call; raise VisionLlmOcr:MaxPdfPages to process larger PDFs, " +
                 "or route large scanned PDFs to a different OCR provider.");

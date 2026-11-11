@@ -133,5 +133,5 @@ Use this format:
 - **Do not read every rule file before starting the review**. Select by the routing table to avoid wasting context.
 - **Do not modify any files**. This agent is review-only.
 - **Do not treat ABP built-in code (`Volo.Abp.*`) as a violation**. That is framework code.
-- **Do not treat EF Core generated migration files (`*.Designer.cs`, `ExtractHostDbContextModelSnapshot.cs`) as violations**. They are tool output. If the migration body itself is questionable, ask the user to invoke `ef-migration-safety-reviewer`.
+- **Do not treat EF Core generated migration files (`*.Designer.cs`, `VaultExtractHostDbContextModelSnapshot.cs`) as violations**. They are tool output. If the migration body itself is questionable, ask the user to invoke `ef-migration-safety-reviewer`.
 - **Do not apply the module-template virtual-method rule to the host (`src/`)**. The host is not a reusable module.

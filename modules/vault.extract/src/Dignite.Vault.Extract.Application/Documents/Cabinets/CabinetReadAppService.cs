@@ -51,7 +51,7 @@ public class CabinetReadAppService : VaultExtractAppService, ICabinetReadAppServ
             ObjectMapper.Map<List<Cabinet>, List<CabinetDto>>(cabinets));
     }
 
-    private async Task CheckReadPolicyAsync()
+    protected virtual async Task CheckReadPolicyAsync()
     {
         // Programmatic OR assertion is mandatory for MCP/reflection dispatch. Cabinet discovery is
         // document-read metadata, while cabinet administrators retain access through Cabinets.Default.
