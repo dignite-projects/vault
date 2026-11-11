@@ -6,53 +6,29 @@ paths:
   - "modules/vault.extract/src/**/*JobArgs.cs"
 ---
 
-# ABP Background Job Rules
+# Background jobs
 
-## Unit Of Work Boundaries
+## Short units of work
 
-Do not wrap an entire background job `ExecuteAsync` in one long `[UnitOfWork]` when the job performs slow or external work, including but not limited to:
+A job that does slow or external work (blob IO, OCR, LLM calls, HTTP, long CPU work) runs in three phases, never inside one long `[UnitOfWork]`:
 
-- blob or file IO
-- OCR
-- LLM or AI provider calls
-- HTTP calls or other network IO
-- long CPU-bound processing
+1. **Begin**: load the aggregates, mark the run as running, commit.
+2. **External**: do the slow work with no ambient UoW.
+3. **Complete**: reload, apply the outcome, commit.
 
-Use short unit-of-work phases instead:
+A long ambient UoW holds connections and locks while the external work runs. That blocks ordinary HTTP reads and causes SQL timeouts even on primary-key queries. Tests assert `_unitOfWorkManager.Current.ShouldBeNull()` at the external call.
 
-1. Begin phase: load the required aggregate(s), create or mark execution state as running, save, and commit.
-2. External phase: perform slow IO, AI, network, or CPU-bound work outside any ambient UoW.
-3. Complete phase: reload the aggregate(s), apply success/failure/skipped state, save, and commit.
+If a job's args carry a run id, persist that id before enqueueing, and use it to complete or fail the run.
 
-This avoids holding database connections, locks, or transactions while external work is running. Long ambient UoW scopes can block normal HTTP reads and cause SQL command timeouts even for simple primary-key queries.
+## Pipeline runs
 
-## Aggregate Persistence
+`DocumentPipelineRun` is its own aggregate root. In a job, load the document with `DocumentRepository.GetAsync(id, includeDetails: false)`, load the run with `RunRepository.FindAsync(runId)`, and change its state through `DocumentPipelineRunManager`. The shared prelude and failure handling are in `DocumentPipelineBackgroundJobBase<TArgs>` (`LoadDocumentAndRunAsync` / `FailRunAsync`).
 
-- Modify child entities through their aggregate root.
-- Do not introduce repositories for child entities to work around persistence issues.
-- If a job carries an execution/run identifier in its args, persist that same identifier before enqueueing or beginning the job, and use it when completing or failing the job.
+## When a job ends instead of rethrowing
 
-### DocumentPipelineRun is its own aggregate root (#216)
+A rethrow hands the job to ABP's retry loop, which is right for throttling, timeouts and server errors. Two failures never succeed on retry, so the job ends:
 
-`DocumentPipelineRun` is itself an `AggregateRoot<Guid>`, so it is handled directly through `IDocumentPipelineRunRepository` and **no longer through the `Document` aggregate root**. The BeginRun / CompleteRun / FailRun phases in the three-phase UoW pattern used by background jobs (`DocumentParseBackgroundJob` / `DocumentClassificationBackgroundJob`) all follow this model:
+- **The document is gone.** `GetAsync` throws `EntityNotFoundException` for a deleted document. Catch exactly that, around the Begin phase only (`DocumentPipelineBackgroundJobBase.IsDocumentGone`), call `EndForDeletedDocumentAsync`, and return. Retrying left a restored document with a `Pending` run that nothing executed.
+- **The provider refused the request itself.** After `FailRunAsync`, ask `EndOnPermanentProviderFailure` and return when it says so. `ProviderFailureClassifier` treats an HTTP 4xx other than 408 / 429 as permanent, and also a `System.IO.InvalidDataException` anywhere in the exception chain (an input that is invalid or over a configured limit). A text-extraction provider that rejects an input for a permanent reason throws that type, not `InvalidOperationException`. A failure with no HTTP status stays retryable.
 
-- Load the Document with `DocumentRepository.GetAsync(id, includeDetails: false)` (**not** `GetWithPipelineRunsAsync`).
-- Load the specific run with `RunRepository.FindAsync(runId)` (**not** `document.GetRun(runId)`).
-- Change run state through `DocumentPipelineRunManager` (the manager explicitly persists through `_runRepo.UpdateAsync`).
-- When the same UoW commits, flush the Document row UPDATE and the PipelineRun row UPDATE / INSERT together.
-
-The CompleteRun / FailRun phases share the same prelude, "load Document + locate the run by runId (fallback to reconstruction when missing)", and both job types share identical failure finalization. These shared parts live in the base class `DocumentPipelineBackgroundJobBase<TArgs>` (`LoadDocumentAndRunAsync` / `FailRunAsync`, #216 follow-up #2); each concrete job only implements its distinct Begin / Complete body.
-
-**This is the only exception for this entity**. Other pipeline-related child entities (for example a future ChunkBlock) still follow the standard "access through the aggregate root" model. See Issue #216 for the decision record.
-
-## A job whose document is gone ends; it does not rethrow (#662)
-
-Every document pipeline job's Begin phase loads the document with `GetAsync`, which throws `EntityNotFoundException` for a soft-deleted (or permanently deleted) document. Each job catches exactly that (`DocumentPipelineBackgroundJobBase.IsDocumentGone`) and calls `EndForDeletedDocumentAsync`: with the soft-delete filter off it fails the run (`DocumentDeletedRunMessage`) and re-derives the lifecycle, then returns. Rethrowing used to hand the job to ABP's retry loop until it was abandoned (about 12 attempts over two days), and a document restored after that kept a `Pending` run nothing executed and `RetryPipelineAsync` refused. A new pipeline job follows the same pattern: catch only the not-found of the document itself, around the Begin phase only.
-
-## A provider's permanent refusal ends the job; it does not rethrow
-
-The parse, classification and field-extraction jobs catch a failure of their external phase, `FailRunAsync`, and rethrow so ABP retries — right for throttling, timeouts and server errors. A provider that **refused the request itself** (an HTTP 4xx other than 408 / 429: a malformed request, more output than the model allows, an unknown model, a rejected key) refuses the same request on every retry, so after `FailRunAsync` each job asks `EndOnPermanentProviderFailure` (base class) and returns when it says so; the run stays `Failed`, which `RetryPipelineAsync` accepts once the cause is fixed. `ProviderFailureClassifier` reads the status from the exception chain (`HttpRequestException.StatusCode`, and by type name `System.ClientModel.ClientResultException.Status` / `Azure.RequestFailedException.Status`) and splits it the way the provider SDKs' own retry policies do (they retry 408, 429, 500, 502, 503, 504 only). Found in the 2026-11-10 self-test: a 400 was retried until four queued jobs of one document all re-ran once the cause was fixed. A new job that calls a provider follows the same pattern; a failure with no HTTP status stays retryable, with one exception: a `System.IO.InvalidDataException` anywhere in the chain (`ProviderFailureClassifier.IsInvalidInput`) marks an input that is itself invalid or over a configured limit — a corrupt or unsafe XLSX, a PDF over `VisionLlmOcr:MaxPdfPages` — and ends the job the same way. A text-extraction provider that rejects an input for a permanent reason throws that type, not `InvalidOperationException`. `DocumentSegmentationJob` has no pipeline run of its own, so on a permanent refusal of its detection call it degrades through `IncompleteOrSkipAsync` (a container gets `SegmentationIncomplete`, an embedded-document parent a logged skip) and returns; an operator re-recognition re-runs the split once the cause is fixed.
-
-## Tests
-
-When changing a background job that performs slow or external work, keep or add tests that verify the external work runs without an ambient UoW. A direct assertion such as `_unitOfWorkManager.Current.ShouldBeNull()` at the external call boundary is preferred.
+`DocumentSegmentationJob` has no pipeline run of its own. On a permanent refusal it degrades through `IncompleteOrSkipAsync` and returns.

@@ -6,50 +6,40 @@ paths:
   - "modules/vault.extract/src/**/*IntegrationEvent*.cs"
 ---
 
-# Egress Event Contract Details (Dignite Vault Extract)
+# Egress events
 
-> Carried over from CLAUDE.md, auto-loaded when editing integration-event ETOs / EventHandlers. CLAUDE.md keeps only the egress list, the event-name sequence, the Ready-gate core paragraph, and the one-line delivery semantics.
+Payloads are thin (ID + key metadata); a consumer pulls the details through REST or MCP. The wire names are published in `docs/en/egress/integration-events.md` and pinned by `EtoContract_Tests.Every_Eto_Wire_Name_Is_Pinned`: changing one breaks every subscriber.
 
-## Egress event contracts (multi-stage + thin payload)
+## Pipeline events
 
-| Stage event | Trigger | Gated by Ready |
-|---------|---------|----------------|
-| `DocumentUploadedEto` | document upload completed | No |
-| `DocumentTextExtractedEto` | text extraction completed (image OCR or digital-native); an observability signal, not a state-machine input. Re-fires when an operator re-parses the document (#660): the Markdown was replaced, so a consumer that indexed it should pull it again | No |
-| `DocumentClassifiedEto` | document classification completed | No |
-| `DocumentReadyEto` | **full pipeline complete + no blocking review reason** (`ReviewReasonPolicy.Blocking`); also re-fires when field extraction re-runs on an already-Ready document (bulk/on-demand re-extraction, #289; the round-trip exists because #411 made FieldExtraction a key pipeline) or when an operator edits fields on an already-Ready document (#650) | **Yes** |
+| Event | Fires when | Gated by Ready |
+|---|---|---|
+| `DocumentUploadedEto` | upload completed | No |
+| `DocumentTextExtractedEto` | text extraction completed; fires again after a re-parse, because the Markdown was replaced | No |
+| `DocumentClassifiedEto` | classification completed | No |
+| `DocumentReadyEto` | the pipeline is complete and no blocking review reason is set; fires again when field extraction re-runs on a Ready document, or an operator edits its fields | **Yes** |
 
-The wire names are published to integrators in `docs/en/egress/integration-events.md` and are frozen from the 0.5.0 line — changing one breaks every subscriber and needs a BREAKING CHANGELOG entry, like the other serialized string contracts in CLAUDE.md; `EtoContract_Tests.Every_Eto_Wire_Name_Is_Pinned` enforces it.
+A derived sub-document (`OriginDocumentId` set) has no blob of its own, so its `DocumentUploadedEto` carries `FileName = null`, `FileSize = 0`, `ContentType = null`. A consumer that sums `FileSize` for storage or quota therefore does not count the parent's bytes again.
 
-**Recycle-bin / lifecycle events** (orthogonal to the multi-stage pipeline, not gated by Ready; downstream archives or physically deletes derived data accordingly):
+## Lifecycle events
 
-| Lifecycle event | Trigger |
-|------------|---------|
-| `DocumentDeletedEto` | document soft-deleted (into recycle bin) — downstream should set derived data to a recoverable archived state. Also fires for each sub-document withdrawn because its parent was re-parsed (#660) or a container was reclassified to a concrete type (#349); such a sub-document cannot be restored, since its parent's split no longer produces it |
-| `DocumentRestoredEto` | document restored from recycle bin — downstream should un-archive |
-| `DocumentPermanentlyDeletedEto` | document permanently deleted (including the original file / archive blob) — downstream should physically delete derived data |
-| `DocumentReclassifiedToContainerEto` | a previously concrete-typed document was re-recognized as a **container** (#355) — its type + type-bound fields are cleared, so downstream should **retract** the record it derived from the former type. The document itself is not deleted; its constituents become sub-documents queryable by `OriginDocumentId`. Thin payload (`DocumentId` / `TenantId` / `EventTime`), not Ready-gated. The type→container mirror of the container→type retraction (#349, which reuses `DocumentDeletedEto` for the spawned sub-documents). Fires only on a real transition — a fresh upload first classified as a container emits nothing. |
+Not gated by Ready.
 
-**Payload design**: event payloads are uniformly thin (ID + key metadata); downstream pulls detailed data back via REST/MCP.
+| Event | Fires when | What a consumer does |
+|---|---|---|
+| `DocumentDeletedEto` | a document is soft-deleted; also for each sub-document withdrawn because its parent was re-parsed or a container was reclassified to a concrete type | archive derived data (a withdrawn sub-document cannot be restored) |
+| `DocumentRestoredEto` | restored from the recycle bin | un-archive |
+| `DocumentPermanentlyDeletedEto` | permanently deleted, with its file and archive blob | delete derived data |
+| `DocumentReclassifiedToContainerEto` | a concrete-typed document was re-recognized as a container; its type and type-bound fields are cleared. Fires only on a real transition, not for a fresh upload first classified as a container | retract the record derived from the former type |
 
-> **Derived sub-documents report no independent upload descriptors** (#481/#485): a derived document (`OriginDocumentId` set) has no blob of its own — a sub-document of either kind is a Markdown slice seeded from its ledger row with `FileOrigin` null (#487 deleted the `extraction-figures` retention chain), and its source file is the parent's upload blob, reached through `OriginDocumentId` — so it contributes **no independent storage**. Its `DocumentUploadedEto` therefore carries `FileName = null`, `FileSize = 0`, `ContentType = null` (a consumer wanting the child's descriptors pulls them by `DocumentId` via REST/MCP). This mirrors `GetStatisticsAsync`, which excludes derived rows from the byte sum, so a consumer accumulating `DocumentUploadedEto.FileSize` for storage/quota does not N×-count the shared bytes. Normal (non-derived) uploads carry real descriptors as before.
+## Ready gate
 
-## Ready gate (classification confidence + manual review)
+- Only `DocumentReadyEto` is gated. A document that fails the gate is still stored, its earlier events still fire, and it enters the operator review queue.
+- The gate is "no blocking review reason is set". `ReviewReasonPolicy.Blocking` is the single place that declares which reasons block, and `DeriveLifecycle` refuses Ready while any of them is present. Today: `UnresolvedClassification`, `DuplicateSuspected`, `FieldExtractionIncomplete`, `FieldValidationWarning`. `MissingRequiredFields` and `SegmentationIncomplete` do not block.
+- **A blocking reason needs an operator-reachable way to clear it that re-derives the gate** (`ReDeriveLifecycleAsync`). Without one, the document is stranded short of Ready. The remedies today: `UnresolvedClassification` → assign a type or reject; `DuplicateSuspected` → allow or delete; `FieldExtractionIncomplete` → enter the field values by hand.
 
-- **Design intent**: only a document whose type is confirmed is a trustworthy signal downstream — documents the classifier is unsure about are not auto-released
-- **Gate enforcement point**: **only `DocumentReadyEto` is gated** — early-stage events still fire, but primary downstream consumers subscribe to `DocumentReadyEto` by default
-- **Gate criterion**: **no blocking review reason is set**. `ReviewReasonPolicy.Blocking` is the single declaration point, and `DeriveLifecycle` refuses to transition to Ready while any of its bits is present. Today that is four: `UnresolvedClassification` (no confirmed `DocumentTypeCode` — auto-classification confidence ≥ that type's `ConfidenceThreshold`, or operator manual confirmation), `DuplicateSuspected` (#411), `FieldExtractionIncomplete` (#491), and `FieldValidationWarning` (#527). `MissingRequiredFields` and `SegmentationIncomplete` are **non-blocking**: the document is still released downstream and only enters the operator queue
-- **Adding a future blocking reason** means ORing one bit into `Blocking` **and** giving it an operator-reachable clearing path that re-derives the gate — a blocking reason with no escape strands the document short of Ready forever. #491 hit exactly this: manual field entry is the only remedy for an oversized body, so `UpdateExtractedFieldsAsync` had to start calling `ReDeriveLifecycleAsync`, which it never needed while it only touched the non-blocking `MissingRequiredFields`
-- **Documents that fail the gate**: still stored (not lost, not deleted); early-stage events still published; `DocumentReadyEto` is withheld for now; the document enters the "pending manual review queue" in the operator UI. Each blocking reason has exactly one operator remedy: `UnresolvedClassification` → Reclassify-assign a type / Reject; `DuplicateSuspected` → Allow (release as not a duplicate) / Delete; `FieldExtractionIncomplete` → enter the field values by hand, since no operator action can shrink a document's Markdown. On passing, `DocumentReadyEto` is triggered
-- **OCR-confidence threshold + signal fields have both been removed** (#196): OCR average confidence does not predict real quality (a whole page scanned crooked / blurry / with messy layout is not necessarily reflected in the average). The threshold config (host default + per-tenant override) has been removed; the `OcrConfidence` signal itself (aggregate-root field + exposure on `OCRCompletedEto` / `DocumentReadyEto` + OCR-provider computation) has been removed as well — since the average does not predict quality, passing it downstream for secondary gating is equally ineffective, so keeping it would be just a dead signal. If OCR quality ops-monitoring is needed in future, it is redesigned via OCR-provider telemetry / `PipelineRun` diagnostics per a population-statistics requirement, not reserved in the channel egress contract. **#650**: `OCRCompletedEto` itself is later renamed `DocumentTextExtractedEto` and its path-fact fields (`UsedOcr` / `FigureOcrCount`) are dropped too — the event now carries only the three base fields (`DocumentId` / `TenantId` / `EventTime`). The same two fields were then removed from `TextExtractionResult` and every provider, since nothing read them.
+## Delivery
 
-## Delivery semantics: at-least-once + monotonic-timestamp idempotency
-
-- **Reliability commitment**: Dignite Vault Extract delivers events via **ABP's built-in transactional outbox** — the business change and the event enqueue are atomically persisted within the same UoW (written to `AbpEventOutbox`), and a background worker scans the table to actually publish. **Events are never lost** (at-least-once)
-- **Dedup / replacement is the downstream consumer's responsibility**: the channel layer maintains **no** event state table, does **no** "in-flight replacement", and does **not** wait for a downstream ack. Dignite Vault Extract doing idempotency on the downstream's behalf would break the downstream's audit chain + add channel complexity, violating the channel philosophy
-- **Downstream consumer idempotency rule**: every ETO carries `EventTime: DateTime` (filled with `Clock.Now` at Dignite Vault Extract publish time). The downstream consumer does idempotency by `(DocumentId, EventType, EventTime)`:
-  - already-processed `EventTime <= incoming.EventTime` → discard incoming (at-least-once redelivery)
-  - already-processed `EventTime > incoming.EventTime` → discard incoming (a stale event arriving out of order)
-  - otherwise apply incoming → persist `EventTime` as the high-water mark for that key
-- **Design trade-off**: giving up "in-flight replacement" in exchange for channel-layer simplification. Repeated triggers on the same document (e.g. OCR retry, operator reclassify) make downstream receive N events, naturally discarding old versions by EventTime — consistent with the downstream business consumer's existing idempotency implementation path (e.g. the common message-queue consumer pattern), solvable downstream with a single `WHERE Version >` line
-- **If the downstream is also an ABP project**: it can enable ABP's built-in inbox (`builder.ConfigureEventInbox()`), consuming exactly-once automatically by `MessageId`, sparing even the `EventTime` comparison
+- Events go through ABP's transactional outbox: the change and the event are committed in the same UoW, so delivery is at-least-once and an event is never lost.
+- The channel keeps no event state table, does no in-flight replacement, and waits for no ack. Deduplication and ordering are the consumer's job.
+- Every ETO carries `EventTime` (`Clock.Now` at publish time). A consumer keeps a high-water mark per `(DocumentId, EventType)`: an incoming event whose `EventTime` is not later than the mark is a redelivery or a stale event and is discarded; otherwise it is applied and becomes the new mark. An ABP consumer can instead enable the inbox (`ConfigureEventInbox()`) and get exactly-once by `MessageId`.

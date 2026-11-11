@@ -67,7 +67,7 @@ A boundary change must start with a GitHub Issue that states the decision and it
 
 Implementation details (bug fixes, wording corrections, a new provider behind an existing contract) don't need an Issue — a descriptive commit message is enough.
 
-Also note CLAUDE.md's "OUT of scope" list: business modules (contract / invoice / HR management), RAG features (vectorization, retrieval, chat), and end-user LLM configuration are not accepted into this repository — downstream consumers build those in their own repositories against the exit contracts.
+Not accepted into the Extract module: business modules (contract / invoice / HR management), RAG features (vectorization, retrieval, chat; these belong to the planned `vault.index` module), and end-user LLM configuration. Downstream consumers build business modules in their own repositories against the exit contracts.
 
 ## Branch naming
 

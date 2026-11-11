@@ -6,9 +6,9 @@ body:
     attributes:
       value: |
         Dignite Vault Extract is a **channel layer** with a deliberately narrow scope.
-        Before proposing, please skim CLAUDE.md — especially the **OUT of scope** list
-        (vectorization / retrieval / chat / RAG, business-field schemas, business modules,
-        end-user LLM configuration). Those belong in downstream consumers, not this repo.
+        Before proposing, please skim CLAUDE.md — especially the **Architecture** section.
+        Vectorization / retrieval / chat / RAG belong to the planned vault.index module; business-field
+        schemas and business modules belong in downstream consumers, not this repo.
   - type: textarea
     id: problem
     attributes:

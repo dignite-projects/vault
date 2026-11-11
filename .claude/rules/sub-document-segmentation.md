@@ -1,5 +1,5 @@
 ---
-description: "Dignite Vault Extract sub-document segmentation subsystem: the two-representation model (DocumentSegment ledger + derived Document), the two-Kind assumption, the field lifecycle contract, and the cross-entity invariant (decision record: #390)"
+description: "Dignite Vault Extract sub-document segmentation: the DocumentSegment ledger and the derived Document, what re-parse does to them, the two-Kind assumption, and the coupled state"
 paths:
   - "modules/vault.extract/src/**/Segmentation/**/*.cs"
   - "modules/vault.extract/src/**/DerivedDocumentSpawner.cs"
@@ -8,136 +8,45 @@ paths:
   - "modules/vault.extract/src/**/DocumentSegment*.cs"
 ---
 
-# Sub-document Segmentation
+# Sub-document segmentation
 
-> Auto-loaded when editing the segmentation / sub-document detection subsystem. This is the densest, most-iterated
-> subsystem in the channel (#306 → #346 → #355/#356/#359 → #364/#365 → #371/#372/#373 → #377/#379 → #381). Read this
-> **before** touching it: the field-level "is this redundant?" questions are almost always answered by the
-> two-representation model below, recorded as the resolution of #390.
+## A sub-document has two representations
 
-## Two representations of a sub-document — on purpose
+It exists first as a `DocumentSegment` (a ledger row, before spawn) and then as a derived `Document`. Both are needed:
 
-A sub-document exists first as a **`DocumentSegment`** (pre-spawn ledger row) and then as a **derived `Document`**
-(post-spawn first-class artifact). This is deliberate denormalization, not accidental duplication:
+- Detection is one expensive LLM pass. The ledger holds "detected but not yet spawned", so the job can resume without paying for the split again. A `Document` cannot hold that state, because the pipeline takes it over the moment it exists.
+- Retraction reads `Kind` from the ledger row after the derived document already exists.
 
-- **Detection is a single expensive LLM pass.** We need a persistent "detected but not yet spawned" state so the job
-  is resumable / idempotent without re-paying the LLM split. A `Document` cannot serve this role — the moment one
-  exists, the whole pipeline (parse → classify → extract) takes it over; it cannot sit as a "pending slice".
-- **Retraction (#364) needs `Kind` to outlive spawn.** A container→type reclassify retracts `Text` children but keeps
-  `Figure` children; that decision reads the ledger row after the derived document already exists.
+What follows from that:
 
-Therefore `DocumentSegment` is a **durable internal ledger**, **not** a transient work queue:
+- **Ledger rows are not deleted after spawn.** They go only together with the children they route, through `SubDocumentRetractor`. A Spawned row's `SegmentKey` is the only barrier against spawning the same child twice, and a Pending row is a constituent whose spawn has not happened yet. A cleanup that deletes rows out of band breaks both.
+- **The ledger is on no egress** (REST / MCP / ETO). Downstream sees a sub-document only as a `Document` row with `OriginDocumentId` set.
+- **Copies made at spawn**: `SegmentKey → OriginConstituentKey`, `SourceDocumentId → OriginDocumentId`, `SliceText → Document.Markdown` (a one-way seed), `TenantId`.
+- **A sub-document has no `FileOrigin`.** The parse job seeds its Markdown from `SliceText` and never touches a blob. Its source is the parent's blob, reached through `OriginDocumentId`.
+- **So the parent outlives its children.** `DeleteAsync` throws `Extract:DocumentHasSubDocuments` while a live child exists. `PermanentDeleteAsync` throws `Extract:DocumentHasSubDocumentsPermanentDelete` while any child exists, recycle-bin ones included, because a hard delete reclaims the blob and a soft-deleted child can be restored. The retraction paths soft-delete children through `IDocumentRepository` directly and do not pass these guards.
 
-- It is **never deleted after parse success** (deleting rows after parse was considered and
-  deferred in #390 Decision 4). Rows go only together with
-  the children they route, through `SubDocumentRetractor`: a container→concrete reclassify removes the `Text` rows
-  (#364), a re-parse removes every row (#660).
-- It is **never on any egress** (REST / MCP / ETO). Downstream discovers sub-documents only as `Document` rows with
-  `OriginDocumentId` set. Verified zero references in `*.Application.Contracts` / `*.Mcp` / `*.Abstractions`. Keep it
-  that way — exposing the ledger would make an internal work-queue into a channel contract.
+## Re-parse regenerates the sub-documents
 
-The fields mirrored between the two representations are intentional copies made at spawn time:
-`DocumentSegment.SegmentKey → Document.OriginConstituentKey`, `SourceDocumentId → OriginDocumentId`,
-`SliceText → Document.Markdown` (one-way seed), `TenantId → TenantId`. A derived sub-document of **either kind**
-carries **no `FileOrigin` of its own** — `Document.FileOrigin` is nullable again and a spawned sub-document is
-created with `fileOrigin: null`. The markdown-slice split does not give children a source file: **#487 decided
-against physically splitting the source** (the cost of a per-child faithful file was not worth it), which reverted
-#481's required-`FileOrigin` back to the pre-#481 nullable design, and Phase A of #487 deleted the #477/#478
-figure-image retention chain (no retained blob, no `FigureManifest`) — a figure's transcription stays **inline** in
-the parent Markdown. To reach a sub-document's source, a consumer follows `OriginDocumentId` to the parent and
-downloads the parent's blob (a frontend concern). The parse job seeds a derived document's Markdown from its
-`SliceText` and **never touches a blob** (its `FileOrigin?.BlobName` is null) — see
-`Text_Extraction_Seeds_Derived_Document_From_Segment_Slice`.
+A document's sub-documents derive from its current Markdown. A re-parse replaces the Markdown, so in the same unit of work `SubDocumentRetractor.RetractAllAsync` soft-deletes every child of either Kind (one `DocumentDeletedEto` each), deletes every ledger row sourced from the document, and `Document.ReplaceParseOutput` clears `IsSegmented`. Classification then splits the new Markdown from scratch.
 
-**Therefore the source outlives its children (#508).** Because `OriginDocumentId` is a sub-document's *only* route to
-a source file, `DocumentAppService` fail-closes on both delete paths: `DeleteAsync` throws
-`Extract:DocumentHasSubDocuments` while any **live** child exists, and `PermanentDeleteAsync` throws
-`Extract:DocumentHasSubDocumentsPermanentDelete` while **any** child exists — recycle-bin ones included, since hard
-delete reclaims the parent's blob and a soft-deleted child is restorable. The asymmetry is carried entirely by the
-ambient `ISoftDelete` filter around `IDocumentRepository.AnyByOriginAsync` (permanent delete runs it inside its
-`DataFilter.Disable<ISoftDelete>()` scope). Neither guard cascades, and neither sits on the retraction path: #349 /
-#364 soft-delete children through `IDocumentRepository` directly. #481 had removed this guard on the premise that
-children own their own `FileOrigin`; #487 reverted that premise, so #508 restored it.
-
-_#487 Phase A deleted the retention chain **and**, in the same pass, the routing of embedded standalone documents —
-but only the retention chain was the thing being abandoned. **#494 restored the routing** (it is v0.2.0's behaviour,
-unchanged): once `FileOrigin` went back to nullable, a figure child became exactly what a text child already is — a
-Markdown slice with no blob. A figure span whose LLM verdict is `isSubDocument` therefore spawns again, its
-transcription living both inline in the parent's Markdown and as the seed of its own sub-document._
-
-## Re-parse regenerates the sub-documents (#660)
-
-**A document's sub-documents always derive from its current Markdown.** A re-parse (`DocumentAppService.ReparseAsync`)
-replaces the Markdown, so in the same Complete-phase unit of work that writes it, `DocumentParseBackgroundJob`
-calls `SubDocumentRetractor.RetractAllAsync`: every child the ledger routed is soft-deleted with one
-`DocumentDeletedEto`, **of either Kind** — unlike the container→concrete retraction, which keeps `Figure` children
-because there the Markdown is unchanged — every ledger row sourced from the document is deleted, and
-`Document.ReplaceParseOutput` clears `IsSegmented`. Classification then splits the new Markdown from scratch, so old
-and new children are never live together. Rejected: reconciling old and new splits by `SegmentKey` — a key is the
-hash of a span the LLM chose, and the same Markdown can be cut along slightly different boundaries.
-
-What keeps it true:
-
-- **Restore follows the ledger.** `RestoreAsync` refuses a sub-document unless its row
-  (`SourceDocumentId = OriginDocumentId`, `SegmentKey = OriginConstituentKey`, `RoutedDocumentId = its id`) still
-  exists (`IDocumentRepository.IsRoutedBySourceLedgerAsync`, `Extract:DocumentRestoreSuperseded`). This is the
-  "live routed child ⟺ ledger row" invariant below, enforced at the one path that could revive a child; it covers
-  children retracted by #364 as well.
-- **A pass that detected over replaced Markdown drops its verdict.** `DocumentSegmentationJob` re-checks, in each
-  Phase-A write UoW (rows, the segmented marker, the incomplete flag), that the source still carries the Markdown
-  it sent to the LLM (`IsDetectedMarkdownCurrent`). Otherwise a pass that started before the re-parse would insert
-  slices of the old text, or mark the new text segmented so its own pass skips detection.
-- **A sub-document is never re-parsed itself** (`Extract:DocumentReparseSubDocument`): it has no file; re-parsing the
-  parent re-splits it.
+- **Restore follows the ledger.** `RestoreAsync` refuses a sub-document whose ledger row no longer exists (`IsRoutedBySourceLedgerAsync`, `Extract:DocumentRestoreSuperseded`).
+- **A detection pass over replaced Markdown drops its result.** `DocumentSegmentationJob` re-checks in each write unit of work that the source still carries the Markdown it sent to the LLM (`IsDetectedMarkdownCurrent`). Without that, a pass started before the re-parse would insert slices of the old text.
+- **A sub-document cannot be re-parsed itself** (`Extract:DocumentReparseSubDocument`). It has no file; re-parse the parent.
 
 ## The subsystem assumes exactly two Kinds {Text, Figure}
 
-`DocumentSegmentKind.IsContainerIndependent()` (exhaustive switch, throws on an unhandled kind), the
-`Strip` vs `ExtractBodies` child-seed split, and the **Text-only** retraction filter in
-`ContainerMarkerClearedEventHandler` are all **binary**. A third `DocumentSegmentKind`
-(Table / Signature / Attachment / …) breaks all three, so adding one means re-reviewing *every*
-`IsContainerIndependent()` call site and the container→type retraction semantics.
+- A **Text** row belongs to a container bundle (`IsContainerIndependent()` is false). When the source is reclassified to a concrete type, the row goes inert and its spawned child is retracted.
+- A **Figure** row is an embedded standalone document (`IsContainerIndependent()` is true). It spawns whether the parent is a bundle or a concrete document, and a container→concrete reclassify keeps it. Its transcription also stays inline in the parent's Markdown.
 
-The exhaustive switch throwing at runtime on an unhandled kind is the **backstop**: it prevents a silent wrong
-default (the #364-class missed-branch bug, hardened in #379).
+Three places are binary: `DocumentSegmentKind.IsContainerIndependent()` (an exhaustive switch that throws on an unhandled kind), the `Strip` vs `ExtractBodies` child-seed split, and the Text-only retraction filter in `ContainerMarkerClearedEventHandler`. A third kind breaks all three.
 
-## Field lifecycle contract (do not add / remove without updating #390)
+## Coupled state
 
-| Field | Status | Note |
-|---|---|---|
-| `SourceDocumentId`, `SegmentKey`, `Kind`, `Status`, `RoutedDocumentId`, `Ordinal` | **contract** | the idempotency + retraction lifecycle |
-| `RoutedDocumentId` | **keep explicit** | reconstructable from `(OriginDocumentId, OriginConstituentKey)`, but the explicit pointer is the ledger's purpose (idempotency + retraction clarity); reconstructing the join is more complex, not less |
-| `SliceText` | **transient one-way seed** | duplicated by `Document.Markdown` after parse; bounded duplication is accepted; **do not add a parse→segment writeback to clear it** (couples parse job to the ledger for a low-value saving) |
+`DocumentSegment` (`Status`, `Kind`) and `Document` (`IsContainer`, `IsSegmented`) are two coupled state machines:
 
-_Removed by #487: `PageNumber` and `FigureContentHash`, dropped from the entity (+ EF config + `DocumentSegmentConsts.MaxFigureContentHashLength`) with the `V487_DropDormantSegmentFigureColumns` migration. Both were **figure-only**; `FigureContentHash` belonged to the deleted retention chain, and `PageNumber` was **write-only even at v0.2.0** (nothing in `modules/vault.extract/src` ever read it back). #494's restored figure routing needs neither — a figure child is identified by the SHA-256 of its transcription like any other slice — so there is **no migration to undo**._
+- Every container↔concrete transition goes through `Document.SetContainerFlag`, which clears `IsSegmented`.
+- `IsSegmented` is the resume gate. It is set atomically with the segment rows on success; completion is not inferred from the rows.
+- A slice that is not a document (cover / index / transmittal) is skipped, not persisted.
+- A live routed child exists exactly when its ledger row exists, for as long as the source lives.
 
-_**`Kind = Figure` is live again (#494).** Fresh detection writes it for every standalone figure span, exactly as at
-v0.2.0. Both kinds are first-class: a **Text** row's premise is the container bundle (`IsContainerIndependent()`
-false — it goes inert if the source is reclassified to a concrete type, and #364 retracts its already-spawned
-child), while a **Figure** row is container-independent (an embedded standalone document stands on its own, so it
-spawns whether the parent is a bundle or a concrete document, and #364 keeps it). **Do not delete Figure rows
-out-of-band** (e.g. a cleanup migration, or a "legacy leftover" guard in the spawn path — #487 briefly had one, and
-#494 removed it): a Spawned row's `SegmentKey` is the **sole duplicate-spawn barrier** (#481 moved spawn idempotency
-entirely onto this ledger after dropping the Document-side unique index), and a still-Pending row is a real
-constituent whose spawn simply has not happened yet. The "live routed child ⟺ its ledger row exists (while the
-source lives)" invariant is what keeps re-splits idempotent and the ≥2 bundle count honest._
-
-Watch for accreted residue: a fast-iterated subsystem leaves write-only fields / never-assigned enum values / dead
-projections. #390 removed three (`DocumentSegmentStatus.NotADocument`, `DetectionContext.UploadedByUserName`,
-`PendingSegment.SliceText`); #487 removed two more (`PageNumber`, `FigureContentHash`). Re-run a dead-code sweep when
-adding the next iteration.
-
-## Cross-entity invariant (two coupled state machines)
-
-`DocumentSegment` (`Status` Pending/Spawned + `Kind`) and `Document` (`IsContainer` / `IsSegmented`) are two coupled
-state machines. The coupling rules:
-
-- **All** container↔concrete transitions flow through `Document.SetContainerFlag`, which clears `IsSegmented`
-  (#378/#379 — the single choke point so the coupled invariant cannot leak).
-- `IsSegmented` is the **precise resume gate** (#377): set atomically with the segment rows on terminal SUCCESS;
-  do not infer completion from segment-row `Kind`.
-- A non-document slice (cover / index / transmittal) is **skipped, not persisted** — there is no terminal
-  "not a document" row state.
-
-Changes to these transitions must be covered by the cross-entity invariant tests (container→type→container round
-trips: assert segment-row + sub-document terminal states).
+A change to these transitions is covered by the round-trip tests (container→type→container, asserting the segment rows and the sub-documents' terminal states).

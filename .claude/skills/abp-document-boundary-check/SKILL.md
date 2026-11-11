@@ -7,7 +7,7 @@ description: Check that the Document aggregate still holds only infrastructure d
 
 ## Background
 
-`CLAUDE.md` ("Field architecture") describes how `Document` is shaped today, and this skill checks a change against that shape:
+`CLAUDE.md` ("Documents, types and fields") describes how `Document` is shaped today, and this skill checks a change against that shape:
 
 - `Document` is a channel-layer infrastructure aggregate root. It holds file storage, lifecycle state, text extraction output, AI classification output, and type-bound extracted field values.
 - Business facts (contract amount, expiration date, counterparty name, invoice number) live in the downstream module's own aggregate root, which persists them after receiving `DocumentClassifiedEto` / `DocumentReadyEto`.
@@ -96,5 +96,5 @@ Run this check when any of the following is true:
 
 ## References
 
-- Root `CLAUDE.md` -> "Field architecture", "Markdown-first", and "OUT of scope"
-- Root `CLAUDE.md` -> "ABP conventions" and "Architecture" for aggregate design and dependency direction
+- Root `CLAUDE.md` -> "Documents, types and fields" and "Architecture"
+- `.claude/rules/field-architecture.md` for how field values are stored

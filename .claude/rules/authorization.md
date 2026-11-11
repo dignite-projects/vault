@@ -10,34 +10,32 @@ paths:
 
 # Authorization
 
-## The documents domain is NOT ordinary ABP authorization (#629 / #632 / #635)
+## Documents domain
 
-The documents domain is different, and the differences are load-bearing. If you are editing `DocumentAppService`, `DocumentExportAppService`, `DocumentReprocessingAppService`, `DocumentStatisticsAppService`, `DocumentPipelineRunAppService` or `CabinetAppService.DeleteAsync`, read `docs/en/configuration/document-type-permissions.md` first. Everything else (`Cabinet`, `DocumentType`, `FieldDefinition`, anything new) uses the ABP default pattern at the bottom of this file.
+`DocumentAppService`, `DocumentExportAppService`, `DocumentReprocessingAppService`, `DocumentStatisticsAppService`, `DocumentPipelineRunAppService` and `CabinetAppService.DeleteAsync` do not use ordinary ABP authorization. The full rule table is in `docs/en/configuration/document-type-permissions.md`.
 
-**1. No `[Authorize]` — ever.** The three documents-domain app services carry no `[Authorize]` attribute on any method, and none at class level. A structural test enforces it (`DocumentTypeAccess_Tests.No_method_of_the_documents_domain_app_services_carries_an_Authorize_attribute`). Two reasons, and the second is the one that bites: MCP / reflection / tool-dispatch paths never run attributes, **and** an attribute fires before the method body, so it would deny a per-type grant holder or a document's own uploader before the body could offer the other arms of the rule.
+1. **No `[Authorize]` on these services**, on a method or on the class. MCP / reflection / tool-dispatch paths never run attributes. An attribute also fires before the method body, so it would deny a per-type grant holder or the document's own uploader before the body can apply the rest of the rule. `DocumentTypeAccess_Tests` enforces this.
 
-**2. Authorization is a row on `DocumentAccessRule`, evaluated by `DocumentAccessChecker`.** Every public operation's first authorization act is one of:
+2. **Every operation starts with `DocumentAccessChecker`:**
 
-```csharp
-await _documentAccess.CheckEntryAsync();                                   // before the load
-await _documentAccess.CheckAsync(DocumentAccessRule.Edit, DocumentAccessSubject.Of(document));
-var scope = await _documentAccess.ResolveScopeAsync(DocumentAccessRule.Read);   // row sets only
-```
+   ```csharp
+   await _documentAccess.CheckEntryAsync();                                   // before the load
+   await _documentAccess.CheckAsync(DocumentAccessRule.Edit, DocumentAccessSubject.Of(document));
+   var scope = await _documentAccess.ResolveScopeAsync(DocumentAccessRule.Read);   // row sets only
+   ```
 
-Adding an operation means **adding a row to the table**, not writing a check. `CheckPolicyAsync(...)` on a `Documents.*` permission in this domain is a bug: it bypasses the ownership and per-type arms, and it asserts no entry.
+   A new operation is a new row on `DocumentAccessRule`. `CheckPolicyAsync` on a `Documents.*` permission in this domain is a bug: it skips the ownership and per-type arms.
 
-Every row pairs a role-level arm ("all types") with a type-level grant ("this type"), and the role-level arm is a **set** (#645): the checker admits if any member is granted. When a second all-types permission should also admit an operation, add it to that row's set — `DeclareType` = {`ConfirmClassification`, `Documents.Upload`} is the one such row — never a second check at the call site. Each subject is judged by **one** row: `UploadAsync` is `Upload` on the declared type (or on `DocumentAccessSubject.None` when untyped) and nothing else; a reclassification is `Edit` on the document plus `DeclareType` on the target type, because those are two subjects. Re-parse (`ReparseAsync`, #660 — it re-runs classification) is the same pair with `DeclareType` on `DocumentAccessSubject.None`, since the classifier names the target (#648, introduced for the former `RerecognizeAsync`).
+3. **One subject, one row.** A row's role-level arm is a set of permissions; to let a second all-types permission admit an operation, add it to that set, not a second check at the call site. A reclassification has two subjects, so it is `Edit` on the document plus `DeclareType` on the target type. Re-parse is the same pair with `DeclareType` on `DocumentAccessSubject.None`.
 
-**3. Ownership goes through the rule's owner arm. Never hand-write `CreatorId != CurrentUser.Id`.** The arm is three-valued (`DocumentOwnerArm`: `Never` / `Always` / `UnlessUnderReview`) because an uploader may always read and delete their own document, may never sign off its review, and may not modify it while it is blocked on a review reason other than classification — a hand-written comparison expresses none of that, and each copy of it would drift.
+4. **Ownership goes through the row's owner arm** (`DocumentOwnerArm`: `Never` / `Always` / `UnlessUnderReview`). A hand-written `CreatorId != CurrentUser.Id` cannot express those three cases.
 
-**4. Rights are decided on the server.** `DocumentListItemDto` / `DocumentDto` carry a `rights` object from the same checker. Never re-derive the rule anywhere else, client or server.
+5. **Rights are computed on the server.** `DocumentListItemDto` / `DocumentDto` carry a `rights` object from the same checker; nothing else re-derives the rule.
 
-**5. Row sets are narrowed by `DocumentAccessScope`**, carried through `DocumentQueries.ApplyMetadataFilter`'s `required` `ReadScope`. A new query over `Document` must set it; a new repository method that returns documents (or names them, like the duplicate-candidate projection) must take it.
+6. **Queries over `Document` are narrowed by `DocumentAccessScope`**, through the required `ReadScope` of `DocumentQueries.ApplyMetadataFilter`. A new query, or a repository method that returns or names documents, takes it.
 
-## ABP default pattern (everything outside the documents domain)
+## Everything else (ABP default)
 
-- Permission names are constants in `VaultExtractPermissions` (`Application.Contracts/Permissions/`), registered in `VaultExtractPermissionDefinitionProvider` with localized display names. Nest children under their group's `Default` permission.
-- Declarative: `[Authorize(VaultExtractPermissions.X.Y)]` on the app-service class (`Default`) and per method — see `CabinetAppService`.
-- Programmatic where an attribute cannot express it (MCP / tool-dispatch paths, conditional checks): `await CheckPolicyAsync(...)` to throw, `await IsGrantedAsync(...)` to branch.
-- Never hard-code role names. Never trust client input for identity — use `CurrentUser`.
-- Don't expose sensitive fields in DTOs.
+- Permission names are constants in `VaultExtractPermissions`, registered in `VaultExtractPermissionDefinitionProvider` with localized display names.
+- `[Authorize(VaultExtractPermissions.X.Y)]` on the app-service class and per method (see `CabinetAppService`). Where an attribute cannot express the check, `CheckPolicyAsync(...)` throws and `IsGrantedAsync(...)` branches.
+- No hard-coded role names. Identity comes from `CurrentUser`, never from client input.
