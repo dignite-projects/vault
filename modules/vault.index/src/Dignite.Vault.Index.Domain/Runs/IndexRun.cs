@@ -57,4 +57,27 @@ public class IndexRun : AggregateRoot<Guid>, IMultiTenant
         StartedTime = startedTime;
         Status = IndexRunStatus.Running;
     }
+
+    public virtual void Succeed(DateTime finishedTime, int chunkCount, long? embeddingTokenCount)
+    {
+        Status = IndexRunStatus.Succeeded;
+        FinishedTime = finishedTime;
+        ChunkCount = chunkCount;
+        EmbeddingTokenCount = embeddingTokenCount;
+    }
+
+    /// <summary>Nothing to do: the content and settings were unchanged, or the document was no longer Ready.</summary>
+    public virtual void Skip(DateTime finishedTime, string reason)
+    {
+        Status = IndexRunStatus.Skipped;
+        FinishedTime = finishedTime;
+        ErrorMessage = reason;
+    }
+
+    public virtual void Fail(DateTime finishedTime, string errorMessage)
+    {
+        Status = IndexRunStatus.Failed;
+        FinishedTime = finishedTime;
+        ErrorMessage = errorMessage;
+    }
 }

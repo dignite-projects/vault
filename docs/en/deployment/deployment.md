@@ -38,7 +38,7 @@ The shipped host uses SQL Server through EF Core, with one connection string:
 
 Source the password from the platform's secret store (Azure Key Vault, AWS Secrets Manager, environment variables injected by the orchestrator), not from `appsettings.Production.json`. The schema itself is provider-agnostic; see [Database Portability](#database-portability).
 
-The host also carries Vault Index, which is under development. Its tables (`VaultIndex*`) use their own connection string, `VaultIndex`; without one they go into the `Default` database. Its upcoming vector and full-text storage will need SQL Server 2025 with Full-Text Search installed, or Azure SQL, behind whichever of the two it resolves to, so point `VaultIndex` at such a database if `Default` is an older SQL Server:
+The host also carries Vault Index, which is under development. Its tables (`VaultIndex*`) use their own connection string, `VaultIndex`; without one they go into the `Default` database. **That database must be SQL Server 2025 or Azure SQL**: Index stores its vectors in a `vector(1024)` column, and `--migrate-database` fails on an older SQL Server. Its upcoming full-text search will also need Full-Text Search installed (LocalDB has none). If `Default` is an older SQL Server, point `VaultIndex` at a 2025 database:
 
 ```json
 "ConnectionStrings": {
@@ -46,6 +46,21 @@ The host also carries Vault Index, which is under development. Its tables (`Vaul
   "VaultIndex": "Server=YOUR_SQL2025_SERVER;Database=VaultIndex;User ID=YOUR_USER;Password=__SET_FROM_SECRETS__;TrustServerCertificate=true"
 }
 ```
+
+### Vault Index ingestion
+
+Index indexes a document when Extract releases it (`DocumentReadyEto`) and follows its later recycle-bin, reclassification and deletion events. It needs an embedding model, configured in [`Vault:Index`](../configuration/ai-provider.md#embedding-model-index); without one it indexes nothing. On the first `--migrate-database` with a model, every layer that has never been indexed gets a backfill of its Ready documents, queued at low priority behind Extract's own jobs.
+
+`Vault:IndexIngestion` bounds the work:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `MaxMarkdownLength` | `2000000` | Longest Markdown indexed, in characters. A longer document ends failed rather than cut |
+| `MaxChunksPerDocument` | `5000` | Most chunks one document may produce; above it the document ends failed |
+| `EmbeddingBatchSize` | `32` | Chunks sent to the embedding model per call |
+| `MaxFailedAttempts` | `5` | Transient failures (a model timeout, a database blip) before a document ends failed. A later Ready event indexes it again |
+| `ClaimTimeout` | `00:30:00` | How long one index job holds a document. An older claim is taken as abandoned by a crashed process |
+| `BackfillPageSize` | `200` | Document ids one backfill step enqueues, at most 1000 |
 
 ## Original File Storage
 

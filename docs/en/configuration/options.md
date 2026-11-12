@@ -26,6 +26,8 @@ Sections bound from `appsettings.json` (or any other configuration source; envir
 | `Mcp:ForwardedClientIp` | `McpForwardedClientIpOptions` (bound by the host) | `Dignite.Vault.Extract.Mcp` | Trusted reverse proxies. [MCP Server](../egress/mcp-server.md#reverse-proxy-client-ips) |
 | `OpenIddict:Applications:VaultExtract_Mcp` | none (read by the host's seeder) | Host | The preset MCP OAuth client and its redirect URIs. [MCP Server](../egress/mcp-server.md#registered-callbacks) |
 | `OpenTelemetry` | none (read by the host) | Host | Telemetry export. [Observability](../deployment/observability.md) |
+| `Vault:Index` | none (read by the host) | Host | Vault Index's embedding model. [AI Provider](ai-provider.md#embedding-model-index) |
+| `Vault:IndexIngestion` | `VaultIndexIngestionOptions` | `Dignite.Vault.Index.Application` | Size ceilings, retries and backfill paging of Index ingestion. [Deployment](../deployment/deployment.md#vault-index-ingestion) |
 
 ## Options Set in Code
 

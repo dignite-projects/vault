@@ -144,7 +144,7 @@ namespace Dignite.Vault.Extract.Host;
 
     // Vault Index (P0 in progress): its own DbContext and connection string, migrated by VaultIndexHostDbContext.
     typeof(VaultIndexApplicationModule),
-    typeof(VaultIndexEntityFrameworkCoreModule),
+    typeof(VaultIndexEntityFrameworkCoreSqlServerModule),   // vectors on SQL Server 2025 / Azure SQL; brings the EF module
 
     // Operator notifications (#680). Application publishes them to the uploader on document lifecycle transitions;
     // these three are what the host does with them: live push over SignalR, then a persistent inbox + the
@@ -289,6 +289,7 @@ public class VaultExtractHostModule : AbpModule
         ConfigureEfCore(context);
         ConfigureDistributedEventBus();
         ConfigureAI(context, configuration);
+        ConfigureVaultIndexAI(context, configuration);
         ConfigureOpenTelemetry(context, configuration);
         ConfigureRequestLimits(context);
         ConfigureMcpRateLimiter(context);
@@ -742,6 +743,53 @@ public class VaultExtractHostModule : AbpModule
         Decorate(context.Services.AddKeyedChatClient(
             VisionLlmOcrConsts.VisionChatClientKey,
             _ => openAIClient.GetChatClient(visionOcrModelId).AsIChatClient()));
+    }
+
+    /// <summary>
+    /// Vault Index's embedding model, under <see cref="VaultIndexConsts.EmbeddingGeneratorKey"/>. Optional while Index is
+    /// under development: without <c>Vault:Index:EmbeddingModelId</c> nothing is registered, the host starts, and each
+    /// index job ends with <c>VaultIndex:EmbeddingGeneratorMissing</c>. Uses Extract's endpoint and key unless Index has
+    /// its own. <c>Vault:Index:EmbeddingDimensions</c> is sent only when set: OpenAI's text-embedding-3 models shorten
+    /// their vectors to it, while a fixed-size model such as BAAI/bge-m3 rejects the parameter (HTTP 400 on
+    /// SiliconFlow). Either way the vectors must match <see cref="Data.VaultIndexHostDbContext.VectorDimensions"/>.
+    /// </summary>
+    private static void ConfigureVaultIndexAI(ServiceConfigurationContext context, IConfiguration configuration)
+    {
+        context.Services.Configure<VaultIndexSqlServerOptions>(options =>
+            options.VectorDimensions = Data.VaultIndexHostDbContext.VectorDimensions);
+
+        var modelId = configuration["Vault:Index:EmbeddingModelId"];
+        if (string.IsNullOrWhiteSpace(modelId))
+        {
+            return;
+        }
+
+        var endpoint = configuration["Vault:Index:EmbeddingEndpoint"] is { Length: > 0 } ownEndpoint
+            ? ownEndpoint
+            : configuration["Vault:Extract:Endpoint"];
+        var apiKey = configuration["Vault:Index:EmbeddingApiKey"] is { Length: > 0 } ownKey
+            ? ownKey
+            : configuration["Vault:Extract:ApiKey"];
+        int? dimensions = int.TryParse(configuration["Vault:Index:EmbeddingDimensions"], out var parsed) ? parsed : null;
+
+        // Short requests, but the same long-lived-process hazard as the chat clients: bound the pooled connection's
+        // lifetime so a connection a NAT silently dropped is not reused forever.
+        var client = new OpenAIClient(
+            new System.ClientModel.ApiKeyCredential(apiKey!),
+            new OpenAIClientOptions
+            {
+                Endpoint = new Uri(endpoint!),
+                Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(new HttpClient(new SocketsHttpHandler
+                {
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+                }))
+            });
+
+        context.Services.AddKeyedEmbeddingGenerator(
+                VaultIndexConsts.EmbeddingGeneratorKey,
+                _ => client.GetEmbeddingClient(modelId).AsIEmbeddingGenerator(dimensions))
+            .UseOpenTelemetry()
+            .UseLogging();
     }
 
     private static ReasoningEffort? ReadReasoningEffort(IConfiguration configuration)

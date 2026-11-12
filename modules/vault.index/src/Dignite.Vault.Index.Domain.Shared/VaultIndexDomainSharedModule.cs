@@ -1,6 +1,7 @@
 using Dignite.Vault.Index.Localization;
 using Volo.Abp.Domain;
 using Volo.Abp.Localization;
+using Volo.Abp.Localization.ExceptionHandling;
 using Volo.Abp.Modularity;
 using Volo.Abp.Validation;
 using Volo.Abp.Validation.Localization;
@@ -27,6 +28,11 @@ public class VaultIndexDomainSharedModule : AbpModule
                 .Add<VaultIndexResource>("en")
                 .AddBaseTypes(typeof(AbpValidationResource))
                 .AddVirtualJson("/Localization/VaultIndex");
+        });
+
+        Configure<AbpExceptionLocalizationOptions>(options =>
+        {
+            options.MapCodeNamespace(VaultIndexErrorCodes.Namespace, typeof(VaultIndexResource));
         });
     }
 }

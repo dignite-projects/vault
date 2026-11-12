@@ -15,7 +15,7 @@ This guide runs the Vault Extract repository on a developer machine: the .NET ho
 | --- | --- | --- |
 | [.NET SDK](https://dotnet.microsoft.com/download/dotnet) | 10.0 (`global.json` pins `10.0.100`, rolling forward to the latest feature band) | |
 | [Node.js](https://nodejs.org) | `^22.22.3` or `^24.15.0` | Required by Angular 22 |
-| SQL Server | 2019 or later | LocalDB, Express and Developer all work; the committed `appsettings.json` points at `(LocalDb)\MSSQLLocalDB` |
+| SQL Server | 2025 | LocalDB, Express and Developer all work; the committed `appsettings.json` points at `(LocalDb)\MSSQLLocalDB`. Vault Index's tables need 2025 for their `vector` column; with an older SQL Server for Extract, point the `VaultIndex` connection string at a 2025 database ([Deployment](../deployment/deployment.md#connection-strings)) |
 | An LLM provider | Any OpenAI-compatible endpoint | Mandatory; see [Backend Configuration](#backend-configuration). A local Ollama works |
 | [ABP CLI](https://abp.io/docs/latest/cli) | Matching ABP 10.7 | `dotnet tool install -g Volo.Abp.Studio.Cli`; used for `abp install-libs` and proxy generation |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop) | Any recent | Optional: the PaddleOCR sidecar and the local OpenTelemetry dashboard |
@@ -47,6 +47,7 @@ An LLM provider is **required**. The host fails at startup while `Vault:Extract`
 ```
 
 - With LocalDB, the committed connection string already works and you can leave `ConnectionStrings` out.
+- The committed `Vault:Index` asks the same endpoint and key for `text-embedding-3-small`. On a provider without that model, set `Vault:Index:EmbeddingModelId` to one of its embedding models; see [Embedding model](../configuration/ai-provider.md#embedding-model-index).
 - `VisionOcrModelId` is required because the host's default OCR provider is [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md); it must name a vision-capable model.
 - `TitleGeneratorModelId` and `StructuredModelId` are optional and default to `ChatModelId`.
 - `ReasoningEffort` is for a reasoning model such as `gpt-6-luna`; leave it out for a provider without reasoning. On SiliconFlow, set `"UseLegacyMaxTokens": true` instead.

@@ -15,6 +15,7 @@ public class VaultIndexEntityFrameworkCoreModule : AbpModule
         context.Services.AddAbpDbContext<VaultIndexDbContext>(options =>
         {
             options.AddDefaultRepositories<IVaultIndexDbContext>();
+            options.AddRepository<Chunks.Chunk, EfCoreChunkRepository>();
         });
     }
 }
