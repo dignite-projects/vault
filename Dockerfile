@@ -22,8 +22,8 @@ WORKDIR /src
 # Contracts.*) and moved the Slice-0 per-tier props files into
 # the consolidated root common.props + Directory.Packages.props. Trading the
 # restore-cache for a build that doesn't need a Dockerfile audit on every
-# project add — the Host image is rebuilt by CI per push, not in tight inner
-# loops, so the lost cache cost is negligible.
+# project add — CI rebuilds the Host image only when a pull request changes what
+# it copies or restores, never in tight inner loops, so the lost cache cost is negligible.
 #
 # NuGet.Config must be copied alongside them: each restored project resolves its OWN NuGet.Config by
 # walking up from ITS OWN directory, not from the entry-point project's directory. Without the root
@@ -41,6 +41,8 @@ COPY modules/vault.parse/Directory.Build.props modules/vault.parse/
 COPY modules/vault.parse/src/ modules/vault.parse/src/
 COPY modules/vault.extract/Directory.Build.props modules/vault.extract/
 COPY modules/vault.extract/src/ modules/vault.extract/src/
+COPY modules/vault.index/Directory.Build.props modules/vault.index/
+COPY modules/vault.index/src/ modules/vault.index/src/
 COPY src/ src/
 
 # GITHUB_PACKAGES_TOKEN is unused since abp-modules 10.7.0 (NuGet.Config is nuget.org-only); the
