@@ -38,7 +38,15 @@ public class IndexRanker : ITransientDependency
     public virtual IReranker? Reranker => _serviceProvider.GetService<IReranker>();
 
     public virtual IReadOnlyList<FusedChunk> Fuse(IReadOnlyList<ChunkMatch> keyword, IReadOnlyList<ChunkMatch> vector)
-        => ReciprocalRankFusion.Fuse(keyword, vector, IndexSearchConsts.RrfK, _options.KeywordWeight, _options.VectorWeight);
+        => Fuse(keyword, vector, _options.KeywordWeight, _options.VectorWeight);
+
+    /// <summary>Fusion with the given leg weights instead of the host's: the retrieval test's.</summary>
+    public virtual IReadOnlyList<FusedChunk> Fuse(
+        IReadOnlyList<ChunkMatch> keyword,
+        IReadOnlyList<ChunkMatch> vector,
+        double keywordWeight,
+        double vectorWeight)
+        => ReciprocalRankFusion.Fuse(keyword, vector, IndexSearchConsts.RrfK, keywordWeight, vectorWeight);
 
     /// <summary>How many fused candidates go to the reranker.</summary>
     public virtual int RerankCandidateCount => Math.Clamp(_options.RerankCandidateCount, 1, IndexSearchConsts.MaxRerankCandidates);

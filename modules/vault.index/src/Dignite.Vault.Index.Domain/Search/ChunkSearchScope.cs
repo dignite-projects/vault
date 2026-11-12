@@ -52,7 +52,7 @@ public sealed class ChunkSearchScope
     /// <summary>The same rule as <see cref="ChunkScopeFilter"/>, for a single row already in memory.</summary>
     public bool Reaches(IChunkScopeFields row)
     {
-        if (row.IsHidden)
+        if (row.IsHidden || row.IsDisabled)
         {
             return false;
         }

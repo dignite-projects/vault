@@ -34,6 +34,15 @@ export function provideIndex(): EnvironmentProviders {
           order: 0,
           layout: eLayoutType.application,
         },
+        {
+          path: '/vault-index/search-test',
+          name: 'VaultIndex::Menu:VaultIndex.SearchTest',
+          iconClass: 'fas fa-vial',
+          parentName: INDEX_MENU,
+          requiredPolicy: INDEX_PERMISSIONS.Status.Default,
+          order: 1,
+          layout: eLayoutType.application,
+        },
       ]);
 
       configState

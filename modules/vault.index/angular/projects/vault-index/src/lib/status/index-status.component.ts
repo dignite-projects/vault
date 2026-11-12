@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, injec
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { LocalizationPipe, PermissionService } from '@abp/ng.core';
 import { Confirmation, ConfirmationService, ToasterService } from '@abp/ng.theme.shared';
 import { filter, switchMap } from 'rxjs';
@@ -21,7 +22,7 @@ const PAGE_SIZE = 20;
 @Component({
   selector: 'lib-index-status',
   templateUrl: './index-status.component.html',
-  imports: [DatePipe, DecimalPipe, FormsModule, LocalizationPipe],
+  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink, LocalizationPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class IndexStatusComponent implements OnInit {

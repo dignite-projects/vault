@@ -50,6 +50,7 @@ public class SearchBoundary_Tests : VaultIndexTestBase<VaultIndexIngestionTestMo
         var bOwned = await InsertChunkAsync(TypeB, Owner);
         var bOther = await InsertChunkAsync(TypeB, ownerId: Guid.NewGuid());
         await InsertChunkAsync(TypeA, Owner, isHidden: true, id: hidden);
+        await InsertChunkAsync(TypeA, Owner, isDisabled: true);
 
         (await ReachAsync(new ChunkSearchScope(true, [], null))).ShouldBe([a, bOwned, bOther], ignoreOrder: true);
         (await ReachAsync(new ChunkSearchScope(false, [TypeA], null))).ShouldBe([a]);
@@ -91,6 +92,7 @@ public class SearchBoundary_Tests : VaultIndexTestBase<VaultIndexIngestionTestMo
         await InsertChunkAsync(TypeB, Owner);
         await InsertChunkAsync(TypeB, Guid.NewGuid());
         await InsertChunkAsync(TypeA, Owner, isHidden: true);
+        await InsertChunkAsync(TypeB, Owner, isDisabled: true);
         var all = await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync());
         var someDocuments = all.Where(c => c.DocumentTypeId == TypeB || c.IsHidden).Select(c => c.DocumentId).ToList();
         var scopes = new[]
@@ -139,12 +141,12 @@ public class SearchBoundary_Tests : VaultIndexTestBase<VaultIndexIngestionTestMo
             return await repository.AsyncExecuter.ToListAsync(ChunkScopeFilter.Apply(await repository.GetQueryableAsync(), scope).Select(c => c.Id));
         });
 
-    private async Task<Guid> InsertChunkAsync(Guid typeId, Guid? ownerId, bool isHidden = false, Guid? id = null, Guid? documentId = null)
+    private async Task<Guid> InsertChunkAsync(Guid typeId, Guid? ownerId, bool isHidden = false, Guid? id = null, Guid? documentId = null, bool isDisabled = false)
     {
         var chunkId = id ?? Guid.NewGuid();
         var tenantId = GetRequiredService<ICurrentTenant>().Id;
         await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().InsertAsync(
-            new Chunk(chunkId, tenantId, documentId ?? Guid.NewGuid(), typeId, ownerId, 0, null, "text", new string('0', 64), isHidden)));
+            new Chunk(chunkId, tenantId, documentId ?? Guid.NewGuid(), typeId, ownerId, 0, null, "text", new string('0', 64), isHidden, isDisabled)));
         return chunkId;
     }
 }

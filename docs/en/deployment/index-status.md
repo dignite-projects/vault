@@ -1,19 +1,19 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Operate Vault Index: the index status page and its REST API, rebuilding a document, and measuring retrieval quality with the evaluation set."
+    "Description": "Operate Vault Index: the index status page, the chunk view and the retrieval test, their REST API, rebuilding a document or disabling a chunk, and measuring retrieval quality with the evaluation set."
 }
 ```
 
 # Index Status and Evaluation
 
-Vault Index keeps a derived copy of every released document (chunks, vectors and a full-text index). This page covers how an operator sees what is in it, fixes a document that did not index, and measures how well it retrieves.
+Vault Index keeps a derived copy of every released document (chunks, vectors and a full-text index). This page covers how an operator sees what is in it, fixes a document that did not index, finds out why a passage is not found, and measures how well it retrieves.
 
 > Vault Index is under development and ships only inside the host. Its Angular library, `@dignite/ng.vault-index`, is built with the host SPA and not published to npm yet.
 
 ## The Status Page
 
-The host SPA shows it under **Vault Index → Index Status** (`/vault-index/status`). It needs the `VaultIndex.Status` permission; the **Rebuild** button needs `VaultIndex.Status.Rebuild`. `--migrate-database` grants both to the seeded `admin` role; grant them to other roles under Identity → Roles.
+The host SPA shows it under **Vault Index → Index Status** (`/vault-index/status`). It needs the `VaultIndex.Status` permission, as do the chunk view and the retrieval test below; the **Rebuild** button needs `VaultIndex.Status.Rebuild`, and disabling a chunk needs `VaultIndex.Status.ManageChunks`. `--migrate-database` grants all three to the seeded `admin` role; grant them to other roles under Identity → Roles.
 
 The summary at the top shows:
 
@@ -38,6 +38,25 @@ Errors that end a document at once carry a `VaultIndex:` code:
 
 Anything else is transient (a model timeout, a database error) and is retried up to `Vault:IndexIngestion:MaxFailedAttempts` times before the document is marked failed.
 
+## The Chunk View
+
+**Chunks** on a document's row opens `/vault-index/documents/{documentId}/chunks`: the chunks the document was cut into, in order, each with its heading path, its text and its pointer. Like the document list, it shows only documents within the operator's read scope, including those in the recycle bin or withheld.
+
+**Disable** takes a chunk out of retrieval: search, outline and read no longer return it, for every caller. Use it for a chunk that is noise, such as a repeated disclaimer or a garbled table, and that keeps crowding out the passages people look for. The text itself cannot be edited here: correct the document's Markdown in Extract, so that the index can always be rebuilt from Extract.
+
+A disabled chunk stays disabled across a rebuild as long as its text is unchanged; the mark follows the text, not the chunk's id. When a correction or a new chunking changes the text, the new chunk starts enabled. **Enable** puts a chunk back.
+
+## The Retrieval Test
+
+**Vault Index → Retrieval test** (`/vault-index/search-test`) runs a query as search runs it, within the operator's read scope, and shows every candidate either leg found, not only the top hits:
+
+- its place in the final order, which is the order search returns;
+- its place after fusion, with the fused score;
+- its rank in the keyword leg with the full-text score, and in the vector leg with the cosine distance (smaller is nearer);
+- the rerank score, for the candidates the reranker read.
+
+The table can be ordered by any of these, which answers most "why is this passage not found" questions: whether a leg found it at all, and where fusion or the reranker put it. The leg weights, the candidates per leg, whether to rerank and how many candidates to rerank can be changed for one run; empty boxes take the host's values (`Vault:IndexSearch`), and nothing is saved. A run that reranks calls the rerank model, like a search.
+
 ## REST API
 
 The page uses these endpoints, which other tools can call with the same permissions:
@@ -48,8 +67,12 @@ The page uses these endpoints, which other tools can call with the same permissi
 | `GET /api/vault-index/status/documents?status=&filter=&sorting=&skipCount=&maxResultCount=` | `VaultIndex.Status` | Indexed documents within the caller's read scope. `status` is `0` pending, `1` indexing, `2` indexed, `3` failed; `filter` matches the title; `sorting` is `title`, `status` or `lastIndexedTime` with an optional `desc` |
 | `GET /api/vault-index/status/documents/{documentId}/runs` | `VaultIndex.Status` | The document's last 20 runs, newest first |
 | `POST /api/vault-index/status/documents/{documentId}/rebuild` | `VaultIndex.Status.Rebuild` | Queues the rebuild; nothing to return |
+| `GET /api/vault-index/chunks?documentId=&skipCount=&maxResultCount=` | `VaultIndex.Status` | The document's chunks in order, disabled ones included, up to 200 per page, with the disabled count |
+| `POST /api/vault-index/chunks/{id}/disable` | `VaultIndex.Status.ManageChunks` | Takes the chunk out of retrieval; nothing to return |
+| `POST /api/vault-index/chunks/{id}/enable` | `VaultIndex.Status.ManageChunks` | Puts it back; nothing to return |
+| `POST /api/vault-index/search-test` | `VaultIndex.Status` | The retrieval test. The body is a search's (`query`, `documentTypeCode`, `fieldFilters`) plus optional `keywordWeight`, `vectorWeight` (0 to 10), `candidatesPerLeg` (1 to 100), `rerank` and `rerankCandidateCount` (1 to 100). It returns the settings used, each leg's candidate count and time, and every candidate in final order |
 
-A document outside the caller's read scope is not found.
+A document or chunk outside the caller's read scope is not found.
 
 ## Measuring Retrieval
 

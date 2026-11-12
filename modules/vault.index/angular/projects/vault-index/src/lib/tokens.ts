@@ -5,6 +5,7 @@ export const INDEX_PERMISSIONS = {
   Status: {
     Default: 'VaultIndex.Status',
     Rebuild: 'VaultIndex.Status.Rebuild',
+    ManageChunks: 'VaultIndex.Status.ManageChunks',
   },
 } as const;
 

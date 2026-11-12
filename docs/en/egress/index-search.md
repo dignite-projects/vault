@@ -23,7 +23,7 @@ Every call needs:
 
 A result contains only documents the caller could read in Extract: with `VaultExtract.Documents.ReadAll`, every document of the tenant; otherwise the documents of the types granted to the caller and the documents the caller uploaded. See [Per-Document-Type Permissions](../configuration/document-type-permissions.md). The scope is resolved on each call, so a revoked grant applies to the next call. Something outside it is answered as **not found**, never as forbidden.
 
-Index holds only what Extract released (`DocumentReadyEto`). A document in Extract's recycle bin is out of every result until it is restored. A document being reclassified is out until its next release, so the old type's readers lose it at once. A document sent back to review after release stays at its last released version.
+Index holds only what Extract released (`DocumentReadyEto`). A chunk an operator disabled on the [chunk view](../deployment/index-status.md#the-chunk-view) is in no result, outline or read, for anyone. A document in Extract's recycle bin is out of every result until it is restored. A document being reclassified is out until its next release, so the old type's readers lose it at once. A document sent back to review after release stays at its last released version.
 
 ## Search
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,5 +33,14 @@ public class EfCoreChunkRepository : EfCoreRepository<IVaultIndexDbContext, Chun
                     .SetProperty(c => c.OwnerId, ownerId)
                     .SetProperty(c => c.IsHidden, isHidden),
                 GetCancellationToken(cancellationToken));
+    }
+
+    public virtual async Task<List<string>> GetDisabledContentHashesAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .Where(c => c.DocumentId == documentId && c.IsDisabled)
+            .Select(c => c.ContentHash)
+            .Distinct()
+            .ToListAsync(GetCancellationToken(cancellationToken));
     }
 }

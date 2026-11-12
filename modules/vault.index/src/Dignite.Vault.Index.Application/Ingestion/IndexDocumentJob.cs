@@ -314,16 +314,24 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         if (plan.Drafts is not null)
         {
+            // An operator's disable mark belongs to the text, not to the chunk row: a chunk with the same text after the
+            // rebuild keeps it, and a changed text ends it.
+            var disabled = (await _chunkRepository.GetDisabledContentHashesAsync(document.Id)).ToHashSet(StringComparer.Ordinal);
             await _chunkRepository.DeleteDirectAsync(c => c.DocumentId == document.Id);
             var chunks = plan.Drafts
-                .Select(d => new Chunk(
-                    _guidGenerator.Create(), _currentTenant.Id, document.Id, document.DocumentTypeId, document.OwnerId,
-                    d.Ordinal, d.HeadingPath, d.Text, Sha256(d.Text), row.IsHidden))
+                .Select(d =>
+                {
+                    var hash = Sha256(d.Text);
+                    return new Chunk(
+                        _guidGenerator.Create(), _currentTenant.Id, document.Id, document.DocumentTypeId, document.OwnerId,
+                        d.Ordinal, d.HeadingPath, d.Text, hash, row.IsHidden, disabled.Contains(hash));
+                })
                 .ToList();
             await _chunkRepository.InsertManyAsync(chunks);
 
             var vectors = chunks
-                .Select((c, i) => new ChunkVector(c.Id, document.Id, document.DocumentTypeId, document.OwnerId, row.IsHidden, plan.Vectors![i]))
+                .Select((c, i) => new ChunkVector(
+                    c.Id, document.Id, document.DocumentTypeId, document.OwnerId, row.IsHidden, plan.Vectors![i], c.IsDisabled))
                 .ToList();
             await _searchIndex.ReplaceDocumentAsync(document.Id, plan.GenerationId, vectors);
         }

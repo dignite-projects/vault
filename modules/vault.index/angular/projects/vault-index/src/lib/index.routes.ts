@@ -15,4 +15,16 @@ export const INDEX_ROUTES: Routes = [
     canActivate: [authGuard, permissionGuard],
     data: { requiredPolicy: INDEX_PERMISSIONS.Status.Default },
   },
+  {
+    path: 'documents/:documentId/chunks',
+    loadComponent: () => import('./chunks/index-chunks.component').then(c => c.IndexChunksComponent),
+    canActivate: [authGuard, permissionGuard],
+    data: { requiredPolicy: INDEX_PERMISSIONS.Status.Default },
+  },
+  {
+    path: 'search-test',
+    loadComponent: () => import('./search-test/index-search-test.component').then(c => c.IndexSearchTestComponent),
+    canActivate: [authGuard, permissionGuard],
+    data: { requiredPolicy: INDEX_PERMISSIONS.Status.Default },
+  },
 ];

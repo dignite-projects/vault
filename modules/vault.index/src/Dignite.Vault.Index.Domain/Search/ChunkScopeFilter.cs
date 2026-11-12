@@ -12,13 +12,13 @@ namespace Dignite.Vault.Index.Search;
 /// </summary>
 public static class ChunkScopeFilter
 {
-    /// <summary>Rows retrieval may return: in retrieval, and within the read scope.</summary>
+    /// <summary>Rows retrieval may return: in retrieval (document not hidden, chunk not disabled), and within the read scope.</summary>
     public static IQueryable<T> Apply<T>(IQueryable<T> query, ChunkSearchScope scope)
         where T : IChunkScopeFields
     {
         ArgumentNullException.ThrowIfNull(scope);
 
-        query = query.Where(x => !x.IsHidden);
+        query = query.Where(x => !x.IsHidden && !x.IsDisabled);
         if (scope.RequestedDocumentIds is not null)
         {
             var documentIds = scope.RequestedDocumentIds.ToList();

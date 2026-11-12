@@ -45,6 +45,12 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
     /// </summary>
     public virtual bool IsHidden { get; protected set; }
 
+    /// <summary>
+    /// An operator took this chunk out of retrieval (the chunk view page). Index's own overlay on Extract's text: a
+    /// rebuild carries it to the new chunk with the same <see cref="ContentHash"/>, and it ends when the text changes.
+    /// </summary>
+    public virtual bool IsDisabled { get; protected set; }
+
     protected Chunk()
     {
     }
@@ -59,7 +65,8 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
         string? headingPath,
         string text,
         string contentHash,
-        bool isHidden = false)
+        bool isHidden = false,
+        bool isDisabled = false)
         : base(id)
     {
         TenantId = tenantId;
@@ -71,5 +78,11 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
         Text = Check.NotNullOrEmpty(text, nameof(text));
         ContentHash = Check.NotNullOrWhiteSpace(contentHash, nameof(contentHash), IndexingConsts.ContentHashLength, IndexingConsts.ContentHashLength);
         IsHidden = isHidden;
+        IsDisabled = isDisabled;
+    }
+
+    public virtual void SetDisabled(bool isDisabled)
+    {
+        IsDisabled = isDisabled;
     }
 }

@@ -1,0 +1,82 @@
+<div class="container-fluid">
+  <div class="mb-3">
+    <a routerLink="/vault-index/status" class="small"><i class="fas fa-arrow-left me-1"></i>{{ 'VaultIndex::Menu:VaultIndex.Status' | abpLocalization }}</a>
+  </div>
+
+  @if (list(); as l) {
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <h2 class="h4 mb-0 me-2 text-break">{{ l.documentTitle || ('VaultIndex::IndexStatus:Untitled' | abpLocalization) }}</h2>
+      @if (l.documentTypeCode) {
+        <code>{{ l.documentTypeCode }}</code>
+      }
+      <span class="badge" [class]="documentStatusBadge(l.status)">
+        {{ 'VaultIndex::Enum:IndexedDocumentStatus.' + l.status | abpLocalization }}
+      </span>
+      @if (l.isHidden) {
+        <span class="badge bg-body-tertiary text-body border">{{ 'VaultIndex::Chunks:DocumentHidden' | abpLocalization }}</span>
+      }
+      <span class="small text-muted ms-auto">
+        {{ 'VaultIndex::Chunks:Counts' | abpLocalization: ((l.totalCount | number) ?? '') : ((l.disabledCount | number) ?? '') }}
+      </span>
+    </div>
+    <div class="small text-muted mb-3">{{ 'VaultIndex::Chunks:Hint' | abpLocalization }}</div>
+
+    <div class="list-group mb-3">
+      @for (chunk of l.items; track chunk.id) {
+        <div class="list-group-item" [class.bg-body-tertiary]="chunk.isDisabled">
+          <div class="d-flex align-items-start gap-2">
+            <span class="badge bg-secondary">#{{ chunk.ordinal }}</span>
+            <div class="flex-grow-1" style="min-width: 0">
+              @if (chunk.headingPath) {
+                <div class="small text-muted text-break">{{ chunk.headingPath }}</div>
+              }
+              <div
+                class="small text-break"
+                [class.text-muted]="chunk.isDisabled"
+                [style.white-space]="'pre-wrap'"
+                [style.max-height]="expanded().has(chunk.id!) ? null : '6.5em'"
+                [style.overflow]="expanded().has(chunk.id!) ? null : 'hidden'"
+              >{{ chunk.text }}</div>
+              <button type="button" class="btn btn-link btn-sm p-0" (click)="toggleText(chunk)">
+                {{ (expanded().has(chunk.id!) ? 'VaultIndex::Chunks:Collapse' : 'VaultIndex::Chunks:Expand') | abpLocalization }}
+              </button>
+              <span class="small text-muted font-monospace ms-2">{{ chunk.pointer }}</span>
+            </div>
+            <div class="text-nowrap">
+              @if (chunk.isDisabled) {
+                <span class="badge bg-warning text-dark me-2">{{ 'VaultIndex::Chunks:IsDisabled' | abpLocalization }}</span>
+              }
+              @if (canManage) {
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  [class.btn-outline-secondary]="!chunk.isDisabled"
+                  [class.btn-outline-primary]="chunk.isDisabled"
+                  [disabled]="busyId() === chunk.id"
+                  (click)="setDisabled(chunk, !chunk.isDisabled)"
+                >
+                  {{ (chunk.isDisabled ? 'VaultIndex::Chunks:Enable' : 'VaultIndex::Chunks:Disable') | abpLocalization }}
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      } @empty {
+        <div class="list-group-item text-center text-muted py-4">{{ 'VaultIndex::Chunks:NoChunks' | abpLocalization }}</div>
+      }
+    </div>
+
+    <div class="d-flex justify-content-end">
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-secondary" [disabled]="!hasPrevious()" (click)="page(-1)">
+          {{ 'VaultIndex::IndexStatus:Previous' | abpLocalization }}
+        </button>
+        <button type="button" class="btn btn-outline-secondary" [disabled]="!hasNext()" (click)="page(1)">
+          {{ 'VaultIndex::IndexStatus:Next' | abpLocalization }}
+        </button>
+      </div>
+    </div>
+  } @else if (loading()) {
+    <div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i></div>
+  }
+</div>

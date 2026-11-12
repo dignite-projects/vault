@@ -15,10 +15,14 @@ public static class VaultIndexPermissions
     public const string Profiles = GroupName + ".Profiles";
 
     /// <summary>
-    /// See the index's state: the summary, the indexed documents within the caller's Extract read scope, and their runs.
+    /// See the index's state and inspect it: the summary, the indexed documents within the caller's Extract read scope,
+    /// their runs and chunks, and the retrieval test.
     /// </summary>
     public const string Status = GroupName + ".Status";
 
     /// <summary>Index one document again, from its current Extract text, even when nothing changed.</summary>
     public const string StatusRebuild = Status + ".Rebuild";
+
+    /// <summary>Take a chunk out of retrieval, or put it back (the chunk view).</summary>
+    public const string StatusManageChunks = Status + ".ManageChunks";
 }

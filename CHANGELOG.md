@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index chunk view and retrieval test** (shipped host and SPA). From the index status page, **Chunks** shows
+  what a document was cut into, and **Disable** takes a noisy chunk out of search, outline and read for everyone; the
+  mark follows the chunk's text across rebuilds and ends when the text changes. **Retrieval test** runs a query as
+  search does and lists every candidate with its keyword and vector rank, fused rank and rerank score, with the leg
+  weights, candidate counts and rerank settable for one run. New permission `VaultIndex.Status.ManageChunks`, REST
+  under `/api/vault-index/chunks` and `POST /api/vault-index/search-test`, and the Index migration `ChunkDisable`
+  (an `IsDisabled` column on `VaultIndexChunks` and `VaultIndexChunkVectors`). See
+  [Index Status and Evaluation](docs/en/deployment/index-status.md#the-chunk-view).
 - **Vault Index field filters** (shipped host). Search takes `fieldFilters` (REST `fieldFilters[i].name / value /
   min / max`, MCP `vault_index_search.fieldFilters`) with `documentTypeCode`, and then returns passages only from the
   documents whose extracted fields meet every condition, as Extract's document list reads them. Conditions met by
