@@ -17,6 +17,12 @@ namespace Dignite.Vault.Extract.Host.Data;
 [ConnectionStringName(VaultIndexDbProperties.ConnectionStringName)]
 public class VaultIndexHostDbContext : AbpDbContext<VaultIndexHostDbContext>
 {
+    /// <summary>
+    /// The dimension of Index's vector column in this host's schema. Changing it means a new migration, and an embedding
+    /// model that returns vectors of the new length.
+    /// </summary>
+    public const int VectorDimensions = 1024;
+
     public VaultIndexHostDbContext(DbContextOptions<VaultIndexHostDbContext> options)
         : base(options)
     {
@@ -27,5 +33,6 @@ public class VaultIndexHostDbContext : AbpDbContext<VaultIndexHostDbContext>
         base.OnModelCreating(builder);
 
         builder.ConfigureVaultIndex();
+        builder.ConfigureVaultIndexSqlServer(VectorDimensions);
     }
 }

@@ -114,6 +114,12 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
     protected virtual async Task SyncAsync(IndexDocumentJobArgs args)
     {
+        if (!_embedder.IsConfigured)
+        {
+            Logger.LogWarning("Vault Index has no embedding model; document {DocumentId} is not indexed.", args.DocumentId);
+            return;
+        }
+
         var document = await _integrationService.FindReadyAsync(args.DocumentId);
 
         var claim = await ClaimAsync(args, document);

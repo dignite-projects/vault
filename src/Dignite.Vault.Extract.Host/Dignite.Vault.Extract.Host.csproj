@@ -109,6 +109,7 @@
     <ProjectReference Include="..\..\modules\vault.extract\src\Dignite.Vault.Extract.EntityFrameworkCore\Dignite.Vault.Extract.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\modules\vault.index\src\Dignite.Vault.Index.Application\Dignite.Vault.Index.Application.csproj" />
     <ProjectReference Include="..\..\modules\vault.index\src\Dignite.Vault.Index.EntityFrameworkCore\Dignite.Vault.Index.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\modules\vault.index\src\Dignite.Vault.Index.EntityFrameworkCore.SqlServer\Dignite.Vault.Index.EntityFrameworkCore.SqlServer.csproj" />
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse\Dignite.Vault.Parse.csproj" />
     <!-- PDF Markdown provider (PdfPig): digital-PDF text layer + embedded-image transcription via the
          host-selected IOcrProvider (#301). Coexists with ElBruno; claims .pdf. Omit it and .pdf falls

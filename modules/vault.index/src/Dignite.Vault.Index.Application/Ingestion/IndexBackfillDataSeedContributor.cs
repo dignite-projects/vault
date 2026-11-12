@@ -15,7 +15,8 @@ namespace Dignite.Vault.Index.Ingestion;
 /// <c>--migrate-database</c> for the Host and every tenant, and on tenant creation, where it finds nothing to index.
 /// Events index everything after that, so the backfill is started only while the layer has no indexed document and
 /// no embedding generation; a second run before the first backfill finished only re-enqueues syncs that are then
-/// skipped as unchanged.
+/// skipped as unchanged. A host without an embedding model starts nothing, and gets its backfill on the first seed
+/// after a model is added.
 /// </summary>
 public class IndexBackfillDataSeedContributor : IDataSeedContributor, ITransientDependency
 {
@@ -23,21 +24,29 @@ public class IndexBackfillDataSeedContributor : IDataSeedContributor, ITransient
     private readonly IRepository<IndexedDocument, Guid> _documentRepository;
     private readonly IRepository<IndexGeneration, Guid> _generationRepository;
     private readonly IBackgroundJobManager _backgroundJobManager;
+    private readonly IndexEmbedder _embedder;
 
     public IndexBackfillDataSeedContributor(
         ICurrentTenant currentTenant,
         IRepository<IndexedDocument, Guid> documentRepository,
         IRepository<IndexGeneration, Guid> generationRepository,
-        IBackgroundJobManager backgroundJobManager)
+        IBackgroundJobManager backgroundJobManager,
+        IndexEmbedder embedder)
     {
         _currentTenant = currentTenant;
         _documentRepository = documentRepository;
         _generationRepository = generationRepository;
         _backgroundJobManager = backgroundJobManager;
+        _embedder = embedder;
     }
 
     public virtual async Task SeedAsync(DataSeedContext context)
     {
+        if (!_embedder.IsConfigured)
+        {
+            return;
+        }
+
         using (_currentTenant.Change(context.TenantId))
         {
             if (await _generationRepository.GetCountAsync() > 0 || await _documentRepository.GetCountAsync() > 0)

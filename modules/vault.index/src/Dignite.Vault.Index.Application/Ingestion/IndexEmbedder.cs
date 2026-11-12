@@ -30,6 +30,13 @@ public class IndexEmbedder : ITransientDependency
         _options = options.Value;
     }
 
+    /// <summary>
+    /// Whether the host registered an embedding model. Without one, ingestion is off: nothing is indexed and no
+    /// document is marked failed, so a model added later picks every document up through the first-install backfill.
+    /// </summary>
+    public virtual bool IsConfigured
+        => _serviceProvider.GetKeyedService<IEmbeddingGenerator<string, Embedding<float>>>(VaultIndexConsts.EmbeddingGeneratorKey) is not null;
+
     /// <summary>The configured model's id, as the generator reports it.</summary>
     public virtual string GetModelId()
     {

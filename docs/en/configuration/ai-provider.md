@@ -13,6 +13,7 @@ Dignite Vault Extract delegates every chat-completion call to `Microsoft.Extensi
 | --- | --- | --- |
 | `Vault:Extract` | Provider wiring: endpoint, credentials, model ids | The host only. `VaultExtractHostModule.ConfigureAI` reads it once at startup and registers the keyed `IChatClient` instances |
 | `Vault:ExtractBehavior` | Workflow behavior: prompt language, truncation and size ceilings | The Application layer, through `IOptions<VaultExtractBehaviorOptions>`. `VaultExtractApplicationModule.ConfigureServices` binds the section |
+| `Vault:Index` | The embedding model behind Vault Index | The host only. See [Embedding model](#embedding-model-index) |
 
 The split keeps credentials (`ApiKey`) out of any `IOptions<>` that reaches application code, and lets operators tune behavior without touching the provider. Every LLM feature (classification, field extraction, sub-document segmentation, title generation, cabinet suggestion and the admin-side drafting helpers) shares the same provider registration.
 
@@ -52,6 +53,41 @@ Supply credentials in `src/Dignite.Vault.Extract.Host/appsettings.secrets.json` 
 | `UseLegacyMaxTokens` | On SiliconFlow | `true` sends the output cap as the legacy `max_tokens` instead of `max_completion_tokens`. SiliconFlow ignores `max_completion_tokens` and falls back to its own cap of about 4,096 tokens, which cuts long field extractions and transcriptions short. Default `false`; leave it off for OpenAI and Azure OpenAI, whose reasoning models refuse `max_tokens` |
 
 The shipped host builds a single `OpenAIClient` for all keyed clients. Its HTTP connections are recycled every five minutes (`PooledConnectionLifetime`) and its network timeout is raised to 300 seconds, because field extraction sends the complete document and can legitimately run long.
+
+## Embedding model (`Index`)
+
+Vault Index, which the shipped host carries while it is under development, turns each Ready document's Markdown into chunks and embeds them. The host registers one keyed `IEmbeddingGenerator<string, Embedding<float>>` under `"VaultIndex.Embedding"` from `Vault:Index`:
+
+```json
+"Vault": {
+  "Index": {
+    "EmbeddingModelId": "text-embedding-3-small",
+    "EmbeddingDimensions": 1024
+  }
+}
+```
+
+| Key | Required | Description |
+| --- | --- | --- |
+| `EmbeddingModelId` | To index | The embedding model. Without it no generator is registered and Index indexes nothing: no document is marked failed, and the first `--migrate-database` after a model is added backfills every Ready document |
+| `EmbeddingEndpoint` | No | API base URL of the embedding provider. Defaults to `Vault:Extract:Endpoint` |
+| `EmbeddingApiKey` | No | Key for that provider. Defaults to `Vault:Extract:ApiKey` |
+| `EmbeddingDimensions` | Depends on the model | Sent as `dimensions` on every request. Set it for a model that can shorten its vectors (OpenAI's `text-embedding-3-*`). Set it to an empty string for a model that rejects the parameter: SiliconFlow answers `BAAI/bge-m3` with HTTP 400 when it is sent |
+
+**The model must return 1024-dimension vectors.** The shipped host's schema stores them in a `vector(1024)` column (`VaultIndexHostDbContext.VectorDimensions`); Index refuses vectors of any other length and ends the document in a failed state. `text-embedding-3-small` and `text-embedding-3-large` reach 1024 through `EmbeddingDimensions`; `BAAI/bge-m3` returns 1024 natively. Another length needs a host that changes the constant and adds a migration.
+
+**Changing the model is not a configuration change yet.** Index records the model that produced the serving vectors and refuses a different one (`VaultIndex:EmbeddingModelChanged`) rather than mixing two vector spaces. Rebuilding under a new model comes with a later Index release.
+
+On SiliconFlow:
+
+```json
+"Vault": {
+  "Index": {
+    "EmbeddingModelId": "BAAI/bge-m3",
+    "EmbeddingDimensions": ""
+  }
+}
+```
 
 ## Picking a Chat Model
 

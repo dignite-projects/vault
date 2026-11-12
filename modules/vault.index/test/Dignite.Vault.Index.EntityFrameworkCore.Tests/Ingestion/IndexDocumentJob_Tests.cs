@@ -8,6 +8,7 @@ using Dignite.Vault.Index.Chunks;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Indexing;
+using Dignite.Vault.Index.Profiles;
 using Dignite.Vault.Index.Runs;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -198,6 +199,22 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
         after.ShouldAllBe(c => !before.Contains(c.Id));
         after.ShouldContain(c => c.Text.Contains("解除"));
         _vectors.Vectors.Keys.Select(k => k.ChunkId).ShouldBe(after.Select(c => c.Id), ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task A_changed_chunking_profile_rechunks_unchanged_text()
+    {
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        var calls = _model.Calls;
+
+        await WithUnitOfWorkAsync(() => Repo<IndexProfile>().InsertAsync(
+            new IndexProfile(Guid.NewGuid(), null, TypeA, ChunkingStrategy.Token, 200, 20)));
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        _model.Calls.ShouldBeGreaterThan(calls);
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).ProfileStamp.ShouldBe("Token:200:20");
+        (await Repo<IndexRun>().GetListAsync()).OrderBy(r => r.StartedTime).Last().Status.ShouldBe(IndexRunStatus.Succeeded);
     }
 
     [Fact]

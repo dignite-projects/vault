@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index ingestion** (shipped host; Index is still unpackaged). A document released by Extract
+  (`DocumentReadyEto`) is chunked by its heading tree, embedded, and written to `VaultIndexChunks` and the new
+  `VaultIndexChunkVectors` (`vector(1024)`) in one transaction; recycle-bin, reclassification and deletion events
+  follow it. A redelivered or concurrent event never starts a second job on the same document, and unchanged text is
+  not embedded again. The embedding model is new host configuration, `Vault:Index` (`EmbeddingModelId`,
+  `EmbeddingDimensions`, optional `EmbeddingEndpoint` / `EmbeddingApiKey` that default to `Vault:Extract`'s); the
+  committed `appsettings.json` asks for `text-embedding-3-small` at 1024 dimensions. Without a model Index indexes
+  nothing. On SiliconFlow use `BAAI/bge-m3` with `EmbeddingDimensions` set to `""`. `Vault:IndexIngestion` bounds
+  the work. The first `--migrate-database` with a model backfills each layer's Ready documents. See
+  [AI Provider](docs/en/configuration/ai-provider.md#embedding-model-index) and
+  [Deployment](docs/en/deployment/deployment.md#vault-index-ingestion).
 - **In-process contracts for a module that derives data from documents in the same host** (the groundwork for
   Vault Index). See [In-Process Integration](docs/en/egress/in-process-integration.md).
   - `IDocumentIntegrationService` (`Dignite.Vault.Extract.Documents.Integration`), an ABP integration service for
@@ -35,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (shipped host deployment): the database behind `VaultIndex` must be SQL Server 2025 or Azure SQL.**
+  The `Ingestion` migration creates a `vector(1024)` column, and `--migrate-database` fails on SQL Server 2022 or
+  older. `VaultIndex` falls back to `Default`, so a deployment whose `Default` is an older SQL Server must set a
+  `VaultIndex` connection string to a 2025 database before upgrading. LocalDB 2025 (version 17) works. See
+  [Connection Strings](docs/en/deployment/deployment.md#connection-strings).
+- **`Dignite.Vault.Extract.Application` depends on `Markdig.Signed` instead of `Markdig`** (1.3.2, same API and
+  code). Microsoft's ingestion packages use the signed build, and the two ship the same `Markdig.dll`, so a host
+  carrying both gets whichever copy wins. A host that references `Markdig` itself switches to `Markdig.Signed`.
 - **The shipped host defaults to `gpt-6-luna`, and its `max_tokens` rewrite is opt-in.** OpenAI shuts down
   `gpt-4o-mini-2024-07-18` on 14 January 2027 and names `gpt-6-luna` as the replacement, so the committed
   `appsettings.json` uses it for all four model ids. The host rewrote every request's `max_completion_tokens` to
