@@ -22,7 +22,7 @@ The summary at the top shows:
 - the embedding model the index was built with and the one the host is configured with. With no model configured nothing is indexed; with a different one, search is refused until the index is rebuilt;
 - the keyword index: missing (Full-Text Search not installed, so search uses vectors only), populating after a backfill, or how many changes it has not absorbed yet. It follows writes by about five seconds.
 
-The document list shows each indexed document with its type, state, chunk count, last indexing time and, for a failed one, the last error. It shows only documents within the operator's Extract read scope, because it shows titles. **Runs** expands a document's last 20 index runs: trigger, outcome, attempt, chunks, embedding tokens, and the error or skip reason.
+The document list shows each indexed document with its type, state, chunk count, last indexing time and, for a failed one, the last error. It shows only documents within the operator's Extract read scope, because it shows titles. **Runs** expands a document's last 20 index runs: trigger, outcome, attempt, chunks, embedding tokens, the LLM tokens enrichment took, and the error, skip reason or note (such as chunks enrichment could not reach).
 
 **Rebuild** queues the document to be indexed again from its current Extract text, even when nothing changed. Use it after fixing what made a document fail. The rebuild goes through the same queue, claim and retry cap as an event, so it does not race an index job already running.
 
@@ -40,7 +40,7 @@ Anything else is transient (a model timeout, a database error) and is retried up
 
 ## The Chunk View
 
-**Chunks** on a document's row opens `/vault-index/documents/{documentId}/chunks`: the chunks the document was cut into, in order, each with its heading path, its text and its pointer. Like the document list, it shows only documents within the operator's read scope, including those in the recycle bin or withheld.
+**Chunks** on a document's row opens `/vault-index/documents/{documentId}/chunks`: the chunks the document was cut into, in order, each with its heading path, its text, its pointer, and its keywords and questions when it was enriched. Like the document list, it shows only documents within the operator's read scope, including those in the recycle bin or withheld.
 
 **Disable** takes a chunk out of retrieval: search, outline and read no longer return it, for every caller. Use it for a chunk that is noise, such as a repeated disclaimer or a garbled table, and that keeps crowding out the passages people look for. The text itself cannot be edited here: correct the document's Markdown in Extract, so that the index can always be rebuilt from Extract.
 
@@ -68,7 +68,9 @@ The table can be ordered by any of these, which answers most "why is this passag
 
 Tables written as HTML, as Azure Document Intelligence writes every table (merged cells, captions), are read as tables too: the chunker rewrites them as Markdown tables first, repeating a merged cell's text into every cell it spans and putting the caption above. Figures (`<figure>`) become their text.
 
-Editing a row shows, before anything is saved, what the change would rebuild: the indexed documents whose chunks it changes, their chunks today, and the embedding tokens their last successful indexing took, which is about what re-embedding them costs. Saving queues the rebuild in the background at low priority: the affected documents are re-chunked and re-embedded one by one, through the same queue and retry cap as an event, and a document whose settings did not change is skipped. **Use default** removes a type's own profile, with the same estimate first.
+**Enrichment** has an LLM add to each chunk a few keywords, which go into the keyword index, and the questions it answers, which go into the keyword index and into what is embedded. Neither appears in what search returns. It is off by default: it costs a model call per 10 chunks, and with a rerank model it changed nothing on the evaluation set (below). It needs an [enrichment model](../configuration/ai-provider.md#enrichment-model-index); without one the switches are disabled, and a profile saved with enrichment rebuilds nothing until a model is added.
+
+Editing a row shows, before anything is saved, what the change would rebuild: the indexed documents whose chunks it changes, their chunks today, and the embedding tokens their last successful indexing took, which is about what re-embedding them costs; with enrichment on, also the model calls it would make. Saving queues the rebuild in the background at low priority: the affected documents are re-chunked and re-embedded one by one, through the same queue and retry cap as an event, and a document whose settings did not change is skipped. **Use default** removes a type's own profile, with the same estimate first.
 
 ## REST API
 
@@ -84,7 +86,7 @@ The page uses these endpoints, which other tools can call with the same permissi
 | `POST /api/vault-index/chunks/{id}/disable` | `VaultIndex.Status.ManageChunks` | Takes the chunk out of retrieval; nothing to return |
 | `POST /api/vault-index/chunks/{id}/enable` | `VaultIndex.Status.ManageChunks` | Puts it back; nothing to return |
 | `GET /api/vault-index/profiles` | `VaultIndex.Profiles` | The layer default and every visible document type, with the settings that apply and the indexed document count |
-| `GET /api/vault-index/profiles/rebuild-estimate?documentTypeId=&chunkingStrategy=&maxTokensPerChunk=&overlapTokens=` | `VaultIndex.Profiles` | What saving those settings would rebuild: documents, chunks, last embedding tokens. `chunkingStrategy` is `0` by headings, `1` by tokens; `maxTokensPerChunk` is 100 to 4,000; the overlap is smaller than the chunk |
+| `GET /api/vault-index/profiles/rebuild-estimate?documentTypeId=&chunkingStrategy=&maxTokensPerChunk=&overlapTokens=&enrichment=` | `VaultIndex.Profiles` | What saving those settings would rebuild: documents, chunks, last embedding tokens, enrichment calls. `chunkingStrategy` is `0` by headings, `1` by tokens; `maxTokensPerChunk` is 100 to 4,000; the overlap is smaller than the chunk; `enrichment` is a flag set, `1` keywords and `2` questions |
 | `PUT /api/vault-index/profiles` | `VaultIndex.Profiles` | Saves the layer default (no `documentTypeId`) or a type's profile and queues the rebuild |
 | `DELETE /api/vault-index/profiles/{documentTypeId}` | `VaultIndex.Profiles` | Removes the type's own profile and queues the rebuild |
 | `POST /api/vault-index/search-test` | `VaultIndex.Status` | The retrieval test. The body is a search's (`query`, `documentTypeCode`, `fieldFilters`) plus optional `keywordWeight`, `vectorWeight` (0 to 10), `candidatesPerLeg` (1 to 100), `rerank` and `rerankCandidateCount` (1 to 100). It returns the settings used, each leg's candidate count and time, and every candidate in final order |
@@ -161,5 +163,18 @@ Version 2 of the set adds three documents whose tables carry the answers: a pric
 - Reading HTML tables as tables is the largest gain: before it, the table questions found their section half the time at best.
 - 200, 400 and 800 tokens differ by one or two questions, because most sections of this corpus are shorter than 200 tokens. The default stays at 400 until a corpus with long sections says otherwise.
 - Chunking by tokens finds the right document as well, but its chunks carry no heading path, so no hit can cite a section.
+
+### Enrichment (2026-11-12)
+
+The same set, heading chunking at 400 tokens, enriched by `Qwen/Qwen3-30B-A3B-Instruct-2507` (`enrichment-2026-11-12.md` next to the set):
+
+| MRR@10 | None | Keywords | Questions | Both |
+| --- | --- | --- | --- | --- |
+| Passage, 69 questions, with rerank | 0.958 | 0.958 | 0.958 | 0.958 |
+| Passage, 69 questions, fused legs only | 0.836 | 0.845 | 0.868 | 0.866 |
+| Chinese and English questions, fused legs only | 0.718 | 0.759 | 0.818 | 0.807 |
+| Document, 108 cases, fused legs only | 0.946 | 0.944 | 0.955 | 0.957 |
+
+With a rerank model, enrichment changes nothing on this set: the reranker reads the chunk text and already puts the answer first. Without one, the questions lift the fused ranking, most for questions asked in another language than the document's. Both kinds together took 22 model calls for the 21 documents, about 670 input and 1,020 output tokens per document. So enrichment stays off by default; it is worth a try on a deployment without a rerank model.
 
 The set is small and synthetic: grow it with real queries before relying on small differences.

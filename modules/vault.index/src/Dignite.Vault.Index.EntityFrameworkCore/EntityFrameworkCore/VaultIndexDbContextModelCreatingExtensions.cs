@@ -59,6 +59,8 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.HeadingPath).HasMaxLength(IndexingConsts.MaxHeadingPathLength);
             b.Property(x => x.Text).IsRequired();
             b.Property(x => x.ContentHash).IsRequired().HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
+            b.Property(x => x.Keywords).HasMaxLength(IndexingConsts.MaxKeywordsLength);
+            b.Property(x => x.Questions).HasMaxLength(IndexingConsts.MaxQuestionsLength);
 
             // DocumentId is unique across tenants, so the ordinal constraint needs no TenantId. Leaving it out also
             // keeps the nullable column off a unique index, where SQL Server would get EF's IS NOT NULL filter and

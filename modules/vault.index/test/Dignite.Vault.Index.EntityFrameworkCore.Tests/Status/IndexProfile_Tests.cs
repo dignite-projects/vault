@@ -163,6 +163,22 @@ public class IndexProfile_Tests : VaultIndexTestBase<VaultIndexIngestionTestModu
     }
 
     [Fact]
+    public async Task Without_an_enrichment_model_enrichment_is_saved_but_rebuilds_nothing()
+    {
+        await IndexAllAsync();
+
+        (await _profiles.GetListAsync()).EnrichmentAvailable.ShouldBeFalse();
+        var estimate = await _profiles.GetRebuildEstimateAsync(new IndexProfileInput { DocumentTypeId = LeaseType, Enrichment = IndexEnrichment.Keywords });
+        (estimate.DocumentCount, estimate.EnrichmentCallCount).ShouldBe((0, 0));
+
+        await _profiles.SetAsync(new IndexProfileInput { DocumentTypeId = LeaseType, Enrichment = IndexEnrichment.Keywords });
+        (await _profiles.GetListAsync()).Items.Single(r => r.DocumentTypeCode == "lease").Enrichment.ShouldBe(IndexEnrichment.Keywords);
+        await IndexAsync(LeaseA, LeaseType, Lease);
+        var lease = await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexedDocument, Guid>>().GetAsync(LeaseA));
+        lease.ProfileStamp.ShouldBe(ResolvedIndexProfile.BuiltIn.Stamp);
+    }
+
+    [Fact]
     public async Task Profiles_need_their_permission_and_a_visible_type()
     {
         await Should.ThrowAsync<EntityNotFoundException>(() => _profiles.SetAsync(new IndexProfileInput { DocumentTypeId = Guid.NewGuid() }));

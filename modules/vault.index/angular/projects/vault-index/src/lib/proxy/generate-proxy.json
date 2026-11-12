@@ -11889,8 +11889,8 @@
                   "name": "GetListAsync",
                   "parametersOnMethod": [],
                   "returnValue": {
-                    "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
-                    "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+                    "type": "Dignite.Vault.Index.Profiles.IndexProfileListDto",
+                    "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileListDto",
                     "summary": null,
                     "contentTypes": null,
                     "isRemoteStream": false
@@ -11978,8 +11978,8 @@
               "parametersOnMethod": [],
               "parameters": [],
               "returnValue": {
-                "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
-                "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+                "type": "Dignite.Vault.Index.Profiles.IndexProfileListDto",
+                "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileListDto",
                 "summary": null,
                 "contentTypes": [
                   "text/plain",
@@ -12067,6 +12067,21 @@
                   "jsonName": null,
                   "type": "System.Int32",
                   "typeSimple": "number",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "Enrichment",
+                  "jsonName": null,
+                  "type": "Dignite.Vault.Index.Indexing.IndexEnrichment",
+                  "typeSimple": "enum",
                   "isOptional": false,
                   "defaultValue": null,
                   "constraintTypes": null,
@@ -18375,6 +18390,38 @@
           "summary": null,
           "description": null,
           "displayName": null
+        },
+        {
+          "name": "Keywords",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "Questions",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
         }
       ],
       "summary": null,
@@ -18523,6 +18570,26 @@
         1,
         2,
         3
+      ],
+      "genericArguments": null,
+      "properties": null,
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Indexing.IndexEnrichment": {
+      "baseType": "System.Enum",
+      "isEnum": true,
+      "enumNames": [
+        "None",
+        "Keywords",
+        "Questions"
+      ],
+      "enumValues": [
+        0,
+        1,
+        2
       ],
       "genericArguments": null,
       "properties": null,
@@ -18695,6 +18762,22 @@
           "displayName": null
         },
         {
+          "name": "Enrichment",
+          "jsonName": null,
+          "type": "Dignite.Vault.Index.Indexing.IndexEnrichment",
+          "typeSimple": "enum",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
           "name": "IndexedDocumentCount",
           "jsonName": null,
           "type": "System.Int32",
@@ -18786,6 +18869,51 @@
           "summary": null,
           "description": null,
           "displayName": null
+        },
+        {
+          "name": "Enrichment",
+          "jsonName": null,
+          "type": "Dignite.Vault.Index.Indexing.IndexEnrichment",
+          "typeSimple": "enum",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Profiles.IndexProfileListDto": {
+      "baseType": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "EnrichmentAvailable",
+          "jsonName": null,
+          "type": "System.Boolean",
+          "typeSimple": "boolean",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
         }
       ],
       "summary": null,
@@ -18850,6 +18978,22 @@
         },
         {
           "name": "DocumentsWithoutTokenCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "EnrichmentCallCount",
           "jsonName": null,
           "type": "System.Int32",
           "typeSimple": "number",
@@ -20651,6 +20795,38 @@
         },
         {
           "name": "EmbeddingTokenCount",
+          "jsonName": null,
+          "type": "System.Int64?",
+          "typeSimple": "number?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "LlmInputTokenCount",
+          "jsonName": null,
+          "type": "System.Int64?",
+          "typeSimple": "number?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "LlmOutputTokenCount",
           "jsonName": null,
           "type": "System.Int64?",
           "typeSimple": "number?",

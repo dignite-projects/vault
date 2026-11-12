@@ -16,7 +16,7 @@ namespace Dignite.Vault.Index.Profiles;
 public interface IIndexProfileAppService : IApplicationService
 {
     /// <summary>The layer default first, then every document type the caller can see, with the settings that apply to it.</summary>
-    Task<ListResultDto<IndexProfileDto>> GetListAsync();
+    Task<IndexProfileListDto> GetListAsync();
 
     /// <summary>What saving <paramref name="input"/> would rebuild: documents, chunks, and the embedding tokens they last took.</summary>
     Task<IndexRebuildEstimateDto> GetRebuildEstimateAsync(IndexProfileInput input);
@@ -41,6 +41,9 @@ public class IndexProfileInput : IValidatableObject
     [Range(0, IndexProfileConsts.MaxMaxTokensPerChunk)]
     public int OverlapTokens { get; set; } = IndexProfileDefaults.OverlapTokens;
 
+    /// <summary>What an LLM adds to each chunk; nothing by default.</summary>
+    public IndexEnrichment Enrichment { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (OverlapTokens >= MaxTokensPerChunk)
@@ -54,7 +57,21 @@ public class IndexProfileInput : IValidatableObject
         {
             yield return new ValidationResult("Unknown chunking strategy.", new[] { nameof(ChunkingStrategy) });
         }
+
+        if ((Enrichment & ~(IndexEnrichment.Keywords | IndexEnrichment.Questions)) != 0)
+        {
+            yield return new ValidationResult("Unknown enrichment.", new[] { nameof(Enrichment) });
+        }
     }
+}
+
+public class IndexProfileListDto : ListResultDto<IndexProfileDto>
+{
+    /// <summary>
+    /// The host has an enrichment model. Without one, a profile's enrichment is saved but not applied, and saving it
+    /// rebuilds nothing.
+    /// </summary>
+    public bool EnrichmentAvailable { get; set; }
 }
 
 public class IndexProfileDto
@@ -74,6 +91,8 @@ public class IndexProfileDto
     public int MaxTokensPerChunk { get; set; }
 
     public int OverlapTokens { get; set; }
+
+    public IndexEnrichment Enrichment { get; set; }
 
     /// <summary>Documents of this type in the index; for the layer default, every document in the layer.</summary>
     public int IndexedDocumentCount { get; set; }
@@ -95,4 +114,10 @@ public class IndexRebuildEstimateDto
 
     /// <summary>Of <see cref="DocumentCount"/>, those with no recorded token count (never indexed with success).</summary>
     public int DocumentsWithoutTokenCount { get; set; }
+
+    /// <summary>
+    /// The model calls enrichment would make, about one per batch of chunks of each document; 0 when the settings
+    /// enrich nothing or there is no enrichment model.
+    /// </summary>
+    public int EnrichmentCallCount { get; set; }
 }

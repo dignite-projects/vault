@@ -168,7 +168,8 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
         // query text is a parameter; the table name comes from the EF model. No TOP n inside FREETEXTTABLE: its ranking
         // spans every tenant, so a top-n cut there could leave this tenant with nothing.
         // The table name is the EF model's, quoted; only the query text comes from the caller, and it is a parameter.
-        var sql = "SELECT [KEY] AS [ChunkId], [RANK] AS [Rank] FROM FREETEXTTABLE(" + table + ", [Text], @query)";
+        // "*" is every full-text indexed column: the text, and the enrichment columns where the index holds them.
+        var sql = "SELECT [KEY] AS [ChunkId], [RANK] AS [Rank] FROM FREETEXTTABLE(" + table + ", *, @query)";
         var hits = dbContext.Database.SqlQueryRaw<FullTextHit>(sql, new SqlParameter("@query", query));
 
         var rows = await (

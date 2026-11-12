@@ -130,4 +130,9 @@ public class IndexRunDto
     public int? ChunkCount { get; set; }
 
     public long? EmbeddingTokenCount { get; set; }
+
+    /// <summary>What chunk enrichment sent to the model, when it ran.</summary>
+    public long? LlmInputTokenCount { get; set; }
+
+    public long? LlmOutputTokenCount { get; set; }
 }

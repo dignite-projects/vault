@@ -14,6 +14,8 @@ export interface IndexChunkDto {
   headingPath?: string | null;
   text?: string;
   isDisabled?: boolean;
+  keywords?: string | null;
+  questions?: string | null;
 }
 
 export interface IndexChunkListDto extends PagedResultDto<IndexChunkDto> {

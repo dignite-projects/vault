@@ -16,6 +16,7 @@ using Dignite.Vault.Index.Profiles;
 using Dignite.Vault.Index.Reranking;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Index.Documents;
+using Dignite.Vault.Index.Runs;
 using Dignite.Vault.Index.Search;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.AI;
@@ -65,6 +66,9 @@ public static class EvaluationModel
     public static string? RerankEndpoint => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_RERANK_ENDPOINT");
 
     public static string? RerankApiKey => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_RERANK_API_KEY");
+
+    /// <summary>Optional: a chat model for chunk enrichment, on the embedding endpoint.</summary>
+    public static string? EnrichmentModelId => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_ENRICHMENT_MODEL");
 }
 
 /// <summary>
@@ -93,9 +97,17 @@ public class VaultIndexEvaluationTestModule : AbpModule
 
         SqlServerTestDatabase.Evaluation.Configure(context);
         var client = new OpenAIClient(new ApiKeyCredential(EvaluationModel.ApiKey!), new OpenAIClientOptions { Endpoint = new Uri(EvaluationModel.Endpoint!) });
+        // A run makes hundreds of calls on one key; a provider's occasional refusal is retried, not a failed run.
         context.Services.AddKeyedEmbeddingGenerator(
             VaultIndexConsts.EmbeddingGeneratorKey,
-            _ => client.GetEmbeddingClient(EvaluationModel.ModelId).AsIEmbeddingGenerator(EvaluationModel.Dimensions));
+            _ => new RetryingEmbeddingGenerator(client.GetEmbeddingClient(EvaluationModel.ModelId).AsIEmbeddingGenerator(EvaluationModel.Dimensions)));
+
+        if (!string.IsNullOrWhiteSpace(EvaluationModel.EnrichmentModelId))
+        {
+            context.Services.AddKeyedChatClient(
+                VaultIndexConsts.EnrichmentChatClientKey,
+                _ => client.GetChatClient(EvaluationModel.EnrichmentModelId).AsIChatClient());
+        }
 
         if (!string.IsNullOrWhiteSpace(EvaluationModel.RerankModelId))
         {
@@ -254,6 +266,83 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         var report = EvaluationReport.ToMarkdown("Vault Index chunking strategies", results, notes, "heading 400 · service");
         _output.WriteLine(report);
         var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_STRATEGY_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-strategies.md");
+        await File.WriteAllTextAsync(path, report);
+    }
+
+    private static readonly (string Name, IndexEnrichment Enrichment)[] Enrichments =
+    [
+        ("no enrichment", IndexEnrichment.None),
+        ("keywords", IndexEnrichment.Keywords),
+        ("questions", IndexEnrichment.Questions),
+        ("keywords + questions", IndexEnrichment.Keywords | IndexEnrichment.Questions)
+    ];
+
+    /// <summary>
+    /// Indexes the corpus once per enrichment (heading chunking at 400 tokens) with the model in
+    /// <c>VAULT_INDEX_EVAL_ENRICHMENT_MODEL</c>, and ranks every case with the fused legs and with search as configured.
+    /// Reports what enrichment cost per document. The report goes to <c>VAULT_INDEX_EVAL_ENRICHMENT_REPORT</c> or
+    /// <c>index-enrichment.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Compare_enrichment()
+    {
+        if (!GetRequiredService<IndexEnricherProvider>().IsAvailable)
+        {
+            _output.WriteLine("No enrichment model (VAULT_INDEX_EVAL_ENRICHMENT_MODEL): nothing to compare.");
+            return;
+        }
+
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        Arrange(set);
+        var cases = set.Cases();
+        var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
+        var results = new List<CaseResult>();
+        var notes = new List<string>
+        {
+            $"Evaluation set version {set.Version}: {set.Documents.Count} documents, {cases.Count} cases",
+            $"Heading chunking at 400 tokens; enrichment model {EvaluationModel.EnrichmentModelId}, {IndexChunkEnricher.BatchSize} chunks per call. `fused` is RRF 1:1 of the two legs; `service` is IIndexSearchAppService as configured"
+        };
+
+        foreach (var (name, enrichment) in Enrichments)
+        {
+            await ClearAsync();
+            await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexProfile, Guid>>().InsertAsync(
+                new IndexProfile(Guid.NewGuid(), null, null, ChunkingStrategy.Heading, 400, 0, enrichment)));
+            await IndexCorpusAsync(set);
+            await WaitForFullTextAsync();
+
+            var chunks = (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(c => c.Id);
+            var runs = await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexRun, Guid>>().GetListAsync());
+            var calls = chunks.Values.GroupBy(c => c.DocumentId).Sum(g => (g.Count() + IndexChunkEnricher.BatchSize - 1) / IndexChunkEnricher.BatchSize);
+            var input = runs.Sum(r => r.LlmInputTokenCount ?? 0);
+            var output = runs.Sum(r => r.LlmOutputTokenCount ?? 0);
+            var failed = runs.Count(r => r.ErrorMessage is not null);
+            notes.Add(enrichment == IndexEnrichment.None
+                ? $"`{name}`: {chunks.Count} chunks"
+                : $"`{name}`: {chunks.Count} chunks, {calls} model calls, per document {input / (double)set.Documents.Count:0} input and {output / (double)set.Documents.Count:0} output tokens; {failed} runs with enrichment failures");
+
+            foreach (var evaluationCase in cases)
+            {
+                var (keyword, vector) = await LegsAsync(evaluationCase.Query);
+                var fused = ReciprocalRankFusion.Fuse(keyword, vector, IndexSearchConsts.RrfK)
+                    .Take(EvaluationReport.Depth)
+                    .Select(f => chunks.TryGetValue(f.ChunkId, out var c) ? (c.DocumentId, c.HeadingPath) : (Guid.Empty, (string?)null))
+                    .ToList();
+                var service = await WithUnitOfWorkAsync(async () => (await GetRequiredService<IIndexSearchAppService>()
+                        .SearchAsync(new IndexSearchInput { Query = evaluationCase.Query, MaxResultCount = EvaluationReport.Depth }))
+                    .Hits.Select(h => (h.DocumentId, h.HeadingPath)).ToList());
+                results.Add(Score(evaluationCase, name + " · fused", fused, documentIds));
+                results.Add(Score(evaluationCase, name + " · service", service, documentIds));
+            }
+        }
+
+        var reranker = GetRequiredService<IndexRanker>().Reranker;
+        notes.Add(reranker is null ? "No rerank model: `service` is the fused order" : $"Rerank model {reranker.ModelId} in `service`");
+        notes.Add($"Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+
+        var report = EvaluationReport.ToMarkdown("Vault Index chunk enrichment", results, notes, "no enrichment · service");
+        _output.WriteLine(report);
+        var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_ENRICHMENT_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-enrichment.md");
         await File.WriteAllTextAsync(path, report);
     }
 
@@ -457,4 +546,28 @@ public class EvaluationChunker : IndexChunker
     }
 
     public override string Prepare(string markdown) => _switch.Enabled ? base.Prepare(markdown) : markdown;
+}
+
+/// <summary>Retries an embedding call a few times with a growing pause: the evaluation's calls are many and bursty.</summary>
+public sealed class RetryingEmbeddingGenerator(IEmbeddingGenerator<string, Embedding<float>> inner)
+    : DelegatingEmbeddingGenerator<string, Embedding<float>>(inner)
+{
+    public override async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<string> values,
+        EmbeddingGenerationOptions? options = null,
+        System.Threading.CancellationToken cancellationToken = default)
+    {
+        var list = values.ToList();
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await base.GenerateAsync(list, options, cancellationToken);
+            }
+            catch (ClientResultException) when (attempt < 5)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
+            }
+        }
+    }
 }

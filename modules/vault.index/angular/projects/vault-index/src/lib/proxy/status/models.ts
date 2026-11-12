@@ -18,6 +18,8 @@ export interface IndexRunDto {
   errorMessage?: string | null;
   chunkCount?: number | null;
   embeddingTokenCount?: number | null;
+  llmInputTokenCount?: number | null;
+  llmOutputTokenCount?: number | null;
 }
 
 export interface IndexStatusSummaryDto {

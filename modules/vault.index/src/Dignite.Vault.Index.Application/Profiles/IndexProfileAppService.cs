@@ -31,22 +31,25 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
     private readonly IRepository<IndexRun, Guid> _runRepository;
     private readonly IDocumentTypeAppService _documentTypeAppService;
     private readonly IBackgroundJobManager _backgroundJobManager;
+    private readonly IndexEnricherProvider _enricherProvider;
 
     public IndexProfileAppService(
         IRepository<IndexProfile, Guid> profileRepository,
         IRepository<IndexedDocument, Guid> documentRepository,
         IRepository<IndexRun, Guid> runRepository,
         IDocumentTypeAppService documentTypeAppService,
-        IBackgroundJobManager backgroundJobManager)
+        IBackgroundJobManager backgroundJobManager,
+        IndexEnricherProvider enricherProvider)
     {
         _profileRepository = profileRepository;
         _documentRepository = documentRepository;
         _runRepository = runRepository;
         _documentTypeAppService = documentTypeAppService;
         _backgroundJobManager = backgroundJobManager;
+        _enricherProvider = enricherProvider;
     }
 
-    public virtual async Task<ListResultDto<IndexProfileDto>> GetListAsync()
+    public virtual async Task<IndexProfileListDto> GetListAsync()
     {
         await AuthorizationService.CheckAsync(VaultIndexPermissions.Profiles);
 
@@ -64,7 +67,7 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
             rows.Add(ToDto(type.Id, type.TypeCode, type.DisplayName, own, layerDefault, counts.GetValueOrDefault(type.Id)));
         }
 
-        return new ListResultDto<IndexProfileDto>(rows);
+        return new IndexProfileListDto { Items = rows, EnrichmentAvailable = _enricherProvider.IsAvailable };
     }
 
     public virtual async Task<IndexRebuildEstimateDto> GetRebuildEstimateAsync(IndexProfileInput input)
@@ -73,8 +76,10 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
         await AuthorizationService.CheckAsync(VaultIndexPermissions.Profiles);
         await CheckTypeAsync(input.DocumentTypeId);
 
-        var stamp = new ResolvedIndexProfile(input.ChunkingStrategy, input.MaxTokensPerChunk, input.OverlapTokens).Stamp;
-        return await EstimateAsync(await GetAffectedAsync(input.DocumentTypeId, stamp));
+        // The stamp of the settings as they would apply: enrichment counts only when there is a model to run it.
+        var enrichment = _enricherProvider.Effective(input.Enrichment);
+        var stamp = new ResolvedIndexProfile(input.ChunkingStrategy, input.MaxTokensPerChunk, input.OverlapTokens, enrichment).Stamp;
+        return await EstimateAsync(await GetAffectedAsync(input.DocumentTypeId, stamp), enrichment);
     }
 
     public virtual async Task<IndexProfileDto> SetAsync(IndexProfileInput input)
@@ -88,12 +93,13 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
         {
             profile = new IndexProfile(
                 GuidGenerator.Create(), CurrentTenant.Id, input.DocumentTypeId,
-                input.ChunkingStrategy, input.MaxTokensPerChunk, input.OverlapTokens);
+                input.ChunkingStrategy, input.MaxTokensPerChunk, input.OverlapTokens, input.Enrichment);
             await _profileRepository.InsertAsync(profile);
         }
         else
         {
             profile.SetChunking(input.ChunkingStrategy, input.MaxTokensPerChunk, input.OverlapTokens);
+            profile.SetEnrichment(input.Enrichment);
             await _profileRepository.UpdateAsync(profile);
         }
 
@@ -138,7 +144,7 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
         return query.Where(d => !ownProfiles.Contains(d.DocumentTypeId));
     }
 
-    protected virtual async Task<IndexRebuildEstimateDto> EstimateAsync(IQueryable<IndexedDocument> affected)
+    protected virtual async Task<IndexRebuildEstimateDto> EstimateAsync(IQueryable<IndexedDocument> affected, IndexEnrichment enrichment)
     {
         var ids = affected.Select(d => d.Id);
         var runs = (await _runRepository.GetQueryableAsync())
@@ -158,7 +164,10 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
             DocumentCount = documentCount,
             ChunkCount = await AsyncExecuter.SumAsync(affected.Select(d => (long)d.ChunkCount)),
             EmbeddingTokenCount = perDocument.Values.Sum(),
-            DocumentsWithoutTokenCount = documentCount - perDocument.Count
+            DocumentsWithoutTokenCount = documentCount - perDocument.Count,
+            EnrichmentCallCount = enrichment == IndexEnrichment.None
+                ? 0
+                : await AsyncExecuter.SumAsync(affected.Select(d => (d.ChunkCount + IndexChunkEnricher.BatchSize - 1) / IndexChunkEnricher.BatchSize))
         };
     }
 
@@ -189,9 +198,9 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
         int indexedDocumentCount)
     {
         var applied = own is not null
-            ? new ResolvedIndexProfile(own.ChunkingStrategy, own.MaxTokensPerChunk, own.OverlapTokens)
+            ? new ResolvedIndexProfile(own.ChunkingStrategy, own.MaxTokensPerChunk, own.OverlapTokens, own.Enrichment)
             : layerDefault is not null
-                ? new ResolvedIndexProfile(layerDefault.ChunkingStrategy, layerDefault.MaxTokensPerChunk, layerDefault.OverlapTokens)
+                ? new ResolvedIndexProfile(layerDefault.ChunkingStrategy, layerDefault.MaxTokensPerChunk, layerDefault.OverlapTokens, layerDefault.Enrichment)
                 : ResolvedIndexProfile.BuiltIn;
 
         return new IndexProfileDto
@@ -203,6 +212,7 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
             ChunkingStrategy = applied.Strategy,
             MaxTokensPerChunk = applied.MaxTokensPerChunk,
             OverlapTokens = applied.OverlapTokens,
+            Enrichment = applied.Enrichment,
             IndexedDocumentCount = indexedDocumentCount
         };
     }

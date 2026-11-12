@@ -1,5 +1,6 @@
 import type { IndexProfileDto, IndexProfileInput, IndexRebuildEstimateDto } from '../proxy/profiles/models';
 import { ChunkingStrategy } from '../proxy/indexing/chunking-strategy.enum';
+import { IndexEnrichment } from '../proxy/indexing/index-enrichment.enum';
 
 /** The bounds the server enforces (IndexProfileConsts); the form checks them first so the operator sees why. */
 export const MIN_CHUNK_TOKENS = 100;
@@ -11,6 +12,8 @@ export interface ProfileForm {
   chunkingStrategy: ChunkingStrategy;
   maxTokensPerChunk: number | null;
   overlapTokens: number | null;
+  keywords: boolean;
+  questions: boolean;
 }
 
 export function formFor(row: IndexProfileDto): ProfileForm {
@@ -19,6 +22,8 @@ export function formFor(row: IndexProfileDto): ProfileForm {
     chunkingStrategy: row.chunkingStrategy ?? ChunkingStrategy.Heading,
     maxTokensPerChunk: row.maxTokensPerChunk ?? null,
     overlapTokens: row.overlapTokens ?? 0,
+    keywords: hasFlag(row.enrichment, IndexEnrichment.Keywords),
+    questions: hasFlag(row.enrichment, IndexEnrichment.Questions),
   };
 }
 
@@ -43,6 +48,7 @@ export function toInput(form: ProfileForm): IndexProfileInput {
     chunkingStrategy: form.chunkingStrategy,
     maxTokensPerChunk: form.maxTokensPerChunk ?? 0,
     overlapTokens: form.overlapTokens ?? 0,
+    enrichment: (form.keywords ? IndexEnrichment.Keywords : 0) | (form.questions ? IndexEnrichment.Questions : 0),
   };
 }
 
@@ -53,7 +59,32 @@ export function resetInput(row: IndexProfileDto, layerDefault: IndexProfileDto):
     chunkingStrategy: layerDefault.chunkingStrategy ?? ChunkingStrategy.Heading,
     maxTokensPerChunk: layerDefault.maxTokensPerChunk ?? 0,
     overlapTokens: layerDefault.overlapTokens ?? 0,
+    enrichment: layerDefault.enrichment ?? IndexEnrichment.None,
   };
+}
+
+/** The enrichment a row has, as localization keys; empty when none. */
+export function enrichmentKeys(enrichment: IndexEnrichment | undefined): string[] {
+  const keys: string[] = [];
+  if (hasFlag(enrichment, IndexEnrichment.Keywords)) {
+    keys.push('VaultIndex::Profiles:Keywords');
+  }
+
+  if (hasFlag(enrichment, IndexEnrichment.Questions)) {
+    keys.push('VaultIndex::Profiles:Questions');
+  }
+
+  return keys;
+}
+
+/** The model calls enrichment would add, as a localization key and its argument; <c>null</c> when it adds none. */
+export function enrichmentCallText(estimate: IndexRebuildEstimateDto): { key: string; args: string[] } | null {
+  const calls = estimate.enrichmentCallCount ?? 0;
+  return calls > 0 ? { key: 'VaultIndex::Profiles:EstimateEnrichment', args: [calls.toLocaleString()] } : null;
+}
+
+function hasFlag(value: IndexEnrichment | undefined, flag: IndexEnrichment): boolean {
+  return ((value ?? IndexEnrichment.None) & flag) === flag;
 }
 
 /** The estimate as a localization key and its arguments. */

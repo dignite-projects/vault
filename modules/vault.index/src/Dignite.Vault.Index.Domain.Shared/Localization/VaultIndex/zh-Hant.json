@@ -74,6 +74,7 @@
     "IndexStatus:Finished": "結束",
     "IndexStatus:Attempt": "嘗試",
     "IndexStatus:Tokens": "嵌入 token",
+    "IndexStatus:LlmTokens": "LLM token(輸入 / 輸出)",
     "IndexStatus:Message": "訊息",
     "IndexStatus:Refresh": "重新整理",
     "IndexStatus:Previous": "上一頁",
@@ -150,6 +151,12 @@
     "Profiles:InvalidOverlap": "重疊必須不小於 0,且小於塊大小。",
     "Profiles:EstimateNothing": "儲存後不會重建任何文件:沒有按其他設定索引的文件。",
     "Profiles:Estimate": "儲存後將重建 {0} 份文件(目前 {1} 塊)。它們上次索引用了 {2} 個嵌入 token。",
-    "Profiles:EstimateWithUnknown": "儲存後將重建 {0} 份文件(目前 {1} 塊)。它們上次索引用了 {2} 個嵌入 token,其中 {3} 份沒有記錄。"
+    "Profiles:EstimateWithUnknown": "儲存後將重建 {0} 份文件(目前 {1} 塊)。它們上次索引用了 {2} 個嵌入 token,其中 {3} 份沒有記錄。",
+    "Profiles:Enrichment": "增強",
+    "Profiles:Keywords": "關鍵詞",
+    "Profiles:Questions": "可回答的問題",
+    "Profiles:EnrichmentHint": "由 LLM 給每塊加關鍵詞(進關鍵詞索引)和它能回答的問題(進關鍵詞索引和嵌入)。約每 10 塊呼叫一次模型。",
+    "Profiles:EnrichmentUnavailable": "主機沒有設定增強模型(Vault:Index:EnrichmentModelId),所以不能開啟增強。",
+    "Profiles:EstimateEnrichment": "增強約呼叫模型 {0} 次。"
   }
 }

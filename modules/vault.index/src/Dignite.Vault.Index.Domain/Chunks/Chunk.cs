@@ -51,6 +51,15 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
     /// </summary>
     public virtual bool IsDisabled { get; protected set; }
 
+    /// <summary>Keywords an LLM chose for this chunk, space-separated; in the keyword index, not in what search returns.</summary>
+    public virtual string? Keywords { get; protected set; }
+
+    /// <summary>
+    /// Questions an LLM found this chunk answers, one per line; in the keyword index and in what is embedded, not in what
+    /// search returns. Stored, so moving to another store replays them without calling the model again.
+    /// </summary>
+    public virtual string? Questions { get; protected set; }
+
     protected Chunk()
     {
     }
@@ -66,7 +75,9 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
         string text,
         string contentHash,
         bool isHidden = false,
-        bool isDisabled = false)
+        bool isDisabled = false,
+        string? keywords = null,
+        string? questions = null)
         : base(id)
     {
         TenantId = tenantId;
@@ -79,6 +90,8 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
         ContentHash = Check.NotNullOrWhiteSpace(contentHash, nameof(contentHash), IndexingConsts.ContentHashLength, IndexingConsts.ContentHashLength);
         IsHidden = isHidden;
         IsDisabled = isDisabled;
+        Keywords = Check.Length(keywords, nameof(keywords), IndexingConsts.MaxKeywordsLength);
+        Questions = Check.Length(questions, nameof(questions), IndexingConsts.MaxQuestionsLength);
     }
 
     public virtual void SetDisabled(bool isDisabled)

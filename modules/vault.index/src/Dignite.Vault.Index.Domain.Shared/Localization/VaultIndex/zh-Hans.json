@@ -74,6 +74,7 @@
     "IndexStatus:Finished": "结束",
     "IndexStatus:Attempt": "尝试",
     "IndexStatus:Tokens": "嵌入 token",
+    "IndexStatus:LlmTokens": "LLM token(输入 / 输出)",
     "IndexStatus:Message": "信息",
     "IndexStatus:Refresh": "刷新",
     "IndexStatus:Previous": "上一页",
@@ -150,6 +151,12 @@
     "Profiles:InvalidOverlap": "重叠必须不小于 0,且小于块大小。",
     "Profiles:EstimateNothing": "保存后不会重建任何文档:没有按其他设置索引的文档。",
     "Profiles:Estimate": "保存后将重建 {0} 份文档(当前 {1} 块)。它们上次索引用了 {2} 个嵌入 token。",
-    "Profiles:EstimateWithUnknown": "保存后将重建 {0} 份文档(当前 {1} 块)。它们上次索引用了 {2} 个嵌入 token,其中 {3} 份没有记录。"
+    "Profiles:EstimateWithUnknown": "保存后将重建 {0} 份文档(当前 {1} 块)。它们上次索引用了 {2} 个嵌入 token,其中 {3} 份没有记录。",
+    "Profiles:Enrichment": "增强",
+    "Profiles:Keywords": "关键词",
+    "Profiles:Questions": "可回答的问题",
+    "Profiles:EnrichmentHint": "由 LLM 给每块加关键词(进关键词索引)和它能回答的问题(进关键词索引和嵌入)。约每 10 块调用一次模型。",
+    "Profiles:EnrichmentUnavailable": "宿主没有配置增强模型(Vault:Index:EnrichmentModelId),所以不能开启增强。",
+    "Profiles:EstimateEnrichment": "增强约调用模型 {0} 次。"
   }
 }

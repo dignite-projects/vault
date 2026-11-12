@@ -119,11 +119,19 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                     b.Property<bool>("IsHidden")
                         .HasColumnType("bit");
 
+                    b.Property<string>("Keywords")
+                        .HasMaxLength(600)
+                        .HasColumnType("nvarchar(600)");
+
                     b.Property<int>("Ordinal")
                         .HasColumnType("int");
 
                     b.Property<Guid?>("OwnerId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Questions")
+                        .HasMaxLength(1100)
+                        .HasColumnType("nvarchar(1100)");
 
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uniqueidentifier")
@@ -354,6 +362,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.Property<Guid?>("DocumentTypeId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Enrichment")
+                        .HasColumnType("int");
 
                     b.Property<string>("ExtraProperties")
                         .IsRequired()

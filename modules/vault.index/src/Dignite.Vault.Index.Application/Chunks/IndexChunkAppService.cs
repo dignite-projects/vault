@@ -76,7 +76,9 @@ public class IndexChunkAppService : VaultIndexAppService, IIndexChunkAppService
                 Ordinal = c.Ordinal,
                 HeadingPath = c.HeadingPath,
                 Text = c.Text,
-                IsDisabled = c.IsDisabled
+                IsDisabled = c.IsDisabled,
+                Keywords = c.Keywords,
+                Questions = c.Questions
             }).ToList()
         };
     }

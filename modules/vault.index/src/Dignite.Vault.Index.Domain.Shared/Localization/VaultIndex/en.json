@@ -74,6 +74,7 @@
     "IndexStatus:Finished": "Finished",
     "IndexStatus:Attempt": "Attempt",
     "IndexStatus:Tokens": "Embedding tokens",
+    "IndexStatus:LlmTokens": "LLM tokens (in / out)",
     "IndexStatus:Message": "Message",
     "IndexStatus:Refresh": "Refresh",
     "IndexStatus:Previous": "Previous",
@@ -150,6 +151,12 @@
     "Profiles:InvalidOverlap": "The overlap must be 0 or more and smaller than the chunk size.",
     "Profiles:EstimateNothing": "Saving rebuilds nothing: no indexed document uses other settings.",
     "Profiles:Estimate": "Saving rebuilds {0} documents ({1} chunks today). Their last indexing took {2} embedding tokens.",
-    "Profiles:EstimateWithUnknown": "Saving rebuilds {0} documents ({1} chunks today). Their last indexing took {2} embedding tokens; {3} of them have no recorded count."
+    "Profiles:EstimateWithUnknown": "Saving rebuilds {0} documents ({1} chunks today). Their last indexing took {2} embedding tokens; {3} of them have no recorded count.",
+    "Profiles:Enrichment": "Enrichment",
+    "Profiles:Keywords": "Keywords",
+    "Profiles:Questions": "Answerable questions",
+    "Profiles:EnrichmentHint": "An LLM adds keywords to each chunk (keyword index) and the questions it answers (keyword index and embedding). About one model call per 10 chunks.",
+    "Profiles:EnrichmentUnavailable": "The host has no enrichment model (Vault:Index:EnrichmentModelId), so enrichment cannot be switched on.",
+    "Profiles:EstimateEnrichment": "Enrichment makes about {0} model calls."
   }
 }

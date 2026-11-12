@@ -56,6 +56,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     private readonly IndexGenerationManager _generationManager;
     private readonly IndexChunker _chunker;
     private readonly IndexEmbedder _embedder;
+    private readonly IndexEnricherProvider _enricherProvider;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly IClock _clock;
     private readonly IGuidGenerator _guidGenerator;
@@ -74,6 +75,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         IndexGenerationManager generationManager,
         IndexChunker chunker,
         IndexEmbedder embedder,
+        IndexEnricherProvider enricherProvider,
         IBackgroundJobManager backgroundJobManager,
         IClock clock,
         IGuidGenerator guidGenerator,
@@ -91,6 +93,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         _generationManager = generationManager;
         _chunker = chunker;
         _embedder = embedder;
+        _enricherProvider = enricherProvider;
         _backgroundJobManager = backgroundJobManager;
         _clock = clock;
         _guidGenerator = guidGenerator;
@@ -234,7 +237,10 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                 .WithData("MaxLength", _options.MaxMarkdownLength);
         }
 
+        // The settings as they can be applied: with no enrichment model the profile's enrichment is off, and the stamp
+        // says so, so adding a model later re-enriches on the next rebuild.
         var profile = await _profileResolver.ResolveAsync(document.DocumentTypeId);
+        profile = profile with { Enrichment = _enricherProvider.Effective(profile.Enrichment) };
         var text = _chunker.Prepare(document.Markdown);
         var contentHash = Sha256(text);
         var modelId = _embedder.GetModelId();
@@ -251,7 +257,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             return new SyncPlan(contentHash, profile.Stamp, serving!.Id, null, null, null);
         }
 
-        var drafts = await _chunker.ChunkAsync(text, document.Id.ToString(), profile);
+        var enricher = _enricherProvider.Create(profile.Enrichment, document.Language);
+        var drafts = await _chunker.ChunkAsync(text, document.Id.ToString(), profile, enricher);
         if (drafts.Count == 0)
         {
             throw new BusinessException(VaultIndexErrorCodes.EmptyDocument);
@@ -265,9 +272,10 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         }
 
         // The document title in front of every chunk (which already starts with its heading path) gives the vector
-        // the context a bare passage lacks. The stored chunk text stays as the chunker cut it.
+        // the context a bare passage lacks, and the questions an enricher found pull it toward how people ask. The
+        // stored chunk text stays as the chunker cut it.
         var inputs = drafts
-            .Select(d => ChunkContext.Compose(document.Title, d.Text))
+            .Select(d => ChunkContext.ComposeForEmbedding(document.Title, d.Text, d.Questions))
             .ToList();
         var embedding = await _embedder.EmbedAsync(inputs);
 
@@ -281,7 +289,14 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         }
 
         var generation = await _generationManager.GetOrCreateServingAsync(modelId, dimensions);
-        return new SyncPlan(contentHash, profile.Stamp, generation.Id, drafts, embedding.Vectors, embedding.InputTokenCount);
+        return new SyncPlan(contentHash, profile.Stamp, generation.Id, drafts, embedding.Vectors, embedding.InputTokenCount)
+        {
+            LlmInputTokenCount = enricher?.InputTokenCount,
+            LlmOutputTokenCount = enricher?.OutputTokenCount,
+            Note = enricher is { FailedChunkCount: > 0 } failed
+                ? $"Enrichment failed for {failed.FailedChunkCount} of {drafts.Count} chunks; they are indexed without it."
+                : null
+        };
     }
 
     /// <summary>
@@ -325,7 +340,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                     var hash = Sha256(d.Text);
                     return new Chunk(
                         _guidGenerator.Create(), _currentTenant.Id, document.Id, document.DocumentTypeId, document.OwnerId,
-                        d.Ordinal, d.HeadingPath, d.Text, hash, row.IsHidden, disabled.Contains(hash));
+                        d.Ordinal, d.HeadingPath, d.Text, hash, row.IsHidden, disabled.Contains(hash), d.Keywords, d.Questions);
                 })
                 .ToList();
             await _chunkRepository.InsertManyAsync(chunks);
@@ -350,7 +365,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         {
             if (plan.Drafts is not null)
             {
-                run.Succeed(now, chunkCount, plan.EmbeddingTokenCount);
+                run.Succeed(now, chunkCount, plan.EmbeddingTokenCount, plan.LlmInputTokenCount, plan.LlmOutputTokenCount, plan.Note);
             }
             else
             {
@@ -507,5 +522,13 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         Guid GenerationId,
         IReadOnlyList<IndexChunkDraft>? Drafts,
         IReadOnlyList<ReadOnlyMemory<float>>? Vectors,
-        long? EmbeddingTokenCount);
+        long? EmbeddingTokenCount)
+    {
+        public long? LlmInputTokenCount { get; init; }
+
+        public long? LlmOutputTokenCount { get; init; }
+
+        /// <summary>Something the run should say although it succeeded, such as chunks the enricher could not enrich.</summary>
+        public string? Note { get; init; }
+    }
 }

@@ -154,7 +154,9 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             FinishedTime = r.FinishedTime,
             ErrorMessage = r.ErrorMessage,
             ChunkCount = r.ChunkCount,
-            EmbeddingTokenCount = r.EmbeddingTokenCount
+            EmbeddingTokenCount = r.EmbeddingTokenCount,
+            LlmInputTokenCount = r.LlmInputTokenCount,
+            LlmOutputTokenCount = r.LlmOutputTokenCount
         }).ToList());
     }
 
