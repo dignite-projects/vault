@@ -8,13 +8,14 @@ This file describes the current design and the rules whose violation breaks some
 
 - `modules/vault.extract/`: the channel (ABP module stack in `src/`, tests in `test/`) and its Angular library in `angular/` (`@dignite/ng.vault-extract`)
 - `modules/vault.parse/`: the text-extraction library (OCR and Markdown providers behind `ITextExtractor`)
+- `modules/vault.index/`: Vault Index, the retrieval module (P0 in progress). Its design record is the Claude Doc "Vault Index 架构方案"; it has its own `VaultIndex` connection string and its migrations live in the host under `Migrations/VaultIndex/`
 - `src/Dignite.Vault.Extract.Host/`: the host application
 - `angular/`: the host SPA
 - `docs/`: operations, configuration and API documentation
 
 Things that fail in CI or at runtime if ignored:
 
-- **Module references** (`etc/scripts/check-module-references.mjs`): `vault.parse` references nothing outside itself; `vault.extract` may reference `vault.parse`, never `vault.index`.
+- **Module references** (`etc/scripts/check-module-references.mjs`): `vault.parse` references nothing outside itself; `vault.extract` may reference `vault.parse`, never `vault.index`; `vault.index` reaches Extract only through its Abstractions, Application.Contracts and HttpApi.Client.
 - **One `npm install`, at the repo root.** Installing inside a workspace makes the host bundle a second Angular runtime (`check:single-angular`).
 - **One version for every module**, in the root `common.props`.
 
@@ -29,7 +30,7 @@ Things that fail in CI or at runtime if ignored:
 - `Abstractions` holds the integration-event ETOs and references no other project in this repo.
 - `Application` sees text extraction only through `Dignite.Vault.Parse.Abstractions`. The host picks the providers.
 - The host is a container: it wires modules and providers and registers three keyed `IChatClient`s (`TitleGenerator`, `Structured`, `Vision`). **Middleware is configured only in the host.** LLM and OCR providers and their API keys are host deployment configuration; end customers never see them.
-- Extract does no vectorization or retrieval and registers no `IEmbeddingGenerator`. That belongs to the planned `vault.index` module. Business modules (contracts, invoices, HR) are built by downstream consumers in their own repos.
+- Extract does no vectorization or retrieval and registers no `IEmbeddingGenerator`. That belongs to the `vault.index` module. Business modules (contracts, invoices, HR) are built by downstream consumers in their own repos.
 
 ## Documents, types and fields
 
@@ -69,7 +70,7 @@ Code that violates one of these is a defect, not a precedent. https://abp.io/doc
 
 ## Commands
 
-- One test project: `dotnet test modules/<module>/test/<Project>/<Project>.csproj` (`<module>` is `vault.extract` or `vault.parse`). Tests are ABP integration style on in-memory SQLite, with Shouldly and NSubstitute.
+- One test project: `dotnet test modules/<module>/test/<Project>/<Project>.csproj` (`<module>` is `vault.extract`, `vault.parse` or `vault.index`). Tests are ABP integration style on in-memory SQLite, with Shouldly and NSubstitute.
 - Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`.
 
 ## Decision record

@@ -73,6 +73,10 @@ jobs:
       - name: Run EF Core tests
         run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.EntityFrameworkCore.Tests/Dignite.Vault.Extract.EntityFrameworkCore.Tests.csproj --no-build --configuration Release --verbosity normal
 
+      # Vault Index (P0 in progress): SQLite in-memory, no external database.
+      - name: Run Index EF Core tests
+        run: dotnet test modules/vault.index/test/Dignite.Vault.Index.EntityFrameworkCore.Tests/Dignite.Vault.Index.EntityFrameworkCore.Tests.csproj --no-build --configuration Release --verbosity normal
+
       # TestBase + NSubstitute mocks (no DB / no LLM); includes MCP inputSchema regression guards
       # generated under the Autofac container, plus the #278 MCP-discovery authorization guard
       # (a minimal ASP.NET TestServer; no ABP host / DB / OpenIddict).

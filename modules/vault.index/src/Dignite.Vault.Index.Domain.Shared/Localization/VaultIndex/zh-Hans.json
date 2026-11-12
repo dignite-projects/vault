@@ -1,0 +1,11 @@
+{
+  "culture": "zh-Hans",
+  "texts": {
+    "Permission:VaultIndex": "Vault Index",
+    "Permission:VaultIndex.Search": "检索索引",
+    "Permission:VaultIndex.Profiles": "管理索引配置",
+    "Feature:VaultIndex": "Vault Index",
+    "Feature:VaultIndex.Enable": "启用 Vault Index",
+    "Feature:VaultIndex.Enable:Description": "允许租户使用 Vault Index 的应用服务:检索和索引管理。"
+  }
+}

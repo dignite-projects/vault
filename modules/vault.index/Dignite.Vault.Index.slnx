@@ -1,0 +1,14 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/Dignite.Vault.Index.Domain.Shared/Dignite.Vault.Index.Domain.Shared.csproj" />
+        <Project Path="src/Dignite.Vault.Index.Domain/Dignite.Vault.Index.Domain.csproj" />
+        <Project Path="src/Dignite.Vault.Index.Application.Contracts/Dignite.Vault.Index.Application.Contracts.csproj" />
+        <Project Path="src/Dignite.Vault.Index.Application/Dignite.Vault.Index.Application.csproj" />
+        <Project Path="src/Dignite.Vault.Index.EntityFrameworkCore/Dignite.Vault.Index.EntityFrameworkCore.csproj" />
+    </Folder>
+
+    <Folder Name="/test/">
+        <Project Path="test/Dignite.Vault.Index.TestBase/Dignite.Vault.Index.TestBase.csproj" />
+        <Project Path="test/Dignite.Vault.Index.EntityFrameworkCore.Tests/Dignite.Vault.Index.EntityFrameworkCore.Tests.csproj" />
+    </Folder>
+</Solution>

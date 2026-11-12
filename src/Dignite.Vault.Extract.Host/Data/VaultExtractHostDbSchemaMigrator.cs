@@ -24,5 +24,12 @@ public class VaultExtractHostDbSchemaMigrator : ITransientDependency
             .GetRequiredService<VaultExtractHostDbContext>()
             .Database
             .MigrateAsync();
+
+        // Vault Index has its own connection string (falling back to Default), so its migrations are applied
+        // through their own context, against whichever database that resolves to.
+        await _serviceProvider
+            .GetRequiredService<VaultIndexHostDbContext>()
+            .Database
+            .MigrateAsync();
     }
 }

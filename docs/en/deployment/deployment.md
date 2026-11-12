@@ -38,6 +38,15 @@ The shipped host uses SQL Server through EF Core, with one connection string:
 
 Source the password from the platform's secret store (Azure Key Vault, AWS Secrets Manager, environment variables injected by the orchestrator), not from `appsettings.Production.json`. The schema itself is provider-agnostic; see [Database Portability](#database-portability).
 
+The host also carries Vault Index, which is under development. Its tables (`VaultIndex*`) use their own connection string, `VaultIndex`; without one they go into the `Default` database. Its upcoming vector and full-text storage will need SQL Server 2025 with Full-Text Search installed, or Azure SQL, behind whichever of the two it resolves to, so point `VaultIndex` at such a database if `Default` is an older SQL Server:
+
+```json
+"ConnectionStrings": {
+  "Default": "...",
+  "VaultIndex": "Server=YOUR_SQL2025_SERVER;Database=VaultIndex;User ID=YOUR_USER;Password=__SET_FROM_SECRETS__;TrustServerCertificate=true"
+}
+```
+
 ## Original File Storage
 
 Every upload's original file is written to the `extract-documents` BLOB container through [ABP BLOB Storing](https://abp.io/docs/latest/framework/infrastructure/blob-storing). Text extraction reads it, re-parse reads it again, and the document detail page downloads it, so losing it breaks those features for every stored document. Permanently deleting a document deletes its file.
@@ -182,7 +191,7 @@ The MCP endpoint's rate limiter also needs to know about the proxy; see [Reverse
 
 ## Migrations
 
-EF Core migrations live under `src/Dignite.Vault.Extract.Host/Migrations/`. Apply them, and seed the initial data (the `admin` user, the `DocumentManager` and `Viewer` operator roles in the Host and in each tenant, and the OpenIddict clients), by running the host once with `--migrate-database`:
+EF Core migrations live under `src/Dignite.Vault.Extract.Host/Migrations/` (Vault Index's under `Migrations/VaultIndex/`, applied to the database its connection string resolves to). Apply them, and seed the initial data (the `admin` user, the `DocumentManager` and `Viewer` operator roles in the Host and in each tenant, and the OpenIddict clients), by running the host once with `--migrate-database`:
 
 ```bash
 cd src/Dignite.Vault.Extract.Host

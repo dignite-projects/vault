@@ -16,6 +16,15 @@
         <NuGetAudit>false</NuGetAudit>
     </PropertyGroup>
 
+    <!-- One version for every module, with one exception: a module whose packages must stay pre-release while the
+         line moves on sets VaultPrereleaseModule in its Directory.Build.props (vault.index, until
+         Microsoft.Extensions.DataIngestion is stable: a stable package cannot depend on a pre-release one). A
+         stable <Version> above then packs as <Version>-preview for that module; a pre-release one is used as it
+         is. The release workflow reads the first <Version> in this file, which stays the line's version. -->
+    <PropertyGroup Condition="'$(VaultPrereleaseModule)' == 'true' And !$(Version.Contains('-'))">
+        <Version>$(Version)-preview</Version>
+    </PropertyGroup>
+
     <PropertyGroup Label="NuGet package metadata">
         <Authors>Dignite</Authors>
         <Company>Dignite</Company>

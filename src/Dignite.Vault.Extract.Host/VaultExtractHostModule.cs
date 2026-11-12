@@ -7,6 +7,8 @@ using Dignite.Vault.Extract.Host.Localization;
 using Dignite.Vault.Extract.Localization;
 using Dignite.Abp.AspNetCore.Mcp;
 using Dignite.Vault.Extract.Mcp.Authentication;
+using Dignite.Vault.Index;
+using Dignite.Vault.Index.EntityFrameworkCore;
 using Dignite.Abp.Notifications.SignalR;
 using Dignite.NotificationCenter;
 using Dignite.NotificationCenter.EntityFrameworkCore;
@@ -139,6 +141,10 @@ namespace Dignite.Vault.Extract.Host;
     typeof(VaultExtractMcpModule),          // MCP exit adapter, parallel to the HttpApi REST exit.
     typeof(VaultExtractApplicationModule),
     typeof(VaultExtractEntityFrameworkCoreModule),
+
+    // Vault Index (P0 in progress): its own DbContext and connection string, migrated by VaultIndexHostDbContext.
+    typeof(VaultIndexApplicationModule),
+    typeof(VaultIndexEntityFrameworkCoreModule),
 
     // Operator notifications (#680). Application publishes them to the uploader on document lifecycle transitions;
     // these three are what the host does with them: live push over SignalR, then a persistent inbox + the
@@ -575,6 +581,9 @@ public class VaultExtractHostModule : AbpModule
         {
             options.AddDefaultRepositories(includeAllEntities: true);
         });
+
+        // Migrations only (see VaultIndexHostDbContext); Index's repositories live on its own VaultIndexDbContext.
+        context.Services.AddAbpDbContext<Data.VaultIndexHostDbContext>();
 
         Configure<AbpDbContextOptions>(options =>
         {
