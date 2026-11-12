@@ -7,7 +7,7 @@
 
 # Integration Events
 
-Dignite Vault Extract publishes document pipeline progress as ABP [distributed events](https://abp.io/docs/latest/framework/infrastructure/event-bus/distributed) (ETOs). This is the **EventBus** egress channel, next to the [REST API](rest-api.md), the [MCP server](mcp-server.md) and [Data Download](data-download.md); a Webhook channel is planned. Every payload is thin (an ID plus key metadata): a consumer pulls the details it needs back through REST or MCP after receiving an event.
+Dignite Vault Extract publishes document pipeline progress as ABP [distributed events](https://abp.io/docs/latest/framework/infrastructure/event-bus/distributed) (ETOs). This is the **EventBus** egress channel, next to the [REST API](rest-api.md), the [MCP server](mcp-server.md) and [Data Download](data-download.md); a Webhook channel is planned. Every payload is thin (an ID plus key metadata): a consumer pulls the details it needs back through REST or MCP after receiving an event, or, from a module in the same host, through the [in-process integration service](in-process-integration.md).
 
 ## Subscribing
 
@@ -86,7 +86,7 @@ Dignite Vault Extract delivers every event through ABP's built-in **transactiona
 
 Deduplication and ordering are the consumer's responsibility. Every ETO carries `EventTime` (set from the server clock at publish time); a consumer does idempotency by `(DocumentId, EventType, EventTime)` as a high-water mark: discard an incoming event whose `EventTime` is at or before the one already recorded for that key, otherwise apply it and store its `EventTime` as the new mark. A consumer that is itself an ABP application can instead enable the built-in **inbox** (`ConfigureEventInbox()`) for automatic exactly-once consumption by message id.
 
-**`DocumentReadyEto` may fire more than once for the same document** — a pipeline retry, a reclassification, a re-parse, or an operator editing fields on an already-Ready document all re-fire it. Treat it as an **upsert**: the latest `EventTime` wins, not the first delivery.
+**`DocumentReadyEto` may fire more than once for the same document** — a pipeline retry, a reclassification, a re-parse, or an operator editing the fields or correcting the Markdown of an already-Ready document all re-fire it. Treat it as an **upsert**: the latest `EventTime` wins, not the first delivery.
 
 A **container** document (a bundle of several documents) never fires `DocumentReadyEto`; its sub-documents fire it instead, each carrying `OriginDocumentId`. See [Sub-Documents](../documents/sub-documents.md).
 
@@ -107,5 +107,6 @@ The stage events before Ready (`DocumentUploadedEto` / `DocumentTextExtractedEto
 
 - [Documents and Review](../documents/documents.md) — lifecycle statuses and the review reasons behind the Ready gate
 - [REST API](rest-api.md) — pulling a document's details after an event
+- [In-Process Integration](in-process-integration.md) — pulling them from a module in the same host
 - [Operator Notifications](operator-notifications.md) — in-app notifications for the uploader (not part of this contract)
 - [ABP Distributed Event Bus](https://abp.io/docs/latest/framework/infrastructure/event-bus/distributed)

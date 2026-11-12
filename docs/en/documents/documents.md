@@ -112,7 +112,7 @@ Rejecting, allowing a duplicate, dismissing warnings and confirming the field en
 | Action | Endpoint | Effect |
 | --- | --- | --- |
 | Edit field values | `POST extracted-fields` | Replaces the whole value set after validating each value against its field type. Re-evaluates required fields and the duplicate key; does not clear validation warnings. A document that stays Ready re-publishes `DocumentReadyEto` |
-| Correct the Markdown | `POST markdown` | Overwrites the Markdown only (the title, language and fields stay). With `Reprocess` set, also re-extracts the fields from the corrected text. Not available on containers |
+| Correct the Markdown | `POST markdown` | Overwrites the Markdown only (the title, language and fields stay). On a Ready document this re-fires `DocumentReadyEto`. With `Reprocess` set, also re-extracts the fields from the corrected text, and the event fires when the document is Ready again. Not available on containers |
 | Re-extract fields | `POST reextract-fields` | Runs field extraction again on the current Markdown and type |
 | Re-parse | `POST reparse` | Extracts the text again from the original file and re-runs the whole pipeline. See [Reprocessing](../pipeline/reprocessing.md#single-document-re-parse) |
 | File into a cabinet | `POST cabinet` | Sets or clears the document's [cabinet](cabinets.md) |

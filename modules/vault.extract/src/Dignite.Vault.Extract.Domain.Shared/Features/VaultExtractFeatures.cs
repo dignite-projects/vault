@@ -24,8 +24,9 @@ public static class VaultExtractFeatures
     /// <para>
     /// Deliberately <b>not</b> enforced - by <c>[RequiresFeature]</c> or by <c>IFeatureChecker</c> - on anything
     /// that does not run as a signed-in user: the background jobs and event handlers of the document pipeline
-    /// (upload, parse, OCR, classification, field extraction, <c>DocumentReadyEto</c>), and anything else that
-    /// has no principal behind it. As read from ABP's implementation - not run end to end with an edition-bearing
+    /// (upload, parse, OCR, classification, field extraction, <c>DocumentReadyEto</c>), the integration services a
+    /// module in the same host calls from its own background jobs (<c>IDocumentIntegrationService</c>, for Vault
+    /// Index), and anything else that has no principal behind it. As read from ABP's implementation - not run end to end with an edition-bearing
     /// token here - the Edition level of a feature is resolved from the current principal's <c>editionid</c> claim,
     /// so such a path is expected to see only the tenant-level value or the definition default. If so, a host that
     /// flips the default to <c>false</c> and grants the feature per edition would make that path read "off" and

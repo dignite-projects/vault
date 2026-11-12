@@ -4,10 +4,10 @@ using Dignite.Vault.Extract.Abstractions.Documents;
 namespace Dignite.Vault.Extract.Documents.Pipelines.Lifecycle;
 
 /// <summary>
-/// The one place a <see cref="DocumentReadyEto"/> is shaped. Both publish sites — the lifecycle handler on a
-/// transition into Ready, and <c>DocumentAppService.UpdateExtractedFieldsAsync</c> re-announcing an already-Ready
-/// document (#650) — build the payload here, so a field added to the ETO cannot be added to one site and missed at
-/// the other.
+/// The one place a <see cref="DocumentReadyEto"/> is shaped. Every publish site — the lifecycle handler on a
+/// transition into Ready, and <c>DocumentAppService.UpdateExtractedFieldsAsync</c> (#650) and
+/// <c>UpdateMarkdownAsync</c> re-announcing an already-Ready document — builds the payload here, so a field added to
+/// the ETO cannot be added to one site and missed at another.
 /// </summary>
 public static class DocumentReadyEtoFactory
 {

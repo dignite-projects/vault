@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Shouldly;
+using Volo.Abp;
 using Volo.Abp.Application.Services;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.BackgroundWorkers;
@@ -36,7 +37,8 @@ public class VaultExtractAppServiceFeature_Tests
     {
         var services = ApplicationTypes
             .Where(type => type is { IsClass: true, IsAbstract: false }
-                           && typeof(IApplicationService).IsAssignableFrom(type))
+                           && typeof(IApplicationService).IsAssignableFrom(type)
+                           && !IntegrationServiceAttribute.IsDefinedOrInherited(type))
             .ToList();
 
         services.ShouldNotBeEmpty("the scan should find the application services");
@@ -49,6 +51,34 @@ public class VaultExtractAppServiceFeature_Tests
         ungated.ShouldBeEmpty(
             $"every application service must derive from {nameof(VaultExtractAppService)} " +
             $"(or carry [RequiresFeature(\"{VaultExtractFeatures.Enable}\")] itself)");
+    }
+
+    /// <summary>
+    /// An integration service is the other side of the same rule: a module in the same host (Vault Index) calls it
+    /// from its own background jobs, with no signed-in user, so it must stay clear of the gate the way the
+    /// pipeline does. The first test exempts it; this one pins that it is actually ungated, so a later move onto
+    /// <see cref="VaultExtractAppService"/> fails here instead of stopping that module's ingestion under an
+    /// edition-granted default.
+    /// </summary>
+    [Fact]
+    public void Integration_services_should_not_require_the_VaultExtract_feature()
+    {
+        var integrationServices = ApplicationTypes
+            .Where(type => type is { IsClass: true, IsAbstract: false }
+                           && typeof(IApplicationService).IsAssignableFrom(type)
+                           && IntegrationServiceAttribute.IsDefinedOrInherited(type))
+            .ToList();
+
+        integrationServices.ShouldNotBeEmpty("the scan should find the integration services");
+
+        var gated = integrationServices
+            .Where(RequiresVaultExtractFeature)
+            .Select(type => type.FullName)
+            .ToList();
+
+        gated.ShouldBeEmpty(
+            "an integration service is called with no signed-in user and must not carry the " +
+            $"{VaultExtractFeatures.Enable} gate");
     }
 
     /// <summary>

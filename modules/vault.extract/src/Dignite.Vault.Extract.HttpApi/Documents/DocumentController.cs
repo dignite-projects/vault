@@ -32,6 +32,13 @@ public class DocumentController : VaultExtractController, IDocumentAppService
         return _documentAppService.FindForCallerAsync(id);
     }
 
+    // An in-process use case for a module in the same host (Vault Index filters its own rows by it), not part of the
+    // REST contract: kept off the routable surface the same way as FindForCallerAsync above.
+    Task<DocumentReadScopeDto> IDocumentAppService.GetReadScopeAsync()
+    {
+        return _documentAppService.GetReadScopeAsync();
+    }
+
     [HttpGet]
     public virtual Task<PagedResultDto<DocumentListItemDto>> GetListAsync(GetDocumentListInput input)
     {

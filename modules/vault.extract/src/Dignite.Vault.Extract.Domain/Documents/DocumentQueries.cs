@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace Dignite.Vault.Extract.Documents;
 
@@ -30,6 +31,20 @@ namespace Dignite.Vault.Extract.Documents;
 /// </summary>
 public static class DocumentQueries
 {
+    /// <summary>
+    /// A document downstream may consume: <c>Ready</c>, not a container, with a confirmed type — exactly the set
+    /// <c>DocumentReadyEto</c> is published for. A container reaches <c>Ready</c> lifecycle too, but it has no type
+    /// and <c>DocumentReadyEventHandler</c> suppresses its event; its sub-documents are what downstream consumes.
+    /// The type term is already implied by the Ready gate and is stated anyway, so a row that broke the invariant is
+    /// withheld rather than handed out typeless.
+    /// <para>
+    /// The integration service's single-document lookup and its enumeration both narrow through this one
+    /// predicate, so "what can be pulled" and "what was announced" cannot drift apart.
+    /// </para>
+    /// </summary>
+    public static Expression<Func<Document, bool>> ReadyForConsumers { get; } =
+        d => d.LifecycleStatus == DocumentLifecycleStatus.Ready && !d.IsContainer && d.DocumentTypeId != null;
+
     /// <summary>
     /// Narrows <paramref name="query"/> by every non-null member of <paramref name="filter"/>, AND-combined.
     /// Null members are absent filters, never a filter for "none".

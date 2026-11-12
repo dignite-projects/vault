@@ -17,7 +17,7 @@ Payloads are thin (ID + key metadata); a consumer pulls the details through REST
 | `DocumentUploadedEto` | upload completed | No |
 | `DocumentTextExtractedEto` | text extraction completed; fires again after a re-parse, because the Markdown was replaced | No |
 | `DocumentClassifiedEto` | classification completed | No |
-| `DocumentReadyEto` | the pipeline is complete and no blocking review reason is set; fires again when field extraction re-runs on a Ready document, or an operator edits its fields | **Yes** |
+| `DocumentReadyEto` | the pipeline is complete and no blocking review reason is set; fires again when field extraction re-runs on a Ready document, or an operator edits its fields or corrects its Markdown | **Yes** |
 
 A derived sub-document (`OriginDocumentId` set) has no blob of its own, so its `DocumentUploadedEto` carries `FileName = null`, `FileSize = 0`, `ContentType = null`. A consumer that sums `FileSize` for storage or quota therefore does not count the parent's bytes again.
 

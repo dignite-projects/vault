@@ -78,6 +78,7 @@ scans · photos · PDFs · Office files
 - [REST API](egress/rest-api.md) — reading documents and field values, filters, the endpoint reference
 - [MCP Server](egress/mcp-server.md) — resources and search tools for AI clients, OAuth discovery, tenant scope
 - [Integration Events](egress/integration-events.md) — the distributed event contract, the Ready gate, delivery semantics
+- [In-Process Integration](egress/in-process-integration.md) — reading Ready documents and a user's read scope from a module in the same host
 - [Data Download](egress/data-download.md) — CSV / XLSX download of the document list
 - [Operator Notifications](egress/operator-notifications.md) — in-app notifications for the uploader (not part of the egress contract)
 
