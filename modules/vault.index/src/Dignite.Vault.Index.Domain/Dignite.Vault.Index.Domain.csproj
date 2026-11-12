@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>Domain layer of Dignite Vault Index: index profiles, indexed documents, chunks, compiled artifacts, index runs and embedding generations.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.Ddd.Domain" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Domain.Shared\Dignite.Vault.Index.Domain.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>Application layer of Dignite Vault Index: event handlers and ingestion jobs fed by Vault Extract, and the retrieval pipeline.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.Ddd.Application" />
+    <PackageReference Include="Volo.Abp.BackgroundJobs" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Application.Contracts\Dignite.Vault.Index.Application.Contracts.csproj" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Domain\Dignite.Vault.Index.Domain.csproj" />
+    <!-- Extract's egress contract only: the integration service (ingestion) and the read scope (retrieval).
+         etc/scripts/check-module-references.mjs fails the build on any other Extract project. -->
+    <ProjectReference Include="..\..\..\vault.extract\src\Dignite.Vault.Extract.Application.Contracts\Dignite.Vault.Extract.Application.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

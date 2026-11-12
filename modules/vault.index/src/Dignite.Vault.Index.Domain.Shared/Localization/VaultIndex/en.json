@@ -1,0 +1,11 @@
+{
+  "culture": "en",
+  "texts": {
+    "Permission:VaultIndex": "Vault Index",
+    "Permission:VaultIndex.Search": "Search the index",
+    "Permission:VaultIndex.Profiles": "Manage index profiles",
+    "Feature:VaultIndex": "Vault Index",
+    "Feature:VaultIndex.Enable": "Enable Vault Index",
+    "Feature:VaultIndex.Enable:Description": "Lets the tenant use Vault Index's application services: search and index management."
+  }
+}

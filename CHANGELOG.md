@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     endpoint and no Angular proxy method.
   - `DocumentAccessScope` exposes `DocumentTypeIds` and `OwnerId`, and `IDocumentRepository` has
     `GetReadyIdsAsync`. A host or test that implements `IDocumentRepository` itself must add it.
+- **Vault Index module skeleton** in `modules/vault.index/` (no features yet, and no packages: its projects are
+  `IsPackable=false` until P0 is complete). The shipped host now depends on it, so **`--migrate-database` creates six
+  `VaultIndex*` tables** through a second migrations context. They use the new `VaultIndex` connection string and fall
+  back to `Default` without one; see [Connection Strings](docs/en/deployment/deployment.md#connection-strings) for the
+  database Index's later storage will need. A module can now pack as a pre-release while the line is stable
+  (`VaultPrereleaseModule` in `common.props`); Index uses it until `Microsoft.Extensions.DataIngestion` is stable.
 
 ### Changed
 

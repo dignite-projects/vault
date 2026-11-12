@@ -1,0 +1,13 @@
+<Project>
+    <PropertyGroup>
+        <AbpProjectType>module</AbpProjectType>
+        <!-- Read by common.props, which only falls back to the Extract values when these are unset. -->
+        <Product>Dignite Vault Index</Product>
+        <PackageTags>abp;rag;retrieval;vector-search;full-text-search;mcp</PackageTags>
+        <!-- Pre-release packages until Microsoft.Extensions.DataIngestion is stable (see common.props). -->
+        <VaultPrereleaseModule>true</VaultPrereleaseModule>
+        <!-- Not packed until P0 is complete and nuget.org's Trusted Publishing policy covers Dignite.Vault.Index.*:
+             the policy covers Dignite.Vault.Extract.* only, so a first push of these IDs would fail the release. -->
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>Entity Framework Core integration of Dignite Vault Index: the provider-neutral DbContext, mappings and repositories. SQL Server's vector and full-text storage is a separate package.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.EntityFrameworkCore" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Domain\Dignite.Vault.Index.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

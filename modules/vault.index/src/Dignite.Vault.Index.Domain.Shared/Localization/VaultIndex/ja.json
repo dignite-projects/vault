@@ -1,0 +1,11 @@
+{
+  "culture": "ja",
+  "texts": {
+    "Permission:VaultIndex": "Vault Index",
+    "Permission:VaultIndex.Search": "インデックスの検索",
+    "Permission:VaultIndex.Profiles": "インデックス設定の管理",
+    "Feature:VaultIndex": "Vault Index",
+    "Feature:VaultIndex.Enable": "Vault Index を有効にする",
+    "Feature:VaultIndex.Enable:Description": "テナントが Vault Index のアプリケーションサービス(検索とインデックス管理)を使えるようにします。"
+  }
+}
