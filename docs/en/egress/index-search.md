@@ -34,7 +34,7 @@ Index holds only what Extract released (`DocumentReadyEto`). A document in Extra
 
 `query` is natural language or keywords, up to 1,000 characters. `documentTypeCode` narrows to one type (a type the caller cannot see finds nothing). `maxResultCount` is 1 to 20, default 8.
 
-Two legs run over the caller's scope and are fused by **reciprocal rank fusion** (k = 60): a **keyword** leg (SQL Server full-text search with the Japanese word breaker) and a **vector** leg (exact cosine distance with the host's embedding model). Fusion reads ranks, not scores, so each hit reports where each leg ranked it:
+Two legs run over the caller's scope and are fused by **reciprocal rank fusion** (k = 60): a **keyword** leg (SQL Server full-text search with the Japanese word breaker) and a **vector** leg (exact cosine distance with the host's embedding model). Fusion reads ranks, not scores, so each hit reports where each leg ranked it. When the host configures a [rerank model](../configuration/ai-provider.md#rerank-model-index), a cross-encoder then reorders the leading 30 fused candidates, reading the query with each chunk and its document title:
 
 ```json
 {
@@ -50,14 +50,17 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
       "textTotalLength": 92,
       "score": 0.0325,
       "keywordRank": 1,
-      "vectorRank": 2
+      "vectorRank": 2,
+      "rerankScore": 0.54
     }
-  ]
+  ],
+  "reranked": true
 }
 ```
 
 - The vector leg always returns the nearest chunks, so a search returns hits even when nothing matches the words; `keywordRank` is `null` for a hit only the vector leg found.
 - A hit's `text` is cut at 2,000 characters (`textTruncated`, `textTotalLength`); read the pointer for the whole chunk.
+- `reranked` says whether the reranker ordered the hits: it is `false` without a rerank model, and when the rerank call failed and the fused order was kept. `rerankScore` and `score` only order the hits of one search.
 - The keyword leg lags writes by about five seconds; the vector leg sees a document as soon as it is indexed.
 - Without Full-Text Search on the database the keyword leg returns nothing and the host logs a warning. See [Connection Strings](../deployment/deployment.md#connection-strings).
 - Search is refused (`VaultIndex:EmbeddingModelChanged`) when the host's embedding model is not the one the index was built with: two models' vectors cannot be compared.

@@ -13,7 +13,7 @@ Dignite Vault Extract delegates every chat-completion call to `Microsoft.Extensi
 | --- | --- | --- |
 | `Vault:Extract` | Provider wiring: endpoint, credentials, model ids | The host only. `VaultExtractHostModule.ConfigureAI` reads it once at startup and registers the keyed `IChatClient` instances |
 | `Vault:ExtractBehavior` | Workflow behavior: prompt language, truncation and size ceilings | The Application layer, through `IOptions<VaultExtractBehaviorOptions>`. `VaultExtractApplicationModule.ConfigureServices` binds the section |
-| `Vault:Index` | The embedding model behind Vault Index | The host only. See [Embedding model](#embedding-model-index) |
+| `Vault:Index` | The embedding and rerank models behind Vault Index | The host only. See [Embedding model](#embedding-model-index) and [Rerank model](#rerank-model-index) |
 
 The split keeps credentials (`ApiKey`) out of any `IOptions<>` that reaches application code, and lets operators tune behavior without touching the provider. Every LLM feature (classification, field extraction, sub-document segmentation, title generation, cabinet suggestion and the admin-side drafting helpers) shares the same provider registration.
 
@@ -84,10 +84,33 @@ On SiliconFlow:
 "Vault": {
   "Index": {
     "EmbeddingModelId": "BAAI/bge-m3",
-    "EmbeddingDimensions": ""
+    "EmbeddingDimensions": "",
+    "RerankModelId": "BAAI/bge-reranker-v2-m3"
   }
 }
 ```
+
+## Rerank model (`Index`)
+
+Search can reorder its leading candidates with a rerank model, a cross-encoder that reads the query and each candidate together. On the [evaluation set](../deployment/index-status.md#measuring-retrieval) it raises the share of questions whose answering section comes first from 0.76 to 0.96. Without one, search returns the fused order of its two legs.
+
+| Key | Required | Description |
+| --- | --- | --- |
+| `RerankModelId` | To rerank | The rerank model, such as `BAAI/bge-reranker-v2-m3`. Unset leaves reranking off |
+| `RerankEndpoint` | No | API base URL; `/rerank` is appended. Defaults to `Vault:Extract:Endpoint` |
+| `RerankApiKey` | No | Key for that provider. Defaults to `Vault:Extract:ApiKey` |
+
+The host calls the rerank API that Cohere introduced and Jina, SiliconFlow and vLLM serve in the same shape (`POST /rerank` with `model`, `query` and `documents`, answered by `results` of `index` and `relevance_score`). OpenAI has no rerank API, so the committed `appsettings.json` leaves it off. A call takes about half a second for 30 candidates on SiliconFlow and times out after 15 seconds. When it fails, search logs a warning and returns the fused order with `reranked: false` rather than failing.
+
+`Vault:IndexSearch` tunes the ranking:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `KeywordWeight` | `1` | The keyword leg's weight in reciprocal rank fusion |
+| `VectorWeight` | `1` | The vector leg's weight |
+| `RerankCandidateCount` | `30` | Fused candidates the reranker reads (at most 100) |
+
+Keep the weights equal. Down-weighting the keyword leg helped paraphrased questions on the evaluation set without a reranker, but at a keyword weight of 0.5 or less a chunk only the keyword leg finds ranks below every vector candidate. That is how an invoice number or a name gets lost in a large corpus. A reranker fixes the paraphrase case without that cost.
 
 ## Picking a Chat Model
 

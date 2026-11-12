@@ -24,6 +24,12 @@ public class IndexSearchResultDto
 {
     /// <summary>Best first.</summary>
     public List<IndexSearchHitDto> Hits { get; set; } = new();
+
+    /// <summary>
+    /// The host's reranker ordered the hits. <c>false</c> when none is configured, or when it failed and the fused order
+    /// was kept.
+    /// </summary>
+    public bool Reranked { get; set; }
 }
 
 public class IndexSearchHitDto
@@ -49,6 +55,9 @@ public class IndexSearchHitDto
 
     /// <summary>The reciprocal-rank-fusion score: only for ordering, not comparable across searches.</summary>
     public double Score { get; set; }
+
+    /// <summary>The reranker's score when it ordered the hits; only for ordering, not comparable across searches or models.</summary>
+    public double? RerankScore { get; set; }
 
     /// <summary>The chunk's rank in the keyword leg, from 1; <c>null</c> when that leg did not return it.</summary>
     public int? KeywordRank { get; set; }

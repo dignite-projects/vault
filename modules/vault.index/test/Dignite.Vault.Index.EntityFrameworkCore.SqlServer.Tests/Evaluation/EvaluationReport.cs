@@ -12,7 +12,7 @@ public sealed record CaseResult(EvaluationCase Case, string Mode, int? DocumentR
 /// <summary>
 /// The metrics of the design: hit rate (Hit@k, the share of cases whose answer is in the top k) and mean reciprocal
 /// rank over the top 10. Document level counts a hit from the expected document; passage level also needs the
-/// expected heading, and covers only the cases that name one.
+/// expected heading, and covers only the cases that name one. Each table has one row per ranking variant.
 /// </summary>
 public static class EvaluationReport
 {
@@ -20,8 +20,9 @@ public static class EvaluationReport
 
     private static readonly int[] Ks = [1, 3, 5, 10];
 
-    public static string ToMarkdown(string title, IReadOnlyList<CaseResult> results, IEnumerable<string> notes)
+    public static string ToMarkdown(string title, IReadOnlyList<CaseResult> results, IEnumerable<string> notes, string primaryMode)
     {
+        var modes = results.Select(r => r.Mode).Distinct().ToList();
         var builder = new StringBuilder();
         builder.AppendLine("# " + title).AppendLine();
         foreach (var note in notes)
@@ -30,39 +31,43 @@ public static class EvaluationReport
         }
 
         builder.AppendLine();
-        Table(builder, "Document level, all cases", results, r => r.DocumentRank, _ => true);
-        Table(builder, "Passage level (written questions)", results, r => r.PassageRank, r => r.Case.Heading is not null);
-        Table(builder, "Document level, field cases", results, r => r.DocumentRank, r => r.Case.Source == "field");
-        Table(builder, "Document level, written questions in Japanese", results, r => r.DocumentRank, r => r.Case.Source == "question" && r.Case.Language == "ja");
-        Table(builder, "Document level, written questions in Chinese and English", results, r => r.DocumentRank, r => r.Case.Language is "zh" or "en");
+        Table(builder, "Document level, all cases", modes, results, r => r.DocumentRank, _ => true);
+        Table(builder, "Passage level (written questions)", modes, results, r => r.PassageRank, r => r.Case.Heading is not null);
+        Table(builder, "Document level, field cases", modes, results, r => r.DocumentRank, r => r.Case.Source == "field");
+        Table(builder, "Passage level, written questions in Japanese", modes, results, r => r.PassageRank, r => r.Case.Heading is not null && r.Case.Language == "ja");
+        Table(builder, "Passage level, written questions in Chinese and English", modes, results, r => r.PassageRank, r => r.Case.Heading is not null && r.Case.Language is "zh" or "en");
 
-        builder.AppendLine("## Fused misses at passage level").AppendLine();
-        builder.AppendLine("| Query | Expected | Document rank | Keyword | Vector |").AppendLine("|---|---|---|---|---|");
-        var byCase = results.GroupBy(r => r.Case).ToList();
-        foreach (var group in byCase)
+        builder.AppendLine($"## Misses of `{primaryMode}` (answer not first)").AppendLine();
+        builder.Append("| Query | Expected");
+        foreach (var mode in modes)
         {
-            var fused = group.Single(r => r.Mode == "fused");
-            var miss = fused.Case.Heading is null ? fused.DocumentRank != 1 : fused.PassageRank != 1;
-            if (!miss)
+            builder.Append(" | ").Append(mode);
+        }
+
+        builder.AppendLine(" |").Append("|---|---").Append(string.Concat(modes.Select(_ => "|---"))).AppendLine("|");
+        foreach (var group in results.GroupBy(r => r.Case))
+        {
+            var primary = group.Single(r => r.Mode == primaryMode);
+            if (Rank(primary) == 1)
             {
                 continue;
             }
 
-            string Rank(string mode)
+            builder.Append("| ").Append(primary.Case.Query.Replace("|", "\\|")).Append(" | ")
+                .Append(primary.Case.Document).Append(primary.Case.Heading is null ? "" : " / " + primary.Case.Heading);
+            foreach (var mode in modes)
             {
-                var r = group.Single(x => x.Mode == mode);
-                var rank = r.Case.Heading is null ? r.DocumentRank : r.PassageRank;
-                return rank?.ToString(CultureInfo.InvariantCulture) ?? "-";
+                builder.Append(" | ").Append(Rank(group.Single(r => r.Mode == mode))?.ToString(CultureInfo.InvariantCulture) ?? "-");
             }
 
-            builder.Append("| ").Append(fused.Case.Query.Replace("|", "\\|")).Append(" | ")
-                .Append(fused.Case.Document).Append(fused.Case.Heading is null ? "" : " / " + fused.Case.Heading).Append(" | ")
-                .Append(fused.DocumentRank?.ToString(CultureInfo.InvariantCulture) ?? "-").Append(" | ")
-                .Append(Rank("keyword")).Append(" | ").Append(Rank("vector")).AppendLine(" |");
+            builder.AppendLine(" |");
         }
 
         return builder.ToString();
     }
+
+    /// <summary>The rank a case is judged by: the passage when it names a heading, the document otherwise.</summary>
+    public static int? Rank(CaseResult result) => result.Case.Heading is null ? result.DocumentRank : result.PassageRank;
 
     public static (int Count, double[] HitAtK, double Mrr) Measure(IEnumerable<int?> ranks)
     {
@@ -77,11 +82,17 @@ public static class EvaluationReport
         return (list.Count, hits, mrr);
     }
 
-    private static void Table(StringBuilder builder, string heading, IReadOnlyList<CaseResult> results, Func<CaseResult, int?> rank, Func<CaseResult, bool> include)
+    private static void Table(
+        StringBuilder builder,
+        string heading,
+        IReadOnlyList<string> modes,
+        IReadOnlyList<CaseResult> results,
+        Func<CaseResult, int?> rank,
+        Func<CaseResult, bool> include)
     {
         builder.AppendLine("## " + heading).AppendLine();
         builder.AppendLine("| Ranking | Cases | Hit@1 | Hit@3 | Hit@5 | Hit@10 | MRR@10 |").AppendLine("|---|---|---|---|---|---|---|");
-        foreach (var mode in new[] { "fused", "keyword", "vector" })
+        foreach (var mode in modes)
         {
             var (count, hits, mrr) = Measure(results.Where(r => r.Mode == mode && include(r)).Select(rank));
             builder.Append("| ").Append(mode).Append(" | ").Append(count);

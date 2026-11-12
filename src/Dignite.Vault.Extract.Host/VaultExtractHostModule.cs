@@ -760,6 +760,8 @@ public class VaultExtractHostModule : AbpModule
         context.Services.Configure<VaultIndexSqlServerOptions>(options =>
             options.VectorDimensions = Data.VaultIndexHostDbContext.VectorDimensions);
 
+        ConfigureVaultIndexReranker(context, configuration);
+
         var modelId = configuration["Vault:Index:EmbeddingModelId"];
         if (string.IsNullOrWhiteSpace(modelId))
         {
@@ -792,6 +794,31 @@ public class VaultExtractHostModule : AbpModule
                 _ => client.GetEmbeddingClient(modelId).AsIEmbeddingGenerator(dimensions))
             .UseOpenTelemetry()
             .UseLogging();
+    }
+
+    /// <summary>
+    /// Vault Index's reranker, from <c>Vault:Index:RerankModelId</c>, over the Cohere / Jina rerank API (SiliconFlow,
+    /// Jina, Cohere, vLLM; OpenAI has none). Optional: without it search keeps the fused order. Uses Extract's endpoint and
+    /// key unless Index has its own.
+    /// </summary>
+    private static void ConfigureVaultIndexReranker(ServiceConfigurationContext context, IConfiguration configuration)
+    {
+        var modelId = configuration["Vault:Index:RerankModelId"];
+        if (string.IsNullOrWhiteSpace(modelId))
+        {
+            return;
+        }
+
+        context.Services.AddVaultIndexHttpReranker(options =>
+        {
+            options.ModelId = modelId;
+            options.Endpoint = configuration["Vault:Index:RerankEndpoint"] is { Length: > 0 } ownEndpoint
+                ? ownEndpoint
+                : configuration["Vault:Extract:Endpoint"]!;
+            options.ApiKey = configuration["Vault:Index:RerankApiKey"] is { Length: > 0 } ownKey
+                ? ownKey
+                : configuration["Vault:Extract:ApiKey"]!;
+        });
     }
 
     private static ReasoningEffort? ReadReasoningEffort(IConfiguration configuration)

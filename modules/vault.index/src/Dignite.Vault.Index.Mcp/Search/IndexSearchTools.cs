@@ -60,8 +60,10 @@ public sealed class IndexSearchTools
                 Text = PromptBoundary.WrapDocument(h.Text),
                 TextTruncated = h.TextTruncated,
                 KeywordRank = h.KeywordRank,
-                VectorRank = h.VectorRank
-            }).ToList()
+                VectorRank = h.VectorRank,
+                RerankScore = h.RerankScore
+            }).ToList(),
+            Reranked = result.Reranked
         };
     }
 
@@ -152,6 +154,9 @@ public sealed class IndexSearchTools
 public sealed record IndexSearchToolResult
 {
     public required List<IndexSearchToolHit> Hits { get; init; }
+
+    /// <summary>A rerank model ordered the hits.</summary>
+    public bool Reranked { get; init; }
 }
 
 public sealed record IndexSearchToolHit
@@ -176,6 +181,8 @@ public sealed record IndexSearchToolHit
     public int? KeywordRank { get; init; }
 
     public int? VectorRank { get; init; }
+
+    public double? RerankScore { get; init; }
 }
 
 public sealed record IndexOutlineToolResult

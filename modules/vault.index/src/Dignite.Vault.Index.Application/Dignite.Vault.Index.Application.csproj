@@ -22,6 +22,7 @@
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" />
     <ProjectReference Include="..\Dignite.Vault.Index.Application.Contracts\Dignite.Vault.Index.Application.Contracts.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Index.Domain\Dignite.Vault.Index.Domain.csproj" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Abstractions\Dignite.Vault.Index.Abstractions.csproj" />
     <!-- Extract's egress contract only: the integration service (ingestion) and the read scope (retrieval).
          etc/scripts/check-module-references.mjs fails the build on any other Extract project. -->
     <ProjectReference Include="..\..\..\vault.extract\src\Dignite.Vault.Extract.Application.Contracts\Dignite.Vault.Extract.Application.Contracts.csproj" />

@@ -1,5 +1,6 @@
 <Solution>
     <Folder Name="/src/">
+        <Project Path="src/Dignite.Vault.Index.Abstractions/Dignite.Vault.Index.Abstractions.csproj" />
         <Project Path="src/Dignite.Vault.Index.Domain.Shared/Dignite.Vault.Index.Domain.Shared.csproj" />
         <Project Path="src/Dignite.Vault.Index.Domain/Dignite.Vault.Index.Domain.csproj" />
         <Project Path="src/Dignite.Vault.Index.Application.Contracts/Dignite.Vault.Index.Application.Contracts.csproj" />
@@ -8,6 +9,7 @@
         <Project Path="src/Dignite.Vault.Index.EntityFrameworkCore.SqlServer/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.csproj" />
         <Project Path="src/Dignite.Vault.Index.HttpApi/Dignite.Vault.Index.HttpApi.csproj" />
         <Project Path="src/Dignite.Vault.Index.Mcp/Dignite.Vault.Index.Mcp.csproj" />
+        <Project Path="src/Dignite.Vault.Index.Reranking.Http/Dignite.Vault.Index.Reranking.Http.csproj" />
     </Folder>
 
     <Folder Name="/test/">
