@@ -21,4 +21,7 @@ public interface IChunkScopeFields : IReadScopeFields
 
     /// <summary>The document is out of retrieval for everyone: in Extract's recycle bin, or withheld after a reclassification.</summary>
     bool IsHidden { get; }
+
+    /// <summary>An operator took this one chunk out of retrieval.</summary>
+    bool IsDisabled { get; }
 }

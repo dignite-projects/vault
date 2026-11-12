@@ -75,6 +75,7 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
                 DocumentTypeId = vector.DocumentTypeId,
                 OwnerId = vector.OwnerId,
                 IsHidden = vector.IsHidden,
+                IsDisabled = vector.IsDisabled,
                 Embedding = new SqlVector<float>(vector.Vector)
             });
         }
@@ -98,6 +99,14 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
                     .SetProperty(v => v.OwnerId, ownerId)
                     .SetProperty(v => v.IsHidden, isHidden),
                 cancellationToken);
+    }
+
+    public virtual async Task SetChunkDisabledAsync(Guid chunkId, bool isDisabled, CancellationToken cancellationToken = default)
+    {
+        var dbContext = await _dbContextProvider.GetDbContextAsync();
+        await dbContext.ChunkVectors
+            .Where(v => v.ChunkId == chunkId)
+            .ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDisabled, isDisabled), cancellationToken);
     }
 
     public virtual async Task DeleteDocumentAsync(Guid documentId, CancellationToken cancellationToken = default)

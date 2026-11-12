@@ -30,27 +30,18 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
     private readonly IndexReadScopeResolver _scopeResolver;
     private readonly IChunkRepository _chunkRepository;
     private readonly IRepository<IndexedDocument, Guid> _documentRepository;
-    private readonly IChunkSearchIndex _searchIndex;
-    private readonly IndexGenerationManager _generationManager;
-    private readonly IndexEmbedder _embedder;
-    private readonly IndexRanker _ranker;
+    private readonly IndexSearchPipeline _pipeline;
 
     public IndexSearchAppService(
         IndexReadScopeResolver scopeResolver,
         IChunkRepository chunkRepository,
         IRepository<IndexedDocument, Guid> documentRepository,
-        IChunkSearchIndex searchIndex,
-        IndexGenerationManager generationManager,
-        IndexEmbedder embedder,
-        IndexRanker ranker)
+        IndexSearchPipeline pipeline)
     {
         _scopeResolver = scopeResolver;
         _chunkRepository = chunkRepository;
         _documentRepository = documentRepository;
-        _searchIndex = searchIndex;
-        _generationManager = generationManager;
-        _embedder = embedder;
-        _ranker = ranker;
+        _pipeline = pipeline;
     }
 
     [UnitOfWork(isTransactional: false)]
@@ -69,34 +60,13 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             return new IndexSearchResultDto();
         }
 
-        var vectorMatches = await SearchVectorsAsync(query, scope);
-        var keywordMatches = await _searchIndex.SearchKeywordsAsync(query, scope, IndexSearchConsts.CandidatesPerLeg);
-        var fused = _ranker.Fuse(keywordMatches, vectorMatches);
+        // Twice the hits are loaded: a chunk can leave the scope between the legs and the load, and is dropped there.
+        var outcome = await _pipeline.RunAsync(query, scope, _pipeline.DefaultSettings, take * 2);
+        var result = new IndexSearchResultDto { Reranked = outcome.Reranked };
+        var chunks = outcome.Chunks;
+        var documents = outcome.Documents;
 
-        var result = new IndexSearchResultDto();
-        if (fused.Count == 0)
-        {
-            return result;
-        }
-
-        // Load the winners plus a margin (or as many as the reranker reads): a chunk can leave the scope between the legs
-        // and this read (its document went to the recycle bin), and it is dropped here rather than returned.
-        var reranker = _ranker.Reranker;
-        var candidates = fused.Take(Math.Max(take * 2, reranker is null ? 0 : _ranker.RerankCandidateCount)).ToList();
-        var ids = candidates.Select(c => c.ChunkId).ToList();
-        var chunks = (await AsyncExecuter.ToListAsync(
-                ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope).Where(c => ids.Contains(c.Id))))
-            .ToDictionary(c => c.Id);
-        var documents = await GetDocumentsAsync(chunks.Values.Select(c => c.DocumentId));
-
-        var texts = chunks.Values.ToDictionary(
-            c => c.Id,
-            c => ChunkContext.Compose(documents.GetValueOrDefault(c.DocumentId)?.Title, c.Text));
-        var reranked = await _ranker.RerankAsync(query, candidates, texts, reranker);
-        result.Reranked = reranked is not null;
-        var ranked = reranked ?? candidates.Select(c => new RankedChunk(c, null)).ToList();
-
-        foreach (var (candidate, rerankScore) in ranked)
+        foreach (var (candidate, rerankScore) in outcome.Ranked)
         {
             if (!chunks.TryGetValue(candidate.ChunkId, out var chunk))
             {
@@ -258,37 +228,6 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             TextTotalLength = totalLength,
             ChunkCount = textLengths.Count
         };
-    }
-
-    /// <summary>
-    /// The vector leg, when there is one. Searching with a model other than the one the serving vectors came from would
-    /// compare two vector spaces, so it is refused, like ingestion refuses it.
-    /// </summary>
-    protected virtual async Task<IReadOnlyList<ChunkMatch>> SearchVectorsAsync(string query, ChunkSearchScope scope)
-    {
-        var serving = await _generationManager.FindServingAsync();
-        if (serving is null)
-        {
-            return [];
-        }
-
-        if (!_embedder.IsConfigured)
-        {
-            throw new BusinessException(VaultIndexErrorCodes.EmbeddingGeneratorMissing);
-        }
-
-        var modelId = _embedder.GetModelId();
-        if (!string.Equals(modelId, serving.ModelId, StringComparison.Ordinal))
-        {
-            throw new BusinessException(VaultIndexErrorCodes.EmbeddingModelChanged)
-                .WithData("ModelId", modelId)
-                .WithData("Dimensions", serving.Dimensions)
-                .WithData("ServingModelId", serving.ModelId)
-                .WithData("ServingDimensions", serving.Dimensions);
-        }
-
-        var embedding = await _embedder.EmbedAsync([query]);
-        return await _searchIndex.SearchVectorsAsync(serving.Id, embedding.Vectors[0], scope, IndexSearchConsts.CandidatesPerLeg);
     }
 
     protected virtual Task<ChunkSearchScope> GetScopeAsync(

@@ -1,0 +1,257 @@
+<div class="container-fluid">
+  <h2 class="h4 mb-3">{{ 'VaultIndex::Menu:VaultIndex.SearchTest' | abpLocalization }}</h2>
+
+  <form class="card mb-4" (ngSubmit)="run()">
+    <div class="card-body">
+      <div class="row g-2 mb-3">
+        <div class="col-md-9">
+          <label class="form-label small" for="test-query">{{ 'VaultIndex::SearchTest:Query' | abpLocalization }}</label>
+          <input
+            id="test-query"
+            name="query"
+            type="search"
+            class="form-control"
+            maxlength="1000"
+            [ngModel]="form().query"
+            (ngModelChange)="update('query', $event)"
+          />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small" for="test-type">{{ 'VaultIndex::SearchTest:DocumentTypeCode' | abpLocalization }}</label>
+          <input
+            id="test-type"
+            name="documentTypeCode"
+            class="form-control"
+            [placeholder]="'VaultIndex::SearchTest:AllTypes' | abpLocalization"
+            [ngModel]="form().documentTypeCode"
+            (ngModelChange)="update('documentTypeCode', $event)"
+          />
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <div class="d-flex align-items-center mb-1">
+          <span class="small fw-semibold me-2">{{ 'VaultIndex::SearchTest:FieldFilters' | abpLocalization }}</span>
+          <button type="button" class="btn btn-link btn-sm p-0" (click)="addFilter()">
+            <i class="fas fa-plus me-1"></i>{{ 'VaultIndex::SearchTest:AddFieldFilter' | abpLocalization }}
+          </button>
+        </div>
+        @for (row of form().fieldFilters; track $index; let i = $index) {
+          <div class="row g-2 mb-1">
+            <div class="col-md-3">
+              <input
+                class="form-control form-control-sm"
+                [name]="'filter-name-' + i"
+                [placeholder]="'VaultIndex::SearchTest:FieldName' | abpLocalization"
+                [ngModel]="row.name"
+                (ngModelChange)="updateFilter(i, 'name', $event)"
+              />
+            </div>
+            <div class="col-md-3">
+              <input
+                class="form-control form-control-sm"
+                [name]="'filter-value-' + i"
+                [placeholder]="'VaultIndex::SearchTest:FieldValue' | abpLocalization"
+                [ngModel]="row.value"
+                (ngModelChange)="updateFilter(i, 'value', $event)"
+              />
+            </div>
+            <div class="col-md-2">
+              <input
+                class="form-control form-control-sm"
+                [name]="'filter-min-' + i"
+                [placeholder]="'VaultIndex::SearchTest:FieldMin' | abpLocalization"
+                [ngModel]="row.min"
+                (ngModelChange)="updateFilter(i, 'min', $event)"
+              />
+            </div>
+            <div class="col-md-2">
+              <input
+                class="form-control form-control-sm"
+                [name]="'filter-max-' + i"
+                [placeholder]="'VaultIndex::SearchTest:FieldMax' | abpLocalization"
+                [ngModel]="row.max"
+                (ngModelChange)="updateFilter(i, 'max', $event)"
+              />
+            </div>
+            <div class="col-md-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" (click)="removeFilter(i)">
+                {{ 'VaultIndex::SearchTest:Remove' | abpLocalization }}
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-2">
+          <label class="form-label small" for="test-kw">{{ 'VaultIndex::SearchTest:KeywordWeight' | abpLocalization }}</label>
+          <input
+            id="test-kw"
+            name="keywordWeight"
+            class="form-control form-control-sm"
+            inputmode="decimal"
+            [class.is-invalid]="invalid().includes('keywordWeight')"
+            [placeholder]="'VaultIndex::SearchTest:Default' | abpLocalization"
+            [ngModel]="form().keywordWeight"
+            (ngModelChange)="update('keywordWeight', $event)"
+          />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small" for="test-vec">{{ 'VaultIndex::SearchTest:VectorWeight' | abpLocalization }}</label>
+          <input
+            id="test-vec"
+            name="vectorWeight"
+            class="form-control form-control-sm"
+            inputmode="decimal"
+            [class.is-invalid]="invalid().includes('vectorWeight')"
+            [placeholder]="'VaultIndex::SearchTest:Default' | abpLocalization"
+            [ngModel]="form().vectorWeight"
+            (ngModelChange)="update('vectorWeight', $event)"
+          />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small" for="test-per-leg">{{ 'VaultIndex::SearchTest:CandidatesPerLeg' | abpLocalization }}</label>
+          <input
+            id="test-per-leg"
+            name="candidatesPerLeg"
+            class="form-control form-control-sm"
+            inputmode="numeric"
+            [class.is-invalid]="invalid().includes('candidatesPerLeg')"
+            [placeholder]="'VaultIndex::SearchTest:Default' | abpLocalization"
+            [ngModel]="form().candidatesPerLeg"
+            (ngModelChange)="update('candidatesPerLeg', $event)"
+          />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small" for="test-rerank-count">{{ 'VaultIndex::SearchTest:RerankCandidateCount' | abpLocalization }}</label>
+          <input
+            id="test-rerank-count"
+            name="rerankCandidateCount"
+            class="form-control form-control-sm"
+            inputmode="numeric"
+            [class.is-invalid]="invalid().includes('rerankCandidateCount')"
+            [placeholder]="'VaultIndex::SearchTest:Default' | abpLocalization"
+            [ngModel]="form().rerankCandidateCount"
+            (ngModelChange)="update('rerankCandidateCount', $event)"
+          />
+        </div>
+        <div class="col-6 col-md-2">
+          <div class="form-check mb-1">
+            <input
+              id="test-rerank"
+              name="rerank"
+              type="checkbox"
+              class="form-check-input"
+              [ngModel]="form().rerank"
+              (ngModelChange)="update('rerank', $event)"
+            />
+            <label class="form-check-label small" for="test-rerank">{{ 'VaultIndex::SearchTest:Rerank' | abpLocalization }}</label>
+          </div>
+        </div>
+        <div class="col-6 col-md-2 text-end">
+          <button type="submit" class="btn btn-primary btn-sm" [disabled]="!canRun()">
+            @if (running()) {
+              <i class="fas fa-spinner fa-spin me-1"></i>
+            }
+            {{ 'VaultIndex::SearchTest:Run' | abpLocalization }}
+          </button>
+        </div>
+      </div>
+      @if (invalid().length > 0) {
+        <div class="small text-danger mt-2">{{ 'VaultIndex::SearchTest:InvalidSetting' | abpLocalization }}</div>
+      }
+      <div class="small text-muted mt-2">{{ 'VaultIndex::SearchTest:Hint' | abpLocalization }}</div>
+    </div>
+  </form>
+
+  @if (result(); as r) {
+    <div class="card">
+      <div class="card-header d-flex flex-wrap gap-3 align-items-center small">
+        <span>
+          {{ 'VaultIndex::SearchTest:Weights' | abpLocalization: (r.keywordWeight | number) ?? '' : (r.vectorWeight | number) ?? '' }}
+        </span>
+        <span>
+          {{ 'VaultIndex::SearchTest:LegCounts' | abpLocalization: '' + r.keywordCandidateCount : '' + r.vectorCandidateCount : '' + r.candidatesPerLeg }}
+        </span>
+        <span>
+          @if (r.reranked) {
+            {{ 'VaultIndex::SearchTest:RerankedBy' | abpLocalization: r.rerankModelId ?? '' : '' + r.rerankCandidateCount }}
+          } @else if (!r.rerankAvailable) {
+            {{ 'VaultIndex::SearchTest:NoRerankModel' | abpLocalization }}
+          } @else {
+            {{ 'VaultIndex::SearchTest:NotReranked' | abpLocalization }}
+          }
+        </span>
+        <span class="text-muted">
+          {{ 'VaultIndex::SearchTest:Timings' | abpLocalization: '' + r.keywordMilliseconds : '' + r.vectorMilliseconds : '' + r.rerankMilliseconds }}
+        </span>
+        <select
+          class="form-select form-select-sm w-auto ms-auto"
+          [attr.aria-label]="'VaultIndex::SearchTest:OrderBy' | abpLocalization"
+          [ngModel]="order()"
+          (ngModelChange)="order.set($event)"
+        >
+          @for (o of orders; track o) {
+            <option [ngValue]="o">{{ 'VaultIndex::SearchTest:Order.' + o | abpLocalization }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small">
+          <thead>
+            <tr>
+              <th class="text-end">{{ 'VaultIndex::SearchTest:Rank' | abpLocalization }}</th>
+              <th class="text-end">{{ 'VaultIndex::SearchTest:FusedRank' | abpLocalization }}</th>
+              <th class="text-end">{{ 'VaultIndex::SearchTest:KeywordRank' | abpLocalization }}</th>
+              <th class="text-end">{{ 'VaultIndex::SearchTest:VectorRank' | abpLocalization }}</th>
+              <th class="text-end">{{ 'VaultIndex::SearchTest:RerankScore' | abpLocalization }}</th>
+              <th>{{ 'VaultIndex::SearchTest:Passage' | abpLocalization }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of candidates(); track c.chunkId) {
+              <tr>
+                <td class="text-end fw-semibold">{{ c.rank }}</td>
+                <td class="text-end">
+                  {{ c.fusedRank }}
+                  <div class="text-muted">{{ c.fusedScore | number: '1.4-4' }}</div>
+                </td>
+                <td class="text-end">
+                  {{ c.keywordRank ?? '—' }}
+                  @if (c.keywordScore !== null && c.keywordScore !== undefined) {
+                    <div class="text-muted">{{ c.keywordScore | number: '1.0-2' }}</div>
+                  }
+                </td>
+                <td class="text-end">
+                  {{ c.vectorRank ?? '—' }}
+                  @if (c.vectorDistance !== null && c.vectorDistance !== undefined) {
+                    <div class="text-muted">{{ c.vectorDistance | number: '1.3-3' }}</div>
+                  }
+                </td>
+                <td class="text-end">{{ c.rerankScore !== null && c.rerankScore !== undefined ? (c.rerankScore | number: '1.4-4') : '—' }}</td>
+                <td class="text-break">
+                  <div>
+                    <a [routerLink]="['/vault-index/documents', c.documentId, 'chunks']">{{ c.documentTitle || ('VaultIndex::IndexStatus:Untitled' | abpLocalization) }}</a>
+                    @if (c.documentTypeCode) {
+                      <code class="ms-2">{{ c.documentTypeCode }}</code>
+                    }
+                  </div>
+                  @if (c.headingPath) {
+                    <div class="text-muted">{{ c.headingPath }}</div>
+                  }
+                  <div style="white-space: pre-wrap">{{ c.text }}@if (c.textTruncated) {…}</div>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">{{ 'VaultIndex::SearchTest:NoCandidates' | abpLocalization }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>

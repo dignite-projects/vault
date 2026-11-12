@@ -34,6 +34,7 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
         var a = await AddAsync(TypeA, OwnerX, "a", [1, 0, 0, 0]);
         var b = await AddAsync(TypeB, OwnerY, "b", [0.8f, 0.6f, 0, 0]);
         await AddAsync(TypeA, OwnerX, "hidden", [1, 0, 0, 0], isHidden: true);
+        await AddAsync(TypeA, OwnerX, "disabled", [1, 0, 0, 0], isDisabled: true);
         await AddAsync(TypeA, OwnerX, "other tenant", [1, 0, 0, 0], tenantId: OtherTenant);
         await AddVectorAsync(a, Generation2, [0, 0, 0, 1]);
 
@@ -111,6 +112,23 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
     }
 
     [SqlServerFact]
+    public async Task Disabling_a_chunk_takes_it_out_of_both_legs_until_it_is_enabled()
+    {
+        await ClearAsync();
+        var rent = await AddAsync(TypeA, OwnerX, "賃料は月額十八万五千円とする。", [1, 0, 0, 0]);
+        var deposit = await AddAsync(TypeA, OwnerX, "敷金は賃料の二か月分とする。", [0.8f, 0.6f, 0, 0]);
+        await WaitForFullTextAsync();
+
+        await SetDisabledAsync(rent, true);
+        (await VectorsAsync(Generation1, Everything)).ShouldBe([deposit.ChunkId]);
+        (await KeywordsAsync("賃料", Everything)).ShouldBe([deposit.ChunkId]);
+
+        await SetDisabledAsync(rent, false);
+        (await VectorsAsync(Generation1, Everything)).ShouldBe([rent.ChunkId, deposit.ChunkId]);
+        (await KeywordsAsync("賃料", Everything)).ShouldBe([rent.ChunkId, deposit.ChunkId], ignoreOrder: true);
+    }
+
+    [SqlServerFact]
     public async Task The_status_counts_this_tenants_vectors_and_reports_the_keyword_index()
     {
         await ClearAsync();
@@ -127,6 +145,16 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
         status.KeywordIndexPopulating.ShouldBe(false);
         (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().GetStatusAsync(null))).VectorCount.ShouldBe(0);
     }
+
+    private Task SetDisabledAsync(ChunkVector chunk, bool isDisabled)
+        => WithUnitOfWorkAsync(async () =>
+        {
+            var repository = GetRequiredService<IChunkRepository>();
+            var row = await repository.GetAsync(chunk.ChunkId);
+            row.SetDisabled(isDisabled);
+            await repository.UpdateAsync(row);
+            await GetRequiredService<IChunkSearchIndex>().SetChunkDisabledAsync(chunk.ChunkId, isDisabled);
+        });
 
     private Task<List<Guid>> VectorsAsync(Guid generationId, ChunkSearchScope scope)
         => WithUnitOfWorkAsync(async () => (await GetRequiredService<IChunkSearchIndex>()
@@ -163,15 +191,16 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
         throw new TimeoutException("The full-text index did not catch up in 60 seconds.");
     }
 
-    private async Task<ChunkVector> AddAsync(Guid typeId, Guid ownerId, string text, float[] vector, bool isHidden = false, Guid? tenantId = null)
+    private async Task<ChunkVector> AddAsync(
+        Guid typeId, Guid ownerId, string text, float[] vector, bool isHidden = false, Guid? tenantId = null, bool isDisabled = false)
     {
-        var chunk = new ChunkVector(Guid.NewGuid(), Guid.NewGuid(), typeId, ownerId, isHidden, vector);
+        var chunk = new ChunkVector(Guid.NewGuid(), Guid.NewGuid(), typeId, ownerId, isHidden, vector, isDisabled);
         using (GetRequiredService<ICurrentTenant>().Change(tenantId))
         {
             await WithUnitOfWorkAsync(async () =>
             {
                 await GetRequiredService<IChunkRepository>().InsertAsync(new Chunk(
-                    chunk.ChunkId, tenantId, chunk.DocumentId, typeId, ownerId, 0, null, text, new string('0', 64), isHidden));
+                    chunk.ChunkId, tenantId, chunk.DocumentId, typeId, ownerId, 0, null, text, new string('0', 64), isHidden, isDisabled));
                 await GetRequiredService<IChunkSearchIndex>().ReplaceDocumentAsync(chunk.DocumentId, Generation1, [chunk]);
             });
         }

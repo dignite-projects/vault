@@ -29,6 +29,9 @@ public interface IChunkSearchIndex
     /// </summary>
     Task UpdateDocumentFiltersAsync(Guid documentId, Guid documentTypeId, Guid? ownerId, bool isHidden, CancellationToken cancellationToken = default);
 
+    /// <summary>Copies a chunk's disable mark onto its vectors in every generation.</summary>
+    Task SetChunkDisabledAsync(Guid chunkId, bool isDisabled, CancellationToken cancellationToken = default);
+
     /// <summary>Removes a document's vectors in every generation.</summary>
     Task DeleteDocumentAsync(Guid documentId, CancellationToken cancellationToken = default);
 
@@ -71,7 +74,14 @@ public sealed record ChunkSearchIndexStatus(
     bool? KeywordIndexPopulating);
 
 /// <summary>One chunk's vector, with the read-scope facts retrieval filters by.</summary>
-public sealed record ChunkVector(Guid ChunkId, Guid DocumentId, Guid DocumentTypeId, Guid? OwnerId, bool IsHidden, ReadOnlyMemory<float> Vector)
+public sealed record ChunkVector(
+    Guid ChunkId,
+    Guid DocumentId,
+    Guid DocumentTypeId,
+    Guid? OwnerId,
+    bool IsHidden,
+    ReadOnlyMemory<float> Vector,
+    bool IsDisabled = false)
     : IChunkScopeFields;
 
 /// <summary>A candidate from one retrieval leg, with that leg's own score (a distance, or a full-text rank).</summary>

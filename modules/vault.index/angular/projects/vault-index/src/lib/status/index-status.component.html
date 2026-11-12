@@ -147,6 +147,9 @@
               <td class="text-nowrap">{{ document.lastIndexedTime | date: 'short' }}</td>
               <td class="small text-danger text-break">{{ document.lastError }}</td>
               <td class="text-end text-nowrap">
+                <a class="btn btn-link btn-sm" [routerLink]="['/vault-index/documents', document.documentId, 'chunks']">
+                  {{ 'VaultIndex::IndexStatus:Chunks' | abpLocalization }}
+                </a>
                 <button type="button" class="btn btn-link btn-sm" (click)="toggleRuns(document)">
                   {{ (expandedId() === document.documentId ? 'VaultIndex::IndexStatus:HideRuns' : 'VaultIndex::IndexStatus:Runs') | abpLocalization }}
                 </button>

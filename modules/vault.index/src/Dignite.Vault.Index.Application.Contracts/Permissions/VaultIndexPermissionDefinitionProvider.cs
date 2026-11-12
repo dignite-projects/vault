@@ -13,6 +13,7 @@ public class VaultIndexPermissionDefinitionProvider : PermissionDefinitionProvid
         group.AddPermission(VaultIndexPermissions.Profiles, L("Permission:VaultIndex.Profiles"));
         var status = group.AddPermission(VaultIndexPermissions.Status, L("Permission:VaultIndex.Status"));
         status.AddChild(VaultIndexPermissions.StatusRebuild, L("Permission:VaultIndex.Status.Rebuild"));
+        status.AddChild(VaultIndexPermissions.StatusManageChunks, L("Permission:VaultIndex.Status.ManageChunks"));
     }
 
     private static LocalizableString L(string name)

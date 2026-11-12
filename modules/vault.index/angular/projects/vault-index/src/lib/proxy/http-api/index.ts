@@ -1,3 +1,4 @@
+import * as Chunks from './chunks';
 import * as Search from './search';
 import * as Status from './status';
-export { Search, Status };
+export { Chunks, Search, Status };

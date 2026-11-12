@@ -55,6 +55,52 @@ export interface IndexSearchResultDto {
   reranked?: boolean;
 }
 
+export interface IndexSearchTestCandidateDto {
+  rank?: number;
+  fusedRank?: number;
+  fusedScore?: number;
+  keywordRank?: number | null;
+  keywordScore?: number | null;
+  vectorRank?: number | null;
+  vectorDistance?: number | null;
+  rerankScore?: number | null;
+  chunkId?: string;
+  pointer?: string;
+  documentId?: string;
+  documentTitle?: string | null;
+  documentTypeCode?: string | null;
+  headingPath?: string | null;
+  text?: string;
+  textTruncated?: boolean;
+}
+
+export interface IndexSearchTestInput {
+  query: string;
+  documentTypeCode?: string | null;
+  fieldFilters?: DocumentFieldFilter[] | null;
+  keywordWeight?: number | null;
+  vectorWeight?: number | null;
+  candidatesPerLeg?: number | null;
+  rerank?: boolean | null;
+  rerankCandidateCount?: number | null;
+}
+
+export interface IndexSearchTestResultDto {
+  keywordWeight?: number;
+  vectorWeight?: number;
+  candidatesPerLeg?: number;
+  rerankCandidateCount?: number;
+  rerankAvailable?: boolean;
+  reranked?: boolean;
+  rerankModelId?: string | null;
+  keywordCandidateCount?: number;
+  vectorCandidateCount?: number;
+  keywordMilliseconds?: number;
+  vectorMilliseconds?: number;
+  rerankMilliseconds?: number;
+  candidates?: IndexSearchTestCandidateDto[];
+}
+
 export interface OutlineNodeDto {
   pointer?: string;
   title?: string;

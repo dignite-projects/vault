@@ -7,10 +7,13 @@ export * from './lib/index.routes';
 
 // --- generated proxy: services ---
 export * from './lib/proxy/http-api/search/index-search.service';
+export * from './lib/proxy/http-api/search/index-search-test.service';
 export * from './lib/proxy/http-api/status/index-status.service';
+export * from './lib/proxy/http-api/chunks/index-chunk.service';
 
 // --- generated proxy: models and enums ---
 export * from './lib/proxy/search/models';
+export * from './lib/proxy/chunks/models';
 // Extract's field condition, which IndexSearchInput.fieldFilters carries.
 export * from './lib/proxy/dignite/vault/extract/documents/models';
 export * from './lib/proxy/status/models';

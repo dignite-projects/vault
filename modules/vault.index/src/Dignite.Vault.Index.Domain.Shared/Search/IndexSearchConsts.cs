@@ -21,6 +21,18 @@ public static class IndexSearchConsts
     /// </summary>
     public const int CandidatesPerLeg = 50;
 
+    /// <summary>The most candidates the retrieval test may ask of one leg.</summary>
+    public const int MaxCandidatesPerLeg = 100;
+
+    /// <summary>The largest leg weight the retrieval test accepts; only the ratio of the two weights matters.</summary>
+    public const double MaxLegWeight = 10;
+
+    /// <summary>How much of each candidate's text the retrieval test shows; the chunk view shows all of it.</summary>
+    public const int MaxTestTextLength = 400;
+
+    /// <summary>The most chunks the chunk view returns per page.</summary>
+    public const int MaxChunkPageSize = 200;
+
     /// <summary>
     /// The constant of reciprocal rank fusion, score = Σ 1 / (k + rank). 60 is the value of the original paper and of
     /// most engines that ship RRF; it damps the weight of the first few ranks.

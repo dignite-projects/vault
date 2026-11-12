@@ -113,6 +113,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
 
+                    b.Property<bool>("IsDisabled")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsHidden")
                         .HasColumnType("bit");
 
@@ -243,6 +246,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.Property<SqlVector<float>>("Embedding")
                         .HasColumnType("vector(1024)");
+
+                    b.Property<bool>("IsDisabled")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsHidden")
                         .HasColumnType("bit");

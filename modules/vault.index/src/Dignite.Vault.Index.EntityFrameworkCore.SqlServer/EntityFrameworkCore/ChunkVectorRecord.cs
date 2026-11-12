@@ -27,6 +27,8 @@ public class ChunkVectorRecord : Entity, IMultiTenant, IChunkScopeFields
 
     public virtual bool IsHidden { get; set; }
 
+    public virtual bool IsDisabled { get; set; }
+
     public virtual SqlVector<float> Embedding { get; set; }
 
     public override object[] GetKeys() => [GenerationId, ChunkId];
