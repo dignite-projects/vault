@@ -33,8 +33,9 @@ Supply credentials in `src/Dignite.Vault.Extract.Host/appsettings.secrets.json` 
   "Extract": {
     "Endpoint": "https://api.openai.com/v1",
     "ApiKey": "YOUR_API_KEY",
-    "ChatModelId": "gpt-4o-mini",
-    "VisionOcrModelId": "gpt-4o-mini"
+    "ChatModelId": "gpt-6-luna",
+    "VisionOcrModelId": "gpt-6-luna",
+    "ReasoningEffort": "None"
   }
 }
 ```
@@ -47,6 +48,8 @@ Supply credentials in `src/Dignite.Vault.Extract.Host/appsettings.secrets.json` 
 | `TitleGeneratorModelId` | No | Model for the title-generator client. Defaults to `ChatModelId` |
 | `StructuredModelId` | No | Model for the structured-output client. Defaults to `ChatModelId`. This is the accuracy-sensitive client; keep it on a strong model |
 | `VisionOcrModelId` | With Vision-LLM OCR | Model for the vision client. It must be vision-capable and **does not** fall back to `ChatModelId`. Required only while the [Vision-LLM OCR provider](../text-extraction/ocr-vision-llm.md) is enabled, which is the shipped host's default |
+| `ReasoningEffort` | With a reasoning model | `None`, `Low`, `Medium`, `High` or `ExtraHigh`, sent as `reasoning_effort` on every call of every client. A reasoning model spends its reasoning tokens out of the same output cap that field extraction and Vision-LLM OCR size for their visible output, so `None` keeps those caps meaning what they say. Unset sends nothing: leave it out for a provider without reasoning, which may reject the parameter. The committed `appsettings.json` does not set it, so a provider switch does not inherit it |
+| `UseLegacyMaxTokens` | On SiliconFlow | `true` sends the output cap as the legacy `max_tokens` instead of `max_completion_tokens`. SiliconFlow ignores `max_completion_tokens` and falls back to its own cap of about 4,096 tokens, which cuts long field extractions and transcriptions short. Default `false`; leave it off for OpenAI and Azure OpenAI, whose reasoning models refuse `max_tokens` |
 
 The shipped host builds a single `OpenAIClient` for all keyed clients. Its HTTP connections are recycled every five minutes (`PooledConnectionLifetime`) and its network timeout is raised to 300 seconds, because field extraction sends the complete document and can legitimately run long.
 
@@ -62,7 +65,7 @@ For production, prefer a model that is strict about schema compliance. A model t
 
 | Tier | Examples (OpenAI-compatible providers) | Trade-off |
 | --- | --- | --- |
-| **Recommended** | `gpt-4o-mini` / `gpt-4o`, `Qwen/Qwen3-32B`, `deepseek-ai/DeepSeek-V3` | Schema-bound output is reliable and field extraction returns useful values most of the time |
+| **Recommended** | `gpt-6-luna` (with `ReasoningEffort`), `Qwen/Qwen3-32B`, `deepseek-ai/DeepSeek-V3` | Schema-bound output is reliable and field extraction returns useful values most of the time |
 | **Budget** (development only) | `Qwen/Qwen3-8B`, small Llama variants | The JSON shape is usually right, field values less so (numeric coercion failures, missed fields). Good enough to smoke-test the wiring |
 
 The title-generator client can run on a smaller, cheaper model than the structured client. It must still honor `ChatResponseFormat.ForJsonSchema`, because slug suggestion also uses it.
@@ -103,7 +106,8 @@ One `Vault:Extract` block serves all of them. To use a different model per workf
 
 - **Azure OpenAI**: set `Endpoint` to `https://<resource>.openai.azure.com/openai/deployments/<deployment>/` and use the deployment name as the model id. This is API-key authentication; for Microsoft Entra ID see [Going off-protocol](#going-off-protocol-non-openai-providers).
 - **Ollama (local)**: run `ollama serve`, set `Endpoint` to `http://localhost:11434/v1`, set `ApiKey` to any non-empty token (the `/v1` shim ignores it, but the OpenAI client rejects an empty key), and use a locally pulled model id.
-- **Any OpenAI-compatible gateway** (OpenRouter, vLLM, LM Studio, and so on) works the same way; only the `Vault:Extract` keys change.
+- **SiliconFlow**: set `Endpoint` to `https://api.siliconflow.cn/v1`, use SiliconFlow model ids (for example `deepseek-ai/DeepSeek-V3` for the structured client and `Qwen/Qwen3-VL-32B-Instruct` for vision), and set `UseLegacyMaxTokens` to `true`.
+- **Any OpenAI-compatible gateway** (OpenRouter, vLLM, LM Studio, and so on) works the same way; only the `Vault:Extract` keys change. If responses run past the cap the log reports, the gateway probably ignores `max_completion_tokens`: try `UseLegacyMaxTokens`.
 
 ## Going Off-Protocol (Non-OpenAI Providers)
 
@@ -203,7 +207,7 @@ These options describe *how* Vault Extract calls the model. They are bound from 
 | `MaxSegmentationMarkdownLength` | `200000` | Maximum Markdown characters for sub-document detection. Segmentation reads the whole document, so a longer one is not segmented and gets a review signal |
 | `MaxFieldExtractionMarkdownLength` | `200000` | Maximum Markdown characters for field extraction. Field extraction cannot truncate (a field may sit anywhere), so a longer document is declined with the blocking `FieldExtractionIncomplete` review reason instead of calling the model |
 | `MaxFieldSchemaPromptLength` | `32000` | Maximum total prompt characters across the active fields of one document type. Creating, updating, restoring or importing a field is rejected when it would push the type over this budget |
-| `MaxFieldExtractionOutputTokens` | `16384` | Most output tokens a field-extraction call asks the **structured** model for. Vault Extract estimates a worst case from the field schema and sends it only up to this value, because a provider refuses a request that asks for more than its model can produce, and refuses it again on every retry. Set it to your structured model's maximum output tokens (16,384 for OpenAI's `gpt-4o-mini`). A response that needs more stops at the limit; the log names this key, and the fields that did not finish come back empty |
+| `MaxFieldExtractionOutputTokens` | `16384` | Most output tokens a field-extraction call asks the **structured** model for. Vault Extract estimates a worst case from the field schema and sends it only up to this value, because a provider refuses a request that asks for more than its model can produce, and refuses it again on every retry. Set it to your structured model's maximum output tokens (128,000 for OpenAI's `gpt-6-luna`). On a reasoning model the cap also covers reasoning tokens unless `Vault:Extract:ReasoningEffort` is `None`. A response that needs more stops at the limit; the log names this key, and the fields that did not finish come back empty |
 
 The ceilings follow one rule: where cutting the tail would silently corrupt the result (field extraction, segmentation), the ceiling **gates** the call and raises a review signal; where it would not (classification, title, cabinet suggestion), the text is truncated.
 

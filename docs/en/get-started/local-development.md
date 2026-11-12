@@ -38,8 +38,9 @@ An LLM provider is **required**. The host fails at startup while `Vault:Extract`
     "Extract": {
       "Endpoint": "https://api.openai.com/v1",
       "ApiKey": "sk-...",
-      "ChatModelId": "gpt-4o-mini",
-      "VisionOcrModelId": "gpt-4o-mini"
+      "ChatModelId": "gpt-6-luna",
+      "VisionOcrModelId": "gpt-6-luna",
+      "ReasoningEffort": "None"
     }
   }
 }
@@ -48,6 +49,7 @@ An LLM provider is **required**. The host fails at startup while `Vault:Extract`
 - With LocalDB, the committed connection string already works and you can leave `ConnectionStrings` out.
 - `VisionOcrModelId` is required because the host's default OCR provider is [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md); it must name a vision-capable model.
 - `TitleGeneratorModelId` and `StructuredModelId` are optional and default to `ChatModelId`.
+- `ReasoningEffort` is for a reasoning model such as `gpt-6-luna`; leave it out for a provider without reasoning. On SiliconFlow, set `"UseLegacyMaxTokens": true` instead.
 - For Azure OpenAI, OpenRouter, Ollama and other providers, see [AI Provider](../configuration/ai-provider.md). For a zero-cost local option, run Ollama and point `Endpoint` at its `/v1` endpoint with any non-empty `ApiKey`.
 
 > **OpenIddict certificates.** In Development mode temporary signing and encryption certificates are generated automatically; no `.pfx` file is needed.

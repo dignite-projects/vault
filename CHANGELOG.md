@@ -28,8 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back to `Default` without one; see [Connection Strings](docs/en/deployment/deployment.md#connection-strings) for the
   database Index's later storage will need. A module can now pack as a pre-release while the line is stable
   (`VaultPrereleaseModule` in `common.props`); Index uses it until `Microsoft.Extensions.DataIngestion` is stable.
+- **`Vault:Extract:ReasoningEffort`** (shipped host): `None`, `Low`, `Medium`, `High` or `ExtraHigh`, sent as
+  `reasoning_effort` on every call through `ChatOptions.Reasoning` unless the caller sets its own. A reasoning model
+  spends its reasoning tokens out of the output cap that field extraction and Vision-LLM OCR size for their visible
+  output; set `None` for `gpt-6-luna`. Unset sends nothing, and the committed `appsettings.json` does not set it.
 
 ### Changed
+
+- **The shipped host defaults to `gpt-6-luna`, and its `max_tokens` rewrite is opt-in.** OpenAI shuts down
+  `gpt-4o-mini-2024-07-18` on 14 January 2027 and names `gpt-6-luna` as the replacement, so the committed
+  `appsettings.json` uses it for all four model ids. The host rewrote every request's `max_completion_tokens` to
+  `max_tokens` for SiliconFlow, including on the OpenAI default, whose reasoning models refuse `max_tokens` with a
+  400. The rewrite now runs only with `Vault:Extract:UseLegacyMaxTokens: true`. **A SiliconFlow deployment must set
+  it**: without it, field extraction and Vision-LLM OCR fall back to SiliconFlow's own cap of about 4,096 output
+  tokens. See [AI Provider](docs/en/configuration/ai-provider.md#provider-wiring-extract).
 
 - **Correcting the Markdown of a Ready document re-fires `DocumentReadyEto`** (`POST /api/vault-extract/documents/{id}/markdown`
   without `reprocess`). It fired nothing before (#555), so a consumer kept the text it had pulled; it now behaves

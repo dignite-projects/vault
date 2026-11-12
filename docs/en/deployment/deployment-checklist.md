@@ -17,6 +17,7 @@ Recurring checks to run when deploying to a new environment, upgrading a critica
 
 - [ ] The host starts without the "Extract requires an LLM provider" error: `Vault:Extract:Endpoint`, `ApiKey` and `ChatModelId` come from the secret store, not from a committed file
 - [ ] With Vision-LLM OCR enabled (the default), `Vault:Extract:VisionOcrModelId` is set and names a vision-capable model
+- [ ] On SiliconFlow, `Vault:Extract:UseLegacyMaxTokens` is `true`; on OpenAI or Azure OpenAI it is unset. On a reasoning model, `Vault:Extract:ReasoningEffort` is set (see [AI Provider](../configuration/ai-provider.md#provider-wiring-extract))
 - [ ] `StringEncryption:DefaultPassPhrase` is the value the database was created with (never rotated)
 - [ ] The OpenIddict signing certificate and `AuthServer:Authority` are production values; `/.well-known/openid-configuration` answers
 - [ ] `App:CorsOrigins` lists the SPA origin (and any browser-based MCP client)
