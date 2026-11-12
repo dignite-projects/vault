@@ -20,13 +20,17 @@ public class EfCoreChunkRepository : EfCoreRepository<IVaultIndexDbContext, Chun
         Guid documentId,
         Guid documentTypeId,
         Guid? ownerId,
+        bool isHidden,
         CancellationToken cancellationToken = default)
     {
         // ExecuteUpdate goes through the DbSet, so the tenant filter still narrows it.
         await (await GetDbSetAsync())
             .Where(c => c.DocumentId == documentId)
             .ExecuteUpdateAsync(
-                s => s.SetProperty(c => c.DocumentTypeId, documentTypeId).SetProperty(c => c.OwnerId, ownerId),
+                s => s
+                    .SetProperty(c => c.DocumentTypeId, documentTypeId)
+                    .SetProperty(c => c.OwnerId, ownerId)
+                    .SetProperty(c => c.IsHidden, isHidden),
                 GetCancellationToken(cancellationToken));
     }
 }

@@ -5,10 +5,14 @@
         <Project Path="src/Dignite.Vault.Index.Application.Contracts/Dignite.Vault.Index.Application.Contracts.csproj" />
         <Project Path="src/Dignite.Vault.Index.Application/Dignite.Vault.Index.Application.csproj" />
         <Project Path="src/Dignite.Vault.Index.EntityFrameworkCore/Dignite.Vault.Index.EntityFrameworkCore.csproj" />
+        <Project Path="src/Dignite.Vault.Index.EntityFrameworkCore.SqlServer/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.csproj" />
+        <Project Path="src/Dignite.Vault.Index.HttpApi/Dignite.Vault.Index.HttpApi.csproj" />
+        <Project Path="src/Dignite.Vault.Index.Mcp/Dignite.Vault.Index.Mcp.csproj" />
     </Folder>
 
     <Folder Name="/test/">
         <Project Path="test/Dignite.Vault.Index.TestBase/Dignite.Vault.Index.TestBase.csproj" />
         <Project Path="test/Dignite.Vault.Index.EntityFrameworkCore.Tests/Dignite.Vault.Index.EntityFrameworkCore.Tests.csproj" />
+        <Project Path="test/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.Tests/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.Tests.csproj" />
     </Folder>
 </Solution>

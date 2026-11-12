@@ -9,7 +9,7 @@
 
 Dignite Vault Extract exposes an **MCP (Model Context Protocol) server** as one of its egress channels, next to the [REST API](rest-api.md) and [integration events](integration-events.md). AI clients (Claude Desktop, Cursor, Claude Code, any MCP client) can read and search documents without custom integration code.
 
-> The MCP server exposes documents, document types and cabinets as resources, plus structured discovery and search tools. Extracted-field searches are anchored to a document type; metadata-only searches may be scoped to a cabinet or a source document instead. There is **no** keyword, full-text, semantic or vector retrieval; that belongs to a downstream RAG consumer. Vault Extract is an MCP **server** only and never acts as an MCP client.
+> The MCP server exposes documents, document types and cabinets as resources, plus structured discovery and search tools. Extracted-field searches are anchored to a document type; metadata-only searches may be scoped to a cabinet or a source document instead. Extract itself has **no** keyword, full-text, semantic or vector retrieval: the host's Vault Index adds that on the same endpoint as the `vault_index_*` tools; see [Index Search](index-search.md). Vault Extract is an MCP **server** only and never acts as an MCP client.
 
 ## Installation
 

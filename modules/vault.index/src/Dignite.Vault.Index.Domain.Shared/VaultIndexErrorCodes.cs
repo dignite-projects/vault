@@ -25,4 +25,13 @@ public static class VaultIndexErrorCodes
 
     /// <summary>The model returned vectors of a dimension the storage was not created for.</summary>
     public const string EmbeddingDimensionMismatch = Namespace + ":EmbeddingDimensionMismatch";
+
+    /// <summary>
+    /// Extract returned a read scope of a version this Index does not know. A newer rule read the old way could widen
+    /// what a user sees, so search refuses instead.
+    /// </summary>
+    public const string UnsupportedReadScope = Namespace + ":UnsupportedReadScope";
+
+    /// <summary>The pointer was not returned by search or outline: it is not a chunk or outline-node pointer.</summary>
+    public const string InvalidPointer = Namespace + ":InvalidPointer";
 }

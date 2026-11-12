@@ -89,6 +89,10 @@
           "path": "egress/mcp-server.md"
         },
         {
+          "text": "Index Search",
+          "path": "egress/index-search.md"
+        },
+        {
           "text": "Integration Events",
           "path": "egress/integration-events.md"
         },

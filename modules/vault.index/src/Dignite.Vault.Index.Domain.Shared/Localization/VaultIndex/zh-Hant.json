@@ -12,6 +12,8 @@
     "VaultIndex:TooManyChunks": "文件切成了 {Count} 個分塊,超過上限 {Max} 個。",
     "VaultIndex:EmbeddingGeneratorMissing": "Vault Index 沒有設定嵌入模型。",
     "VaultIndex:EmbeddingModelChanged": "目前設定的嵌入模型 {ModelId}({Dimensions} 維)不是建立索引時使用的 {ServingModelId}({ServingDimensions} 維)。請用新模型重建索引。",
-    "VaultIndex:EmbeddingDimensionMismatch": "嵌入模型回傳的是 {Dimensions} 維向量,索引儲存是 {StorageDimensions} 維。"
+    "VaultIndex:EmbeddingDimensionMismatch": "嵌入模型回傳的是 {Dimensions} 維向量,索引儲存是 {StorageDimensions} 維。",
+    "VaultIndex:UnsupportedReadScope": "Extract 傳回的讀取範圍版本 {Version} 不受此版本的 Vault Index 支援。",
+    "VaultIndex:InvalidPointer": "'{Pointer}' 不是檢索或大綱傳回的指標。"
   }
 }

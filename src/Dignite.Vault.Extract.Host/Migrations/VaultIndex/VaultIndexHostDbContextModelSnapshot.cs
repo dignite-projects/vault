@@ -113,6 +113,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
 
+                    b.Property<bool>("IsHidden")
+                        .HasColumnType("bit");
+
                     b.Property<int>("Ordinal")
                         .HasColumnType("int");
 
@@ -211,6 +214,10 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("TenantId");
 
+                    b.Property<string>("Title")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId", "DocumentTypeId");
@@ -236,6 +243,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.Property<SqlVector<float>>("Embedding")
                         .HasColumnType("vector(1024)");
+
+                    b.Property<bool>("IsHidden")
+                        .HasColumnType("bit");
 
                     b.Property<Guid?>("OwnerId")
                         .HasColumnType("uniqueidentifier");

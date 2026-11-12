@@ -1,4 +1,5 @@
 using System;
+using Dignite.Vault.Index.Search;
 using Microsoft.Data.SqlTypes;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.MultiTenancy;
@@ -10,7 +11,7 @@ namespace Dignite.Vault.Index.EntityFrameworkCore;
 /// the domain sees vectors only through <c>IChunkSearchIndex</c>. The read-scope facts are repeated here so the vector
 /// leg filters and scans one clustered range without joining the chunk table.
 /// </summary>
-public class ChunkVectorRecord : Entity, IMultiTenant
+public class ChunkVectorRecord : Entity, IMultiTenant, IChunkScopeFields
 {
     public virtual Guid GenerationId { get; set; }
 
@@ -23,6 +24,8 @@ public class ChunkVectorRecord : Entity, IMultiTenant
     public virtual Guid DocumentTypeId { get; set; }
 
     public virtual Guid? OwnerId { get; set; }
+
+    public virtual bool IsHidden { get; set; }
 
     public virtual SqlVector<float> Embedding { get; set; }
 

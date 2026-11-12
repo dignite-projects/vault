@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index search, outline and read** (shipped host), over REST (`GET /api/vault-index/search`,
+  `/documents/{id}/outline`, `/read`) and MCP (`vault_index_search`, `vault_index_outline`, `vault_index_read` on the
+  same `/mcp` endpoint as Extract's tools). Search fuses a Japanese full-text leg and an exact vector leg by
+  reciprocal rank; outline returns a document's heading tree; read returns the stored text behind a chunk or section
+  pointer, capped and announced when cut. Results are limited to the caller's Extract read scope, resolved per call;
+  each call needs `VaultIndex.Search` and Extract's `VaultExtract.Documents`. Documents in the recycle bin or being
+  reclassified are excluded. The Index migrations `Retrieval` and `FullTextSearch` add the hidden flag, the cited
+  title and the full-text index; the latter is created only where Full-Text Search is installed, and without it
+  search runs on vectors alone. A role needs `VaultIndex.Search` granted: `--migrate-database` grants it to the
+  seeded `admin` role. See [Index Search](docs/en/egress/index-search.md).
 - **Vault Index ingestion** (shipped host; Index is still unpackaged). A document released by Extract
   (`DocumentReadyEto`) is chunked by its heading tree, embedded, and written to `VaultIndexChunks` and the new
   `VaultIndexChunkVectors` (`vector(1024)`) in one transaction; recycle-bin, reclassification and deletion events

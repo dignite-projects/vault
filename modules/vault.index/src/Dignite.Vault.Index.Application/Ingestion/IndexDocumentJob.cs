@@ -296,44 +296,38 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             return false;
         }
 
-        int chunkCount;
+        // A lifecycle event applied while this job ran (the document went to the recycle bin, or was reclassified)
+        // is newer than the version just indexed: keep its mark and sync once more to see where the document stands.
+        var lifecycleChanged = row.LastEventTime != claim.LastEventTime;
+        var wasHidden = row.IsHidden;
+        var chunkCount = plan.Drafts?.Count ?? row.ChunkCount;
+        row.CompleteIndexing(
+            plan.ContentHash, plan.ProfileStamp, plan.GenerationId, chunkCount, document.DocumentTypeId, document.OwnerId,
+            document.Title, now, clearLifecycleMarks: !lifecycleChanged);
+        if (lifecycleChanged)
+        {
+            row.RequestRerun(null);
+        }
+
         if (plan.Drafts is not null)
         {
             await _chunkRepository.DeleteDirectAsync(c => c.DocumentId == document.Id);
             var chunks = plan.Drafts
                 .Select(d => new Chunk(
                     _guidGenerator.Create(), _currentTenant.Id, document.Id, document.DocumentTypeId, document.OwnerId,
-                    d.Ordinal, d.HeadingPath, d.Text, Sha256(d.Text)))
+                    d.Ordinal, d.HeadingPath, d.Text, Sha256(d.Text), row.IsHidden))
                 .ToList();
             await _chunkRepository.InsertManyAsync(chunks);
 
             var vectors = chunks
-                .Select((c, i) => new ChunkVector(c.Id, document.Id, document.DocumentTypeId, document.OwnerId, plan.Vectors![i]))
+                .Select((c, i) => new ChunkVector(c.Id, document.Id, document.DocumentTypeId, document.OwnerId, row.IsHidden, plan.Vectors![i]))
                 .ToList();
             await _searchIndex.ReplaceDocumentAsync(document.Id, plan.GenerationId, vectors);
-            chunkCount = chunks.Count;
         }
-        else
+        else if (claim.DocumentTypeId != document.DocumentTypeId || claim.OwnerId != document.OwnerId || wasHidden != row.IsHidden)
         {
-            if (claim.DocumentTypeId != document.DocumentTypeId || claim.OwnerId != document.OwnerId)
-            {
-                // Same text, new type or owner (a reclassification): only the read-scope facts move.
-                await _chunkRepository.UpdateDocumentFiltersAsync(document.Id, document.DocumentTypeId, document.OwnerId);
-                await _searchIndex.UpdateDocumentFiltersAsync(document.Id, document.DocumentTypeId, document.OwnerId);
-            }
-
-            chunkCount = row.ChunkCount;
-        }
-
-        // A lifecycle event applied while this job ran (the document went to the recycle bin, or was reclassified)
-        // is newer than the version just indexed: keep its mark and sync once more to see where the document stands.
-        var lifecycleChanged = row.LastEventTime != claim.LastEventTime;
-        row.CompleteIndexing(
-            plan.ContentHash, plan.ProfileStamp, plan.GenerationId, chunkCount, document.DocumentTypeId, document.OwnerId,
-            now, clearLifecycleMarks: !lifecycleChanged);
-        if (lifecycleChanged)
-        {
-            row.RequestRerun(null);
+            // Same text, but a new type or owner (a reclassification), or back in retrieval: only the read-scope facts move.
+            await CopyFiltersAsync(row);
         }
 
         var rerun = row.TakeRerunRequest();
@@ -418,14 +412,17 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                     case IndexDocumentJobKind.Archive:
                         row!.Archive(args.EventTime);
                         await _documentRepository.UpdateAsync(row);
+                        await CopyFiltersAsync(row);
                         break;
                     case IndexDocumentJobKind.Unarchive:
                         row!.Unarchive(args.EventTime);
                         await _documentRepository.UpdateAsync(row);
+                        await CopyFiltersAsync(row);
                         break;
                     case IndexDocumentJobKind.Withhold:
                         row!.Withhold(args.EventTime);
                         await _documentRepository.UpdateAsync(row);
+                        await CopyFiltersAsync(row);
                         break;
                     case IndexDocumentJobKind.Remove:
                         await RemoveAsync(row!);
@@ -441,6 +438,13 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         {
             await EnqueueSyncAsync(args.DocumentId, IndexRunTrigger.DocumentReady);
         }
+    }
+
+    /// <summary>Copies the document's read-scope facts and its hidden state onto its chunks and vectors.</summary>
+    protected virtual async Task CopyFiltersAsync(IndexedDocument row)
+    {
+        await _chunkRepository.UpdateDocumentFiltersAsync(row.Id, row.DocumentTypeId, row.OwnerId, row.IsHidden);
+        await _searchIndex.UpdateDocumentFiltersAsync(row.Id, row.DocumentTypeId, row.OwnerId, row.IsHidden);
     }
 
     /// <summary>Deletes everything derived from the document, so nothing of a deleted document survives in Index.</summary>

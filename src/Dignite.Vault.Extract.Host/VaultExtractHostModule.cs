@@ -145,6 +145,8 @@ namespace Dignite.Vault.Extract.Host;
     // Vault Index (P0 in progress): its own DbContext and connection string, migrated by VaultIndexHostDbContext.
     typeof(VaultIndexApplicationModule),
     typeof(VaultIndexEntityFrameworkCoreSqlServerModule),   // vectors on SQL Server 2025 / Azure SQL; brings the EF module
+    typeof(VaultIndexHttpApiModule),
+    typeof(VaultIndexMcpModule),                            // vault_index_* tools on the shared /mcp endpoint
 
     // Operator notifications (#680). Application publishes them to the uploader on document lifecycle transitions;
     // these three are what the host does with them: live push over SignalR, then a persistent inbox + the
@@ -747,8 +749,8 @@ public class VaultExtractHostModule : AbpModule
 
     /// <summary>
     /// Vault Index's embedding model, under <see cref="VaultIndexConsts.EmbeddingGeneratorKey"/>. Optional while Index is
-    /// under development: without <c>Vault:Index:EmbeddingModelId</c> nothing is registered, the host starts, and each
-    /// index job ends with <c>VaultIndex:EmbeddingGeneratorMissing</c>. Uses Extract's endpoint and key unless Index has
+    /// under development: without <c>Vault:Index:EmbeddingModelId</c> nothing is registered, the host starts, and Index
+    /// indexes nothing until a model is added. Uses Extract's endpoint and key unless Index has
     /// its own. <c>Vault:Index:EmbeddingDimensions</c> is sent only when set: OpenAI's text-embedding-3 models shorten
     /// their vectors to it, while a fixed-size model such as BAAI/bge-m3 rejects the parameter (HTTP 400 on
     /// SiliconFlow). Either way the vectors must match <see cref="Data.VaultIndexHostDbContext.VectorDimensions"/>.

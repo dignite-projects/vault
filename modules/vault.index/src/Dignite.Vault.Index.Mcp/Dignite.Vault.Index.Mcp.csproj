@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>MCP exit of Dignite Vault Index: the vault_index_search, vault_index_outline and vault_index_read tools, contributed to the application's shared MCP server (Dignite.Abp.AspNetCore.Mcp).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="Dignite.Abp.AspNetCore.Mcp" />
+    <!-- EntityNotFoundException, to answer a pointer outside the caller's scope with an MCP not-found error. -->
+    <PackageReference Include="Volo.Abp.Ddd.Domain" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Application.Contracts\Dignite.Vault.Index.Application.Contracts.csproj" />
+    <!-- PromptBoundary, shared with Extract's MCP tools rather than copied. -->
+    <ProjectReference Include="..\..\..\vault.extract\src\Dignite.Vault.Extract.Application.Contracts\Dignite.Vault.Extract.Application.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

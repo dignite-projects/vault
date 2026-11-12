@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.test.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <ProjectReference Include="..\..\src\Dignite.Vault.Index.EntityFrameworkCore.SqlServer\Dignite.Vault.Index.EntityFrameworkCore.SqlServer.csproj" />
+    <ProjectReference Include="..\Dignite.Vault.Index.TestBase\Dignite.Vault.Index.TestBase.csproj" />
+  </ItemGroup>
+
+</Project>

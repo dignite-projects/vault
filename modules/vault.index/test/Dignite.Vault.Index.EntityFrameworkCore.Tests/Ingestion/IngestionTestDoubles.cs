@@ -4,6 +4,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents.Integration;
+using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Extract.Documents.DocumentTypes;
+using Dignite.Vault.Index.Chunks;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Volo.Abp.Authorization;
+using Volo.Abp.Security.Claims;
 using Dignite.Vault.Index.EntityFrameworkCore;
 using Dignite.Vault.Index.Search;
 using Microsoft.Extensions.AI;
@@ -26,9 +33,13 @@ public class VaultIndexIngestionTestModule : AbpModule
         context.Services.AddSingleton(Substitute.For<IDocumentIntegrationService>());
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
 
-        var searchIndex = new InMemoryChunkSearchIndex();
-        context.Services.AddSingleton(searchIndex);
-        context.Services.AddSingleton<IChunkSearchIndex>(searchIndex);
+        context.Services.AddSingleton(sp => new InMemoryChunkSearchIndex(sp));
+        context.Services.AddSingleton<IChunkSearchIndex>(sp => sp.GetRequiredService<InMemoryChunkSearchIndex>());
+        context.Services.AddSingleton(Substitute.For<IDocumentAppService>());
+        context.Services.AddSingleton(Substitute.For<IDocumentTypeAppService>());
+        context.Services.AddSingleton<SearchPermissionSwitch>();
+        context.Services.Replace(ServiceDescriptor.Transient<IAuthorizationService, SwitchableAuthorizationService>());
+        context.Services.Replace(ServiceDescriptor.Transient<IAbpAuthorizationService, SwitchableAuthorizationService>());
 
         var generator = new FakeEmbeddingGenerator();
         context.Services.AddSingleton(generator);
@@ -96,9 +107,19 @@ public sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embeddi
     }
 }
 
-/// <summary>The vector store as a dictionary keyed by (generation, chunk).</summary>
+/// <summary>
+/// The vector store as a dictionary keyed by (generation, chunk), with both retrieval legs: cosine over the stored
+/// vectors, and a term match over the chunk rows in SQLite. Both go through the real <see cref="ChunkScopeFilter"/>.
+/// </summary>
 public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
 {
+    private readonly IServiceProvider _serviceProvider;
+
+    public InMemoryChunkSearchIndex(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+
     public int? VectorDimensions { get; set; } = 8;
 
     public Dictionary<(Guid GenerationId, Guid ChunkId), ChunkVector> Vectors { get; } = new();
@@ -118,11 +139,11 @@ public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
         return Task.CompletedTask;
     }
 
-    public Task UpdateDocumentFiltersAsync(Guid documentId, Guid documentTypeId, Guid? ownerId, CancellationToken cancellationToken = default)
+    public Task UpdateDocumentFiltersAsync(Guid documentId, Guid documentTypeId, Guid? ownerId, bool isHidden, CancellationToken cancellationToken = default)
     {
         foreach (var pair in Vectors.Where(p => p.Value.DocumentId == documentId).ToList())
         {
-            Vectors[pair.Key] = pair.Value with { DocumentTypeId = documentTypeId, OwnerId = ownerId };
+            Vectors[pair.Key] = pair.Value with { DocumentTypeId = documentTypeId, OwnerId = ownerId, IsHidden = isHidden };
         }
 
         return Task.CompletedTask;
@@ -137,4 +158,87 @@ public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
 
         return Task.CompletedTask;
     }
+
+    public Task<IReadOnlyList<ChunkMatch>> SearchVectorsAsync(
+        Guid generationId,
+        ReadOnlyMemory<float> queryVector,
+        ChunkSearchScope scope,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = queryVector.ToArray();
+        IReadOnlyList<ChunkMatch> matches = ChunkScopeFilter
+            .Apply(Vectors.Where(p => p.Key.GenerationId == generationId).Select(p => p.Value).AsQueryable(), scope)
+            .AsEnumerable()
+            .Select(v => new ChunkMatch(v.ChunkId, v.DocumentId, CosineDistance(query, v.Vector.ToArray())))
+            .OrderBy(m => m.Score)
+            .ThenBy(m => m.ChunkId)
+            .Take(take)
+            .ToList();
+        return Task.FromResult(matches);
+    }
+
+    public async Task<IReadOnlyList<ChunkMatch>> SearchKeywordsAsync(
+        string query,
+        ChunkSearchScope scope,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var repository = _serviceProvider.GetRequiredService<IChunkRepository>();
+        var chunks = await repository.AsyncExecuter.ToListAsync(ChunkScopeFilter.Apply(await repository.GetQueryableAsync(), scope));
+        return chunks
+            .Select(c => (Chunk: c, Score: terms.Count(t => c.Text.Contains(t, StringComparison.OrdinalIgnoreCase))))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Chunk.Id)
+            .Take(take)
+            .Select(x => new ChunkMatch(x.Chunk.Id, x.Chunk.DocumentId, x.Score))
+            .ToList();
+    }
+
+    private static double CosineDistance(float[] a, float[] b)
+    {
+        double dot = 0, na = 0, nb = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+        }
+
+        return 1 - dot / (Math.Sqrt(na) * Math.Sqrt(nb));
+    }
+}
+
+/// <summary>Which policies the test denies; everything else is allowed, as with AddAlwaysAllowAuthorization.</summary>
+public sealed class SearchPermissionSwitch
+{
+    public HashSet<string> Denied { get; } = new();
+}
+
+public sealed class SwitchableAuthorizationService : IAbpAuthorizationService
+{
+    private readonly SearchPermissionSwitch _switch;
+    private readonly ICurrentPrincipalAccessor _principalAccessor;
+
+    public SwitchableAuthorizationService(
+        SearchPermissionSwitch permissionSwitch,
+        ICurrentPrincipalAccessor principalAccessor,
+        IServiceProvider serviceProvider)
+    {
+        _switch = permissionSwitch;
+        _principalAccessor = principalAccessor;
+        ServiceProvider = serviceProvider;
+    }
+
+    public IServiceProvider ServiceProvider { get; }
+
+    public System.Security.Claims.ClaimsPrincipal CurrentPrincipal => _principalAccessor.Principal;
+
+    public Task<AuthorizationResult> AuthorizeAsync(System.Security.Claims.ClaimsPrincipal user, object? resource, IEnumerable<IAuthorizationRequirement> requirements)
+        => Task.FromResult(AuthorizationResult.Success());
+
+    public Task<AuthorizationResult> AuthorizeAsync(System.Security.Claims.ClaimsPrincipal user, object? resource, string policyName)
+        => Task.FromResult(_switch.Denied.Contains(policyName) ? AuthorizationResult.Failed() : AuthorizationResult.Success());
 }
