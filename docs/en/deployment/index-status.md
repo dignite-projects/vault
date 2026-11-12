@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Operate Vault Index: the index status page, the chunk view and the retrieval test, their REST API, rebuilding a document or disabling a chunk, and measuring retrieval quality with the evaluation set."
+    "Description": "Operate Vault Index: the index status page, the chunk view, the retrieval test and the index profiles, their REST API, rebuilding a document, disabling a chunk or changing how a type is chunked, and measuring retrieval quality with the evaluation set."
 }
 ```
 
 # Index Status and Evaluation
 
-Vault Index keeps a derived copy of every released document (chunks, vectors and a full-text index). This page covers how an operator sees what is in it, fixes a document that did not index, finds out why a passage is not found, and measures how well it retrieves.
+Vault Index keeps a derived copy of every released document (chunks, vectors and a full-text index). This page covers how an operator sees what is in it, fixes a document that did not index, finds out why a passage is not found, chooses how each document type is chunked, and measures how well it retrieves.
 
 > Vault Index is under development and ships only inside the host. Its Angular library, `@dignite/ng.vault-index`, is built with the host SPA and not published to npm yet.
 
@@ -57,6 +57,19 @@ A disabled chunk stays disabled across a rebuild as long as its text is unchange
 
 The table can be ordered by any of these, which answers most "why is this passage not found" questions: whether a leg found it at all, and where fusion or the reranker put it. The leg weights, the candidates per leg, whether to rerank and how many candidates to rerank can be changed for one run; empty boxes take the host's values (`Vault:IndexSearch`), and nothing is saved. A run that reranks calls the rerank model, like a search.
 
+## Index Profiles
+
+**Vault Index → Index profiles** (`/vault-index/profiles`, permission `VaultIndex.Profiles`) sets how each document type is cut into chunks. The first row is the layer default, used by every type without its own profile (and by the built-in settings, heading chunking at 400 tokens, until it is saved). Profiles follow Extract's two layers: the Host's for Host documents, each tenant's for its own.
+
+| Strategy | What it does | For |
+| --- | --- | --- |
+| By headings (default) | Chunks follow the heading tree and each carries its heading path. A section larger than the chunk size is split by paragraph. A table stays whole with the text around it; a table larger than the chunk size is split by rows, each piece repeating the header row | Contracts, rules, manuals, invoices, reports |
+| By tokens | A fixed token count with overlap, ignoring headings. Chunks carry no heading path, so a hit cites only the document | Text without headings |
+
+Tables written as HTML, as Azure Document Intelligence writes every table (merged cells, captions), are read as tables too: the chunker rewrites them as Markdown tables first, repeating a merged cell's text into every cell it spans and putting the caption above. Figures (`<figure>`) become their text.
+
+Editing a row shows, before anything is saved, what the change would rebuild: the indexed documents whose chunks it changes, their chunks today, and the embedding tokens their last successful indexing took, which is about what re-embedding them costs. Saving queues the rebuild in the background at low priority: the affected documents are re-chunked and re-embedded one by one, through the same queue and retry cap as an event, and a document whose settings did not change is skipped. **Use default** removes a type's own profile, with the same estimate first.
+
 ## REST API
 
 The page uses these endpoints, which other tools can call with the same permissions:
@@ -70,6 +83,10 @@ The page uses these endpoints, which other tools can call with the same permissi
 | `GET /api/vault-index/chunks?documentId=&skipCount=&maxResultCount=` | `VaultIndex.Status` | The document's chunks in order, disabled ones included, up to 200 per page, with the disabled count |
 | `POST /api/vault-index/chunks/{id}/disable` | `VaultIndex.Status.ManageChunks` | Takes the chunk out of retrieval; nothing to return |
 | `POST /api/vault-index/chunks/{id}/enable` | `VaultIndex.Status.ManageChunks` | Puts it back; nothing to return |
+| `GET /api/vault-index/profiles` | `VaultIndex.Profiles` | The layer default and every visible document type, with the settings that apply and the indexed document count |
+| `GET /api/vault-index/profiles/rebuild-estimate?documentTypeId=&chunkingStrategy=&maxTokensPerChunk=&overlapTokens=` | `VaultIndex.Profiles` | What saving those settings would rebuild: documents, chunks, last embedding tokens. `chunkingStrategy` is `0` by headings, `1` by tokens; `maxTokensPerChunk` is 100 to 4,000; the overlap is smaller than the chunk |
+| `PUT /api/vault-index/profiles` | `VaultIndex.Profiles` | Saves the layer default (no `documentTypeId`) or a type's profile and queues the rebuild |
+| `DELETE /api/vault-index/profiles/{documentTypeId}` | `VaultIndex.Profiles` | Removes the type's own profile and queues the rebuild |
 | `POST /api/vault-index/search-test` | `VaultIndex.Status` | The retrieval test. The body is a search's (`query`, `documentTypeCode`, `fieldFilters`) plus optional `keywordWeight`, `vectorWeight` (0 to 10), `candidatesPerLeg` (1 to 100), `rerank` and `rerankCandidateCount` (1 to 100). It returns the settings used, each leg's candidate count and time, and every candidate in final order |
 
 A document or chunk outside the caller's read scope is not found.
@@ -95,7 +112,7 @@ export VAULT_INDEX_EVAL_REPORT="$PWD/index-evaluation.md"
 dotnet test modules/vault.index/test/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.Tests --filter "FullyQualifiedName~IndexEvaluation"
 ```
 
-The test creates and fills its own database, `VaultIndexEvaluation`, and writes the report. It measures; it does not fail on low numbers. Without those variables it is skipped, and so are the store's other SQL Server tests, which need only `VAULT_INDEX_TEST_SQLSERVER`.
+The test creates and fills its own database, `VaultIndexEvaluation`, and writes the report. A second test in the same run compares chunking strategies and writes `VAULT_INDEX_EVAL_STRATEGY_REPORT` (or `index-strategies.md`). It measures; it does not fail on low numbers. Without those variables it is skipped, and so are the store's other SQL Server tests, which need only `VAULT_INDEX_TEST_SQLSERVER`.
 
 ### Baseline (2026-11-12)
 
@@ -128,5 +145,21 @@ The same set with `BAAI/bge-reranker-v2-m3` reranking the leading 30 candidates 
 | Chinese and English questions (passage) | 0.677 | 0.741 | 0.932 |
 
 Reranking lifts every slice, and reranking the fused or the vector ranking gives the same result here. Down-weighting the keyword leg trades field cases for questions, and at a weight of 0.5 or less it ranks keyword-only finds below every vector candidate, a loss this 101-chunk corpus is too small to show. So the weights stay equal, and a rerank model is the recommended way to rank paraphrased questions. With it, the keyword leg's gap on Chinese and English questions no longer shows in the results. A query translation step for that leg is not needed for now.
+
+### Chunking strategies (2026-11-12)
+
+Version 2 of the set adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (21 documents, 108 cases, 12 of them answered by a table). The corpus was indexed once per strategy, and each case ranked by the fused legs and by search with `BAAI/bge-reranker-v2-m3` (`strategies-2026-11-12.md` next to the set):
+
+| MRR@10, search with rerank | Passage, 69 questions | Passage, 12 table questions | Document, 108 cases | Chunks |
+| --- | --- | --- | --- | --- |
+| By headings, 400 tokens (default) | 0.958 | 0.875 | 0.981 | 112 |
+| The same, HTML tables dropped (before) | 0.871 | 0.375 | 0.936 | 110 |
+| By headings, 200 tokens | 0.972 | 0.958 | 0.991 | 115 |
+| By headings, 800 tokens | 0.958 | 0.875 | 0.981 | 112 |
+| By tokens, 400 with 40 overlap | 0 | 0 | 0.995 | 25 |
+
+- Reading HTML tables as tables is the largest gain: before it, the table questions found their section half the time at best.
+- 200, 400 and 800 tokens differ by one or two questions, because most sections of this corpus are shorter than 200 tokens. The default stays at 400 until a corpus with long sections says otherwise.
+- Chunking by tokens finds the right document as well, but its chunks carry no heading path, so no hit can cite a section.
 
 The set is small and synthetic: grow it with real queries before relying on small differences.

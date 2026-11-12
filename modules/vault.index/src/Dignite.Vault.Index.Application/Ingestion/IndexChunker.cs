@@ -21,6 +21,9 @@ public sealed record IndexChunkDraft(int Ordinal, string? HeadingPath, string Te
 /// Splits a document's Markdown with DataIngestion: <see cref="MarkdownReader"/> builds the document tree, then
 /// <see cref="HeaderChunker"/> (the default: chunks follow the heading tree and carry their heading path) or
 /// <see cref="DocumentTokenChunker"/> (for text without headings) cuts it to the profile's token budget.
+/// <see cref="HeaderChunker"/> is table-aware: a table stays whole with the text around it, and a table larger than the
+/// budget is split by rows, each piece repeating the header row. <see cref="Prepare"/> makes sure every table reaches
+/// it as a table.
 /// </summary>
 public class IndexChunker : ITransientDependency
 {
@@ -30,12 +33,20 @@ public class IndexChunker : ITransientDependency
     /// </summary>
     private static readonly Lazy<Tokenizer> SharedTokenizer = new(() => TiktokenTokenizer.CreateForEncoding("o200k_base"));
 
+    /// <summary>
+    /// The text that is chunked: the document's Markdown with its HTML tables and figures rewritten as Markdown
+    /// (<see cref="MarkdownHtmlNormalizer"/>), which the reader would otherwise drop. Its hash is what tells a rebuild
+    /// whether the chunks can change.
+    /// </summary>
+    public virtual string Prepare(string markdown) => MarkdownHtmlNormalizer.Normalize(markdown);
+
     public virtual async Task<IReadOnlyList<IndexChunkDraft>> ChunkAsync(
         string markdown,
         string identifier,
         ResolvedIndexProfile profile,
         CancellationToken cancellationToken = default)
     {
+        markdown = Prepare(markdown);
         var reader = new MarkdownReader();
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(markdown));
         var document = await reader.ReadAsync(stream, identifier, "text/markdown", cancellationToken);

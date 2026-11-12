@@ -54,7 +54,7 @@ public sealed class EvaluationSet
             }
         }
 
-        cases.AddRange(Questions.Select(q => new EvaluationCase(q.Query, q.Document, q.Heading, q.Language, "question")));
+        cases.AddRange(Questions.Select(q => new EvaluationCase(q.Query, q.Document, q.Heading, q.Language, q.Source ?? "question")));
         return cases;
     }
 }
@@ -88,8 +88,11 @@ public sealed class EvaluationQuestion
     public string? Heading { get; init; }
 
     public string Language { get; init; } = "ja";
+
+    /// <summary><c>table</c> for a question whose answer is in a table; a written question otherwise.</summary>
+    public string? Source { get; init; }
 }
 
 /// <param name="Heading">Part of the expected chunk's heading path; <c>null</c> when any chunk of the document will do.</param>
-/// <param name="Source"><c>field</c> or <c>question</c>.</param>
+/// <param name="Source"><c>field</c>, <c>question</c>, or <c>table</c> for a written question answered by a table.</param>
 public sealed record EvaluationCase(string Query, string Document, string? Heading, string Language, string Source);

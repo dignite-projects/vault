@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index profiles and table-aware chunking** (shipped host and SPA). **Index profiles** sets, per document
+  type or as the layer default, how documents are chunked (by headings or by tokens, chunk size, overlap). Before
+  saving it shows what the change would rebuild (documents, chunks, the embedding tokens they last took); saving
+  queues that rebuild in the background at low priority. REST under `/api/vault-index/profiles`, permission
+  `VaultIndex.Profiles`. Tables written as HTML, as Azure Document Intelligence writes them, are now indexed as tables:
+  before, DataIngestion's Markdown reader dropped them with all their text. A heading-chunked table stays whole with
+  its surrounding text, and a large one is split by rows repeating its header. Documents indexed earlier with HTML
+  tables are re-chunked on their next rebuild. New dependency `HtmlAgilityPack`. See
+  [Index Status and Evaluation](docs/en/deployment/index-status.md#index-profiles).
 - **Vault Index chunk view and retrieval test** (shipped host and SPA). From the index status page, **Chunks** shows
   what a document was cut into, and **Disable** takes a noisy chunk out of search, outline and read for everyone; the
   mark follows the chunk's text across rebuilds and ends when the text changes. **Retrieval test** runs a query as
