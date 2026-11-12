@@ -36,6 +36,17 @@ public interface IDocumentAppService : IApplicationService
     /// </summary>
     Task<DocumentReadScopeDto> GetReadScopeAsync();
 
+    /// <summary>
+    /// The ids of the documents of one type whose extracted fields meet <paramref name="input"/>'s conditions, among the
+    /// documents the caller may read and that are Ready for consumers (released, typed, not a container), in ascending
+    /// order. For a module in the same host that narrows its own search to them (Vault Index's field filters): the field
+    /// conditions are resolved here, by the same resolver and read scope as <see cref="GetListAsync"/>, so the module
+    /// keeps no copy of field values. Throws like <see cref="GetListAsync"/>: without entry, and for a field the type
+    /// does not define. An in-process use case, like <see cref="GetReadScopeAsync"/>: not a REST endpoint and not an MCP
+    /// tool.
+    /// </summary>
+    Task<DocumentIdListDto> GetIdsByFieldsAsync(GetDocumentIdsByFieldsInput input);
+
     Task<PagedResultDto<DocumentListItemDto>> GetListAsync(GetDocumentListInput input);
 
     Task<DocumentDto> UploadAsync(UploadDocumentInput input);

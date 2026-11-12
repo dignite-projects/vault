@@ -119,6 +119,13 @@ public static class DocumentConsts
     public const int MaxSearchFieldFilters = 10;
 
     /// <summary>
+    /// The most document ids <c>IDocumentAppService.GetIdsByFieldsAsync</c> returns for one set of field conditions. A
+    /// consumer that narrows its own search to those ids (Vault Index) sends them back to the database as one parameter;
+    /// past this many, it should ask for a narrower condition rather than search a truncated set.
+    /// </summary>
+    public const int MaxFieldMatchedDocumentIds = 10_000;
+
+    /// <summary>
     /// Number of document Ids read / enqueued per bulk reprocessing dispatch batch (#289). Dispatchers chain themselves:
     /// each batch uses keyset pagination to read only Ids (<c>WHERE Id &gt; lastId ORDER BY Id Take(N)</c>),
     /// enqueues N single-document jobs, then enqueues the next dispatcher. Each dispatcher is a short task lasting seconds

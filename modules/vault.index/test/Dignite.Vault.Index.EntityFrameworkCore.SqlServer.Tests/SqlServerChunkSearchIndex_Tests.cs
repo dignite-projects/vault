@@ -73,6 +73,27 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
     }
 
     [SqlServerFact]
+    public async Task Requested_documents_narrow_both_legs_up_to_the_field_filter_cap()
+    {
+        await ClearAsync();
+        await AddAsync(TypeA, OwnerX, "賃料は月額十八万五千円とする。", [1, 0, 0, 0]);
+        var deposit = await AddAsync(TypeB, OwnerY, "敷金は賃料の二か月分とする。", [0.8f, 0.6f, 0, 0]);
+        await WaitForFullTextAsync();
+
+        // As many ids as field filters may resolve to: far past SQL Server's 2,100 parameters per command.
+        var many = Enumerable.Range(0, IndexSearchConsts.MaxFieldFilterDocuments - 1)
+            .Select(_ => Guid.NewGuid()).Append(deposit.DocumentId).ToList();
+        var onlyDeposit = new ChunkSearchScope(true, [], null, requestedDocumentIds: many);
+        (await VectorsAsync(Generation1, onlyDeposit)).ShouldBe([deposit.ChunkId]);
+        (await KeywordsAsync("賃料", onlyDeposit)).ShouldBe([deposit.ChunkId]);
+
+        // Requested documents never widen the read scope.
+        var outOfScope = new ChunkSearchScope(false, [TypeA], null, requestedDocumentIds: [deposit.DocumentId]);
+        (await VectorsAsync(Generation1, outOfScope)).ShouldBeEmpty();
+        (await KeywordsAsync("賃料", outOfScope)).ShouldBeEmpty();
+    }
+
+    [SqlServerFact]
     public async Task Hiding_a_document_takes_it_out_of_both_legs()
     {
         await ClearAsync();

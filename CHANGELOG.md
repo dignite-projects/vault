@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index field filters** (shipped host). Search takes `fieldFilters` (REST `fieldFilters[i].name / value /
+  min / max`, MCP `vault_index_search.fieldFilters`) with `documentTypeCode`, and then returns passages only from the
+  documents whose extracted fields meet every condition, as Extract's document list reads them. Conditions met by
+  more than 10,000 documents are refused with `VaultIndex:FieldFilterTooBroad`. For modules in the same host, Extract
+  adds `IDocumentAppService.GetIdsByFieldsAsync`, which returns the ids of the Ready documents the calling user may
+  read whose fields match; it is not a REST endpoint or MCP tool. See
+  [Index Search](docs/en/egress/index-search.md#search) and
+  [In-Process Integration](docs/en/egress/in-process-integration.md#filtering-by-extracted-fields-getidsbyfieldsasync).
 - **Vault Index reranking** (shipped host). With `Vault:Index:RerankModelId` set (for example
   `BAAI/bge-reranker-v2-m3` on SiliconFlow; endpoint and key default to `Vault:Extract`'s), search reorders its
   leading 30 fused candidates with the rerank model over the Cohere / Jina rerank API, and falls back to the fused

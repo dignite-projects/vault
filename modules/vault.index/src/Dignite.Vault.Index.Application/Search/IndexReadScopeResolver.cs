@@ -28,8 +28,16 @@ public class IndexReadScopeResolver : ITransientDependency
         _documentTypeAppService = documentTypeAppService;
     }
 
-    /// <summary>The scope, narrowed to <paramref name="documentTypeCode"/> when given; a code the caller cannot see narrows to nothing.</summary>
-    public virtual async Task<ChunkSearchScope> GetScopeAsync(string? documentTypeCode, IReadOnlyDictionary<Guid, string> visibleTypes)
+    /// <summary>
+    /// The scope, narrowed to <paramref name="documentTypeCode"/> when given (a code the caller cannot see narrows to
+    /// nothing), and to the documents <paramref name="fieldFilters"/> match when given. Extract resolves the field
+    /// conditions, on the caller's own read scope (<see cref="IDocumentAppService.GetIdsByFieldsAsync"/>), so Index keeps
+    /// no copy of field values and a renamed field cannot go stale here.
+    /// </summary>
+    public virtual async Task<ChunkSearchScope> GetScopeAsync(
+        string? documentTypeCode,
+        IReadOnlyDictionary<Guid, string> visibleTypes,
+        List<DocumentFieldFilter>? fieldFilters = null)
     {
         var readScope = await _documentAppService.GetReadScopeAsync();
         if (readScope.Version != SupportedReadScopeVersion)
@@ -37,13 +45,30 @@ public class IndexReadScopeResolver : ITransientDependency
             throw new BusinessException(VaultIndexErrorCodes.UnsupportedReadScope).WithData("Version", readScope.Version);
         }
 
-        IEnumerable<Guid>? requested = null;
+        List<Guid>? requested = null;
         if (!string.IsNullOrWhiteSpace(documentTypeCode))
         {
             requested = visibleTypes.Where(t => t.Value == documentTypeCode.Trim()).Select(t => t.Key).ToList();
         }
 
-        return new ChunkSearchScope(readScope.IsUnrestricted, readScope.DocumentTypeIds, readScope.OwnerId, requested);
+        List<Guid>? documentIds = null;
+        if (fieldFilters is { Count: > 0 } && requested is { Count: > 0 })
+        {
+            var matched = await _documentAppService.GetIdsByFieldsAsync(new GetDocumentIdsByFieldsInput
+            {
+                DocumentTypeCode = documentTypeCode!.Trim(),
+                FieldFilters = fieldFilters,
+                MaxResultCount = IndexSearchConsts.MaxFieldFilterDocuments
+            });
+            if (matched.HasMore)
+            {
+                throw new BusinessException(VaultIndexErrorCodes.FieldFilterTooBroad).WithData("Max", IndexSearchConsts.MaxFieldFilterDocuments);
+            }
+
+            documentIds = matched.Ids;
+        }
+
+        return new ChunkSearchScope(readScope.IsUnrestricted, readScope.DocumentTypeIds, readScope.OwnerId, requested, documentIds);
     }
 
     /// <summary>The document types the caller can see, id to type code.</summary>

@@ -34,4 +34,7 @@ public static class VaultIndexErrorCodes
 
     /// <summary>The pointer was not returned by search or outline: it is not a chunk or outline-node pointer.</summary>
     public const string InvalidPointer = Namespace + ":InvalidPointer";
+
+    /// <summary>The field conditions matched more documents than one search narrows to; a narrower condition is needed.</summary>
+    public const string FieldFilterTooBroad = Namespace + ":FieldFilterTooBroad";
 }

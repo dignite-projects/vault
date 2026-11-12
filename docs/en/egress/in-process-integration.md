@@ -13,6 +13,7 @@ A module installed in the **same host** as Dignite Vault Extract can keep its ow
 | --- | --- | --- | --- |
 | `IDocumentIntegrationService` | The module's event handlers and background jobs (ingestion) | None | Ready documents and their ids |
 | `IDocumentAppService.GetReadScopeAsync` | The module's own query path, on behalf of a signed-in user | The caller's | What that user may read |
+| `IDocumentAppService.GetIdsByFieldsAsync` | The same query path, when the user filters by extracted fields | The caller's | The documents whose fields match |
 
 Both live in the `Dignite.Vault.Extract.Application.Contracts` package. Keep each on its own side: a query path that reads documents through the integration service skips Extract's read rule.
 
@@ -85,6 +86,25 @@ Under version 1, a document is readable when `IsUnrestricted` is `true`, **or** 
 - **Answer "not found", not "forbidden",** for a row outside the scope, as Extract's own read paths do.
 
 The rule itself is described in [Document Type Permissions](../configuration/document-type-permissions.md).
+
+## Filtering by extracted fields: `GetIdsByFieldsAsync`
+
+Keep no copy of field values in your module. When a user narrows your query by extracted fields, ask Extract which documents match and filter your rows by document id:
+
+```csharp
+var matched = await _documentAppService.GetIdsByFieldsAsync(new GetDocumentIdsByFieldsInput
+{
+    DocumentTypeCode = "lease",
+    FieldFilters = [new DocumentFieldFilter { Name = "monthly_rent", Min = "150000" }],
+    MaxResultCount = 10_000
+});
+```
+
+`DocumentTypeCode` is required, and `FieldFilters` takes 1 to 10 conditions with the same rules as the document list's ([REST API](rest-api.md#listing-and-filtering-documents)). `Ids` holds the matching documents in ascending id order, only Ready ones (released, typed, not a container) and only those the calling user may read; `HasMore` says more matched than `MaxResultCount` (1 to 10,000, default 10,000).
+
+- **Refuse, do not truncate, when `HasMore` is `true`.** Searching the first 10,000 ids silently drops the rest. Vault Index refuses with `VaultIndex:FieldFilterTooBroad`.
+- **It throws like the document list:** `AbpAuthorizationException` without `Documents.Default`, and a `BusinessException` (`Extract:UnknownExtractedField`) for a type code or field the current layer does not define.
+- **Still apply the read scope to your own rows.** The ids are already within it; filtering by both costs nothing and keeps your rows safe if the two calls see different grants.
 
 ## See Also
 

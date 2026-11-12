@@ -19,6 +19,12 @@ public static class ChunkScopeFilter
         ArgumentNullException.ThrowIfNull(scope);
 
         query = query.Where(x => !x.IsHidden);
+        if (scope.RequestedDocumentIds is not null)
+        {
+            var documentIds = scope.RequestedDocumentIds.ToList();
+            query = query.Where(x => documentIds.Contains(x.DocumentId));
+        }
+
         return ApplyReadScope(query, scope);
     }
 

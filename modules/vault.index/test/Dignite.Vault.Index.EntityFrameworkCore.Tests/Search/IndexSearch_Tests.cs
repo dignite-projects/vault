@@ -17,6 +17,7 @@ using Volo.Abp.Authorization;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Validation;
 using Xunit;
 
 namespace Dignite.Vault.Index.Search;
@@ -52,6 +53,7 @@ public class IndexSearch_Tests : VaultIndexTestBase<VaultIndexIngestionTestModul
     private static readonly Guid InvoiceType = Guid.Parse("b0000000-0000-0000-0000-00000000000b");
     private static readonly Guid LeaseDoc = Guid.Parse("d0000000-0000-0000-0000-000000000001");
     private static readonly Guid InvoiceDoc = Guid.Parse("d0000000-0000-0000-0000-000000000002");
+    private static readonly Guid SecondLeaseDoc = Guid.Parse("d0000000-0000-0000-0000-000000000003");
     private static readonly Guid Alice = Guid.Parse("0e000000-0000-0000-0000-0000000000a1");
     private static readonly Guid Bob = Guid.Parse("0e000000-0000-0000-0000-0000000000b0");
     private static readonly Guid OtherTenant = Guid.Parse("7e000000-0000-0000-0000-000000000001");
@@ -214,6 +216,71 @@ public class IndexSearch_Tests : VaultIndexTestBase<VaultIndexIngestionTestModul
     }
 
     [Fact]
+    public async Task Field_filters_search_only_the_documents_Extract_matched()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "Lease 1");
+        await IndexAsync(SecondLeaseDoc, LeaseType, Bob, Lease, "Lease 2");
+        FieldsMatch(SecondLeaseDoc);
+
+        (await DocumentsFoundAsync("賃料", "lease", RentFilter())).ShouldBe([SecondLeaseDoc]);
+
+        await _documents.Received(1).GetIdsByFieldsAsync(Arg.Is<GetDocumentIdsByFieldsInput>(i =>
+            i.DocumentTypeCode == "lease"
+            && i.FieldFilters.Count == 1 && i.FieldFilters[0].Name == "rent" && i.FieldFilters[0].Min == "150000"
+            && i.MaxResultCount == IndexSearchConsts.MaxFieldFilterDocuments));
+    }
+
+    [Fact]
+    public async Task Field_filters_never_widen_the_read_scope()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "Lease 1");
+        await IndexAsync(SecondLeaseDoc, LeaseType, Bob, Lease, "Lease 2");
+        FieldsMatch(LeaseDoc, SecondLeaseDoc);
+        ScopeIs(owner: Bob);
+
+        (await DocumentsFoundAsync("賃料", "lease", RentFilter())).ShouldBe([SecondLeaseDoc]);
+    }
+
+    [Fact]
+    public async Task Field_filters_that_match_nothing_or_name_an_invisible_type_find_nothing()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "Lease");
+        FieldsMatch();
+
+        (await DocumentsFoundAsync("賃料", "lease", RentFilter())).ShouldBeEmpty();
+
+        _documents.ClearReceivedCalls();
+        (await DocumentsFoundAsync("賃料", "no-such-type", RentFilter())).ShouldBeEmpty();
+        await _documents.DidNotReceive().GetIdsByFieldsAsync(Arg.Any<GetDocumentIdsByFieldsInput>());
+    }
+
+    [Fact]
+    public async Task Field_filters_that_match_too_many_documents_are_refused()
+    {
+        _documents.GetIdsByFieldsAsync(Arg.Any<GetDocumentIdsByFieldsInput>())
+            .Returns(new DocumentIdListDto { Ids = [LeaseDoc], HasMore = true });
+
+        var error = await Should.ThrowAsync<BusinessException>(() => _search.SearchAsync(new IndexSearchInput
+        {
+            Query = "賃料",
+            DocumentTypeCode = "lease",
+            FieldFilters = RentFilter()
+        }));
+        error.Code.ShouldBe(VaultIndexErrorCodes.FieldFilterTooBroad);
+    }
+
+    [Fact]
+    public async Task Field_filters_need_a_document_type()
+    {
+        await Should.ThrowAsync<AbpValidationException>(() => _search.SearchAsync(new IndexSearchInput
+        {
+            Query = "賃料",
+            FieldFilters = RentFilter()
+        }));
+        await _documents.DidNotReceive().GetIdsByFieldsAsync(Arg.Any<GetDocumentIdsByFieldsInput>());
+    }
+
+    [Fact]
     public async Task Hits_are_capped_and_a_long_chunk_is_cut_and_says_so()
     {
         await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexProfile, Guid>>().InsertAsync(
@@ -280,9 +347,21 @@ public class IndexSearch_Tests : VaultIndexTestBase<VaultIndexIngestionTestModul
         (await _search.SearchAsync(new IndexSearchInput { Query = "賃料" })).Hits.ShouldBeEmpty();
     }
 
-    private async Task<List<Guid>> DocumentsFoundAsync(string query, string? typeCode = null)
-        => (await _search.SearchAsync(new IndexSearchInput { Query = query, DocumentTypeCode = typeCode, MaxResultCount = IndexSearchConsts.MaxResultCount }))
+    private async Task<List<Guid>> DocumentsFoundAsync(string query, string? typeCode = null, List<DocumentFieldFilter>? fieldFilters = null)
+        => (await _search.SearchAsync(new IndexSearchInput
+        {
+            Query = query,
+            DocumentTypeCode = typeCode,
+            FieldFilters = fieldFilters,
+            MaxResultCount = IndexSearchConsts.MaxResultCount
+        }))
             .Hits.Select(h => h.DocumentId).Distinct().ToList();
+
+    private static List<DocumentFieldFilter> RentFilter() => [new() { Name = "rent", Min = "150000" }];
+
+    private void FieldsMatch(params Guid[] documentIds)
+        => _documents.GetIdsByFieldsAsync(Arg.Any<GetDocumentIdsByFieldsInput>())
+            .Returns(new DocumentIdListDto { Ids = documentIds.ToList() });
 
     private void ScopeIs(bool unrestricted = false, Guid[]? types = null, Guid? owner = null)
     {

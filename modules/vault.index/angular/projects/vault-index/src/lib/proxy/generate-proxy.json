@@ -7403,6 +7403,29 @@
                   }
                 },
                 {
+                  "name": "GetIdsByFieldsAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Vault.Extract.Documents.GetDocumentIdsByFieldsInput, Dignite.Vault.Extract.Application.Contracts",
+                      "type": "Dignite.Vault.Extract.Documents.GetDocumentIdsByFieldsInput",
+                      "typeSimple": "Dignite.Vault.Extract.Documents.GetDocumentIdsByFieldsInput",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "Dignite.Vault.Extract.Documents.DocumentIdListDto",
+                    "typeSimple": "Dignite.Vault.Extract.Documents.DocumentIdListDto",
+                    "summary": null,
+                    "contentTypes": null,
+                    "isRemoteStream": false
+                  }
+                },
+                {
                   "name": "GetListAsync",
                   "parametersOnMethod": [
                     {
@@ -11713,6 +11736,21 @@
                   "jsonName": null,
                   "type": "System.Int32?",
                   "typeSimple": "number?",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "FieldFilters",
+                  "jsonName": null,
+                  "type": "System.Collections.Generic.List<Dignite.Vault.Extract.Documents.DocumentFieldFilter>",
+                  "typeSimple": "[Dignite.Vault.Extract.Documents.DocumentFieldFilter]",
                   "isOptional": false,
                   "defaultValue": null,
                   "constraintTypes": null,
@@ -18022,6 +18060,22 @@
           "displayName": null
         },
         {
+          "name": "RerankScore",
+          "jsonName": null,
+          "type": "System.Double?",
+          "typeSimple": "number?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
           "name": "KeywordRank",
           "jsonName": null,
           "type": "System.Int32?",
@@ -18113,6 +18167,22 @@
           "summary": null,
           "description": null,
           "displayName": null
+        },
+        {
+          "name": "FieldFilters",
+          "jsonName": null,
+          "type": "[Dignite.Vault.Extract.Documents.DocumentFieldFilter]",
+          "typeSimple": "[Dignite.Vault.Extract.Documents.DocumentFieldFilter]",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": 10,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
         }
       ],
       "summary": null,
@@ -18132,6 +18202,22 @@
           "jsonName": null,
           "type": "[Dignite.Vault.Index.Search.IndexSearchHitDto]",
           "typeSimple": "[Dignite.Vault.Index.Search.IndexSearchHitDto]",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "Reranked",
+          "jsonName": null,
+          "type": "System.Boolean",
+          "typeSimple": "boolean",
           "isRequired": false,
           "minLength": null,
           "maxLength": null,

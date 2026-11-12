@@ -37,7 +37,7 @@ export class IndexSearchService {
       method: 'GET',
       headers: { Accept: 'application/json' },
       url: '/api/vault-index/search',
-      params: { query: input.query, documentTypeCode: input.documentTypeCode, maxResultCount: input.maxResultCount },
+      params: { query: input.query, documentTypeCode: input.documentTypeCode, maxResultCount: input.maxResultCount, fieldFilters: input.fieldFilters },
     },
       { apiName: this.apiName,...config });
 }

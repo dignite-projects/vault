@@ -1,3 +1,4 @@
+using Dignite.Vault.Extract;
 using Volo.Abp.Application;
 using Volo.Abp.Authorization;
 using Volo.Abp.Features;
@@ -7,6 +8,7 @@ namespace Dignite.Vault.Index;
 
 [DependsOn(
     typeof(VaultIndexDomainSharedModule),
+    typeof(VaultExtractApplicationContractsModule),
     typeof(AbpDddApplicationContractsModule),
     typeof(AbpAuthorizationModule),
     typeof(AbpFeaturesModule)

@@ -29,10 +29,16 @@ Index holds only what Extract released (`DocumentReadyEto`). A document in Extra
 
 | | |
 | --- | --- |
-| REST | `GET /api/vault-index/search?query=…&documentTypeCode=…&maxResultCount=…` |
-| MCP | `vault_index_search` (`query`, `documentTypeCode`, `maxResults`) |
+| REST | `GET /api/vault-index/search?query=…&documentTypeCode=…&fieldFilters[0].name=…&fieldFilters[0].min=…&maxResultCount=…` |
+| MCP | `vault_index_search` (`query`, `documentTypeCode`, `fieldFilters`, `maxResults`) |
 
 `query` is natural language or keywords, up to 1,000 characters. `documentTypeCode` narrows to one type (a type the caller cannot see finds nothing). `maxResultCount` is 1 to 20, default 8.
+
+`fieldFilters` narrows the search to the documents whose extracted fields meet every condition: "the payment terms of leases over 150,000 yen a month". The conditions are those of Extract's document list ([REST](rest-api.md#listing-and-filtering-documents), [MCP](mcp-server.md#search)): each names a field of `documentTypeCode`'s type with an exact `value` or an inclusive `min` / `max` range, at most 10, combined with AND, and they require `documentTypeCode`. Extract evaluates them on every search, against its field index and within the caller's read scope, so a corrected field value counts at once.
+
+- A field the type does not define, or a value that does not parse, fails as it does in Extract (for example `Extract:UnknownExtractedField`); conditions no document meets return no hits.
+- Conditions met by more than 10,000 documents are refused with `VaultIndex:FieldFilterTooBroad`: add a condition.
+- A field whose **Searchable** flag is off has no index entries, so a condition on it matches nothing.
 
 Two legs run over the caller's scope and are fused by **reciprocal rank fusion** (k = 60): a **keyword** leg (SQL Server full-text search with the Japanese word breaker) and a **vector** leg (exact cosine distance with the host's embedding model). Fusion reads ranks, not scores, so each hit reports where each leg ranked it. When the host configures a [rerank model](../configuration/ai-provider.md#rerank-model-index), a cross-encoder then reorders the leading 30 fused candidates, reading the query with each chunk and its document title:
 
