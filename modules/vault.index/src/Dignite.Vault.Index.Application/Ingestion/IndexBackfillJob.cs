@@ -1,11 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents.Integration;
+using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Indexing;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
+using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Linq;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Uow;
 
 namespace Dignite.Vault.Index.Ingestion;
 
@@ -17,11 +23,21 @@ public class IndexBackfillJobArgs
 
     /// <summary>The last document id of the previous page; <c>null</c> to start from the beginning.</summary>
     public Guid? AfterId { get; set; }
+
+    /// <summary>
+    /// Walk the documents already in the index instead of Extract's Ready ones: the rebuild after an index profile
+    /// changed. Each sync re-chunks a document only when its settings stamp differs, so walking more documents than
+    /// changed costs a pull each, not an embedding.
+    /// </summary>
+    public bool IndexedOnly { get; set; }
+
+    /// <summary>With <see cref="IndexedOnly"/>, only the documents of this type; every type when empty.</summary>
+    public Guid? DocumentTypeId { get; set; }
 }
 
 /// <summary>
-/// Walks a tenant's Ready documents one page at a time with Extract's keyset cursor and enqueues a sync for each,
-/// then enqueues itself for the next page. Everything it enqueues is low priority, so a backfill or a rebuild never
+/// Walks a tenant's Ready documents one page at a time with Extract's keyset cursor (or, for a rebuild, the documents
+/// already in the index, with its own) and enqueues a sync for each, then enqueues itself for the next page. Everything it enqueues is low priority, so a backfill or a rebuild never
 /// starves Extract's pipeline jobs or the syncs that events trigger. A document already indexed with the same text
 /// and settings is skipped by the sync itself, so running a backfill twice costs pulls, not embeddings.
 /// </summary>
@@ -29,17 +45,26 @@ public class IndexBackfillJob : AsyncBackgroundJob<IndexBackfillJobArgs>, ITrans
 {
     private readonly ICurrentTenant _currentTenant;
     private readonly IDocumentIntegrationService _integrationService;
+    private readonly IRepository<IndexedDocument, Guid> _documentRepository;
+    private readonly IUnitOfWorkManager _unitOfWorkManager;
+    private readonly IAsyncQueryableExecuter _asyncExecuter;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly VaultIndexIngestionOptions _options;
 
     public IndexBackfillJob(
         ICurrentTenant currentTenant,
         IDocumentIntegrationService integrationService,
+        IRepository<IndexedDocument, Guid> documentRepository,
+        IUnitOfWorkManager unitOfWorkManager,
+        IAsyncQueryableExecuter asyncExecuter,
         IBackgroundJobManager backgroundJobManager,
         IOptions<VaultIndexIngestionOptions> options)
     {
         _currentTenant = currentTenant;
         _integrationService = integrationService;
+        _documentRepository = documentRepository;
+        _unitOfWorkManager = unitOfWorkManager;
+        _asyncExecuter = asyncExecuter;
         _backgroundJobManager = backgroundJobManager;
         _options = options.Value;
     }
@@ -49,13 +74,10 @@ public class IndexBackfillJob : AsyncBackgroundJob<IndexBackfillJobArgs>, ITrans
         using (_currentTenant.Change(args.TenantId))
         {
             var pageSize = Math.Clamp(_options.BackfillPageSize, 1, 1000);
-            var page = await _integrationService.GetReadyIdsAsync(new GetReadyDocumentIdsInput
-            {
-                AfterId = args.AfterId,
-                MaxResultCount = pageSize
-            });
+            var ids = args.IndexedOnly ? await GetIndexedIdsAsync(args, pageSize) : await GetReadyIdsAsync(args, pageSize);
+            var trigger = args.IndexedOnly ? IndexRunTrigger.Rebuild : IndexRunTrigger.Backfill;
 
-            foreach (var documentId in page.Items)
+            foreach (var documentId in ids)
             {
                 await _backgroundJobManager.EnqueueAsync(
                     new IndexDocumentJobArgs
@@ -63,17 +85,53 @@ public class IndexBackfillJob : AsyncBackgroundJob<IndexBackfillJobArgs>, ITrans
                         DocumentId = documentId,
                         TenantId = args.TenantId,
                         Kind = IndexDocumentJobKind.Sync,
-                        Trigger = IndexRunTrigger.Backfill
+                        Trigger = trigger
                     },
                     BackgroundJobPriority.Low);
             }
 
-            if (page.Items.Count == pageSize)
+            if (ids.Count == pageSize)
             {
                 await _backgroundJobManager.EnqueueAsync(
-                    new IndexBackfillJobArgs { TenantId = args.TenantId, AfterId = page.Items[^1] },
+                    new IndexBackfillJobArgs
+                    {
+                        TenantId = args.TenantId,
+                        AfterId = ids[^1],
+                        IndexedOnly = args.IndexedOnly,
+                        DocumentTypeId = args.DocumentTypeId
+                    },
                     BackgroundJobPriority.Low);
             }
         }
+    }
+
+    protected virtual async Task<IReadOnlyList<Guid>> GetReadyIdsAsync(IndexBackfillJobArgs args, int pageSize)
+    {
+        var page = await _integrationService.GetReadyIdsAsync(new GetReadyDocumentIdsInput
+        {
+            AfterId = args.AfterId,
+            MaxResultCount = pageSize
+        });
+        return page.Items;
+    }
+
+    /// <summary>A page of the index's own documents, by id, of one type or all.</summary>
+    protected virtual async Task<IReadOnlyList<Guid>> GetIndexedIdsAsync(IndexBackfillJobArgs args, int pageSize)
+    {
+        using var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+        var query = await _documentRepository.GetQueryableAsync();
+        if (args.DocumentTypeId is { } typeId)
+        {
+            query = query.Where(d => d.DocumentTypeId == typeId);
+        }
+
+        if (args.AfterId is { } afterId)
+        {
+            query = query.Where(d => d.Id.CompareTo(afterId) > 0);
+        }
+
+        var ids = await _asyncExecuter.ToListAsync(query.OrderBy(d => d.Id).Select(d => d.Id).Take(pageSize));
+        await uow.CompleteAsync();
+        return ids;
     }
 }

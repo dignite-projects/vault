@@ -1,0 +1,158 @@
+<div class="container-fluid">
+  <h2 class="h4 mb-2">{{ 'VaultIndex::Menu:VaultIndex.Profiles' | abpLocalization }}</h2>
+  <div class="small text-muted mb-3">{{ 'VaultIndex::Profiles:Hint' | abpLocalization }}</div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>{{ 'VaultIndex::Profiles:DocumentType' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::Profiles:Strategy' | abpLocalization }}</th>
+            <th class="text-end">{{ 'VaultIndex::Profiles:MaxTokens' | abpLocalization }}</th>
+            <th class="text-end">{{ 'VaultIndex::Profiles:Overlap' | abpLocalization }}</th>
+            <th class="text-end">{{ 'VaultIndex::Profiles:Documents' | abpLocalization }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.documentTypeId ?? 'default') {
+            <tr [class.table-light]="!row.documentTypeId">
+              <td>
+                @if (row.documentTypeId) {
+                  <code>{{ row.documentTypeCode }}</code>
+                  <span class="ms-2">{{ row.documentTypeName }}</span>
+                } @else {
+                  <span class="fw-semibold">{{ 'VaultIndex::Profiles:LayerDefault' | abpLocalization }}</span>
+                }
+                @if (row.documentTypeId && !row.hasOwnProfile) {
+                  <span class="badge bg-body-tertiary text-body border ms-2">{{ 'VaultIndex::Profiles:Inherited' | abpLocalization }}</span>
+                }
+              </td>
+              <td>{{ strategyKey(row.chunkingStrategy) | abpLocalization }}</td>
+              <td class="text-end">{{ row.maxTokensPerChunk | number }}</td>
+              <td class="text-end">{{ row.overlapTokens | number }}</td>
+              <td class="text-end">{{ row.indexedDocumentCount | number }}</td>
+              <td class="text-end text-nowrap">
+                <button type="button" class="btn btn-outline-primary btn-sm" (click)="edit(row)">
+                  {{ 'VaultIndex::Profiles:Edit' | abpLocalization }}
+                </button>
+                @if (row.documentTypeId && row.hasOwnProfile) {
+                  <button type="button" class="btn btn-link btn-sm" (click)="reset(row)">
+                    {{ 'VaultIndex::Profiles:Reset' | abpLocalization }}
+                  </button>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                @if (loading()) {
+                  <i class="fas fa-spinner fa-spin"></i>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+@if (editing(); as row) {
+  @if (form(); as f) {
+    <div
+      class="modal d-block"
+      tabindex="-1"
+      style="background: rgba(0, 0, 0, 0.4)"
+      (mousedown)="backdropDown($event)"
+      (click)="backdropClick($event)"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form (ngSubmit)="save()">
+            <div class="modal-header">
+              <h5 class="modal-title">
+                {{ 'VaultIndex::Profiles:EditTitle' | abpLocalization }}:
+                @if (row.documentTypeId) {
+                  <code>{{ row.documentTypeCode }}</code>
+                } @else {
+                  {{ 'VaultIndex::Profiles:LayerDefault' | abpLocalization }}
+                }
+              </h5>
+              <button type="button" class="btn-close" (click)="close()"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label" for="profile-strategy">{{ 'VaultIndex::Profiles:Strategy' | abpLocalization }}</label>
+                <select
+                  id="profile-strategy"
+                  name="chunkingStrategy"
+                  class="form-select"
+                  [ngModel]="f.chunkingStrategy"
+                  (ngModelChange)="update('chunkingStrategy', $event)"
+                >
+                  @for (option of strategyOptions; track option.value) {
+                    <option [ngValue]="option.value">{{ strategyKey(option.value) | abpLocalization }}</option>
+                  }
+                </select>
+                <div class="form-text">{{ 'VaultIndex::Profiles:StrategyHint.' + f.chunkingStrategy | abpLocalization }}</div>
+              </div>
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <label class="form-label" for="profile-max">{{ 'VaultIndex::Profiles:MaxTokens' | abpLocalization }}</label>
+                  <input
+                    id="profile-max"
+                    name="maxTokensPerChunk"
+                    type="number"
+                    class="form-control"
+                    [min]="minTokens"
+                    [max]="maxTokens"
+                    [class.is-invalid]="error() === 'VaultIndex::Profiles:InvalidChunkSize'"
+                    [ngModel]="f.maxTokensPerChunk"
+                    (ngModelChange)="update('maxTokensPerChunk', $event)"
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="profile-overlap">{{ 'VaultIndex::Profiles:Overlap' | abpLocalization }}</label>
+                  <input
+                    id="profile-overlap"
+                    name="overlapTokens"
+                    type="number"
+                    class="form-control"
+                    min="0"
+                    [class.is-invalid]="error() === 'VaultIndex::Profiles:InvalidOverlap'"
+                    [ngModel]="f.overlapTokens"
+                    (ngModelChange)="update('overlapTokens', $event)"
+                  />
+                </div>
+              </div>
+              @if (error(); as e) {
+                <div class="small text-danger mb-2">{{ e | abpLocalization: '' + minTokens : '' + maxTokens }}</div>
+              }
+              <div class="alert alert-info small mb-0">
+                <i class="fas fa-calculator me-1"></i>
+                @if (estimating()) {
+                  <i class="fas fa-spinner fa-spin"></i>
+                } @else if (estimateMessage(); as m) {
+                  {{ m.key | abpLocalization: m.args }}
+                } @else {
+                  —
+                }
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" (click)="close()">{{ 'VaultIndex::Profiles:Cancel' | abpLocalization }}</button>
+              <button type="submit" class="btn btn-primary" [disabled]="!!error() || saving()">
+                @if (saving()) {
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                {{ 'VaultIndex::Profiles:Save' | abpLocalization }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  }
+}

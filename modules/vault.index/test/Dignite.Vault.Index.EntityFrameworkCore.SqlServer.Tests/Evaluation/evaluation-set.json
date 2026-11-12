@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "description": "First Vault Index evaluation set (2026-11-12): 18 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading.",
+  "version": 2,
+  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\".",
   "documents": [
     { "id": "lease-shibakoen", "type": "lease", "title": "建物賃貸借契約書(芝公園レジデンス 702)", "fields": { "物件": "芝公園レジデンス", "当事者": "山田太郎", "金額": "185,000 円" } },
     { "id": "lease-umeda", "type": "lease", "title": "事務所賃貸借契約書(梅田センタービル)", "fields": { "物件": "梅田センタービル", "当事者": "株式会社青空商事", "金額": "420,000 円" } },
@@ -19,7 +19,10 @@
     { "id": "manual-vpn", "type": "manual", "title": "社外からの VPN 接続手順", "fields": { "名称": "VPN 接続手順" } },
     { "id": "minutes-1101", "type": "minutes", "title": "経営会議 議事録 2026-11-01", "fields": { "会議": "経営会議", "日付": "2026年11月1日" } },
     { "id": "minutes-1105", "type": "minutes", "title": "情報セキュリティ委員会 議事録 2026-11-05", "fields": { "会議": "情報セキュリティ委員会", "日付": "2026年11月5日" } },
-    { "id": "quote-office-move", "type": "quote", "title": "御見積書 Q-2026-077(本社移転)", "fields": { "番号": "Q-2026-077", "当事者": "日本ムーブ株式会社", "金額": "1,650,000 円" } }
+    { "id": "quote-office-move", "type": "quote", "title": "御見積書 Q-2026-077(本社移転)", "fields": { "番号": "Q-2026-077", "当事者": "日本ムーブ株式会社", "金額": "1,650,000 円" } },
+    { "id": "price-list-stationery", "type": "price-list", "title": "文具単価表(2026年度下期)", "fields": {}},
+    { "id": "sales-report-q3", "type": "report", "title": "2026年度 第3四半期 営業報告", "fields": {}},
+    { "id": "expense-claim-1103", "type": "expense-claim", "title": "経費精算書(鈴木一郎 2026年11月3日)", "fields": {}}
   ],
   "fieldTemplates": {
     "lease": [ "{物件}の賃貸借契約書", "{当事者}との賃貸借契約", "月額賃料 {金額} の契約" ],
@@ -86,6 +89,20 @@
     { "query": "The VPN one-time code is rejected. What should I check?", "document": "manual-vpn", "heading": "トラブルシューティング", "language": "en" },
     { "query": "When is payment due for invoice INV-2026-1112?", "document": "invoice-1112", "heading": "お振込先", "language": "en" },
     { "query": "Can the contractor subcontract the system maintenance work?", "document": "outsourcing-system", "heading": "第4条", "language": "en" },
-    { "query": "Are pets allowed in the Fukuoka apartment?", "document": "lease-fukuoka", "heading": "第4条", "language": "en" }
+    { "query": "Are pets allowed in the Fukuoka apartment?", "document": "lease-fukuoka", "heading": "第4条", "language": "en" },
+    { "query": "ホッチキス針の単価はいくら", "document": "price-list-stationery", "heading": "単価一覧", "language": "ja", "source": "table" },
+    { "query": "ファイルボックスの納期は何営業日", "document": "price-list-stationery", "heading": "単価一覧", "language": "ja", "source": "table" },
+    { "query": "A3复印纸一箱多少钱", "document": "price-list-stationery", "heading": "単価一覧", "language": "zh", "source": "table" },
+    { "query": "What is the lead time for clear files?", "document": "price-list-stationery", "heading": "単価一覧", "language": "en", "source": "table" },
+    { "query": "配送料がかかるのはいくら未満の注文", "document": "price-list-stationery", "heading": "発注条件", "language": "ja", "source": "question" },
+    { "query": "大阪支店の9月の売上はいくら", "document": "sales-report-q3", "heading": "支店別売上", "language": "ja", "source": "table" },
+    { "query": "名古屋支店 8月 売上", "document": "sales-report-q3", "heading": "支店別売上", "language": "ja", "source": "table" },
+    { "query": "东京总店7月的销售额", "document": "sales-report-q3", "heading": "支店別売上", "language": "zh", "source": "table" },
+    { "query": "保守サービスの解約件数", "document": "sales-report-q3", "heading": "製品別受注", "language": "ja", "source": "table" },
+    { "query": "How many new orders did Vault Extract get in Q3?", "document": "sales-report-q3", "heading": "製品別受注", "language": "en", "source": "table" },
+    { "query": "福岡支店の欠員はいつ採用する", "document": "sales-report-q3", "heading": "課題", "language": "ja", "source": "question" },
+    { "query": "大阪出張の宿泊費はいくら", "document": "expense-claim-1103", "heading": "明細", "language": "ja", "source": "table" },
+    { "query": "顧客との会食にいくら使った", "document": "expense-claim-1103", "heading": "明細", "language": "ja", "source": "table" },
+    { "query": "How much was the Shinkansen round trip to Osaka?", "document": "expense-claim-1103", "heading": "明細", "language": "en", "source": "table" }
   ]
 }

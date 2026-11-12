@@ -235,7 +235,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         }
 
         var profile = await _profileResolver.ResolveAsync(document.DocumentTypeId);
-        var contentHash = Sha256(document.Markdown);
+        var text = _chunker.Prepare(document.Markdown);
+        var contentHash = Sha256(text);
         var modelId = _embedder.GetModelId();
         var serving = await _generationManager.FindServingAsync();
 
@@ -250,7 +251,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             return new SyncPlan(contentHash, profile.Stamp, serving!.Id, null, null, null);
         }
 
-        var drafts = await _chunker.ChunkAsync(document.Markdown, document.Id.ToString(), profile);
+        var drafts = await _chunker.ChunkAsync(text, document.Id.ToString(), profile);
         if (drafts.Count == 0)
         {
             throw new BusinessException(VaultIndexErrorCodes.EmptyDocument);

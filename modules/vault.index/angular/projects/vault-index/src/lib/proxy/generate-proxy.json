@@ -11869,6 +11869,341 @@
             }
           }
         },
+        "Dignite.Vault.Index.HttpApi.Profiles.IndexProfileController": {
+          "controllerName": "IndexProfile",
+          "controllerGroupName": "IndexProfile",
+          "isRemoteService": true,
+          "isIntegrationService": false,
+          "apiVersion": null,
+          "type": "Dignite.Vault.Index.HttpApi.Profiles.IndexProfileController",
+          "summary": null,
+          "remarks": null,
+          "description": null,
+          "displayName": null,
+          "interfaces": [
+            {
+              "type": "Dignite.Vault.Index.Profiles.IIndexProfileAppService",
+              "name": "IIndexProfileAppService",
+              "methods": [
+                {
+                  "name": "GetListAsync",
+                  "parametersOnMethod": [],
+                  "returnValue": {
+                    "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+                    "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+                    "summary": null,
+                    "contentTypes": null,
+                    "isRemoteStream": false
+                  }
+                },
+                {
+                  "name": "GetRebuildEstimateAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Vault.Index.Profiles.IndexProfileInput, Dignite.Vault.Index.Application.Contracts",
+                      "type": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                      "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "Dignite.Vault.Index.Profiles.IndexRebuildEstimateDto",
+                    "typeSimple": "Dignite.Vault.Index.Profiles.IndexRebuildEstimateDto",
+                    "summary": null,
+                    "contentTypes": null,
+                    "isRemoteStream": false
+                  }
+                },
+                {
+                  "name": "SetAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Vault.Index.Profiles.IndexProfileInput, Dignite.Vault.Index.Application.Contracts",
+                      "type": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                      "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "Dignite.Vault.Index.Profiles.IndexProfileDto",
+                    "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileDto",
+                    "summary": null,
+                    "contentTypes": null,
+                    "isRemoteStream": false
+                  }
+                },
+                {
+                  "name": "ResetAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "documentTypeId",
+                      "typeAsString": "System.Guid, System.Private.CoreLib",
+                      "type": "System.Guid",
+                      "typeSimple": "string",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "System.Void",
+                    "typeSimple": "System.Void",
+                    "summary": null,
+                    "contentTypes": null,
+                    "isRemoteStream": false
+                  }
+                }
+              ]
+            }
+          ],
+          "actions": {
+            "GetListAsync": {
+              "uniqueName": "GetListAsync",
+              "name": "GetListAsync",
+              "httpMethod": "GET",
+              "url": "api/vault-index/profiles",
+              "supportedVersions": [],
+              "parametersOnMethod": [],
+              "parameters": [],
+              "returnValue": {
+                "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+                "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Index.Profiles.IndexProfileDto>",
+                "summary": null,
+                "contentTypes": [
+                  "text/plain",
+                  "application/json",
+                  "text/json"
+                ],
+                "isRemoteStream": false
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Vault.Index.Profiles.IIndexProfileAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "GetRebuildEstimateAsyncByInput": {
+              "uniqueName": "GetRebuildEstimateAsyncByInput",
+              "name": "GetRebuildEstimateAsync",
+              "httpMethod": "GET",
+              "url": "api/vault-index/profiles/rebuild-estimate",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Vault.Index.Profiles.IndexProfileInput, Dignite.Vault.Index.Application.Contracts",
+                  "type": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                  "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "DocumentTypeId",
+                  "jsonName": null,
+                  "type": "System.Guid?",
+                  "typeSimple": "string?",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "ChunkingStrategy",
+                  "jsonName": null,
+                  "type": "Dignite.Vault.Index.Indexing.ChunkingStrategy",
+                  "typeSimple": "enum",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "MaxTokensPerChunk",
+                  "jsonName": null,
+                  "type": "System.Int32",
+                  "typeSimple": "number",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "OverlapTokens",
+                  "jsonName": null,
+                  "type": "System.Int32",
+                  "typeSimple": "number",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "Dignite.Vault.Index.Profiles.IndexRebuildEstimateDto",
+                "typeSimple": "Dignite.Vault.Index.Profiles.IndexRebuildEstimateDto",
+                "summary": null,
+                "contentTypes": [
+                  "text/plain",
+                  "application/json",
+                  "text/json"
+                ],
+                "isRemoteStream": false
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Vault.Index.Profiles.IIndexProfileAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "SetAsyncByInput": {
+              "uniqueName": "SetAsyncByInput",
+              "name": "SetAsync",
+              "httpMethod": "PUT",
+              "url": "api/vault-index/profiles",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Vault.Index.Profiles.IndexProfileInput, Dignite.Vault.Index.Application.Contracts",
+                  "type": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                  "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "input",
+                  "jsonName": null,
+                  "type": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                  "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileInput",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Body",
+                  "descriptorName": "",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "Dignite.Vault.Index.Profiles.IndexProfileDto",
+                "typeSimple": "Dignite.Vault.Index.Profiles.IndexProfileDto",
+                "summary": null,
+                "contentTypes": [
+                  "text/plain",
+                  "application/json",
+                  "text/json"
+                ],
+                "isRemoteStream": false
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Vault.Index.Profiles.IIndexProfileAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "ResetAsyncByDocumentTypeId": {
+              "uniqueName": "ResetAsyncByDocumentTypeId",
+              "name": "ResetAsync",
+              "httpMethod": "DELETE",
+              "url": "api/vault-index/profiles/{documentTypeId}",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "documentTypeId",
+                  "typeAsString": "System.Guid, System.Private.CoreLib",
+                  "type": "System.Guid",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "documentTypeId",
+                  "name": "documentTypeId",
+                  "jsonName": null,
+                  "type": "System.Guid",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": [],
+                  "bindingSourceId": "Path",
+                  "descriptorName": "",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "System.Void",
+                "typeSimple": "System.Void",
+                "summary": null,
+                "contentTypes": null,
+                "isRemoteStream": false
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Vault.Index.Profiles.IIndexProfileAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            }
+          }
+        },
         "Dignite.Vault.Index.HttpApi.Search.IndexSearchController": {
           "controllerName": "IndexSearch",
           "controllerGroupName": "IndexSearch",
@@ -18156,6 +18491,24 @@
       "description": null,
       "displayName": null
     },
+    "Dignite.Vault.Index.Indexing.ChunkingStrategy": {
+      "baseType": "System.Enum",
+      "isEnum": true,
+      "enumNames": [
+        "Heading",
+        "Token"
+      ],
+      "enumValues": [
+        0,
+        1
+      ],
+      "genericArguments": null,
+      "properties": null,
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
     "Dignite.Vault.Index.Indexing.IndexedDocumentStatus": {
       "baseType": "System.Enum",
       "isEnum": true,
@@ -18217,6 +18570,301 @@
       ],
       "genericArguments": null,
       "properties": null,
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Profiles.IndexProfileDto": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "DocumentTypeId",
+          "jsonName": null,
+          "type": "System.Guid?",
+          "typeSimple": "string?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "DocumentTypeCode",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "DocumentTypeName",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "HasOwnProfile",
+          "jsonName": null,
+          "type": "System.Boolean",
+          "typeSimple": "boolean",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "ChunkingStrategy",
+          "jsonName": null,
+          "type": "Dignite.Vault.Index.Indexing.ChunkingStrategy",
+          "typeSimple": "enum",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "MaxTokensPerChunk",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "OverlapTokens",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "IndexedDocumentCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Profiles.IndexProfileInput": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "DocumentTypeId",
+          "jsonName": null,
+          "type": "System.Guid?",
+          "typeSimple": "string?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "ChunkingStrategy",
+          "jsonName": null,
+          "type": "Dignite.Vault.Index.Indexing.ChunkingStrategy",
+          "typeSimple": "enum",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "MaxTokensPerChunk",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": "100",
+          "maximum": "4000",
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "OverlapTokens",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": "0",
+          "maximum": "4000",
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Profiles.IndexRebuildEstimateDto": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "DocumentCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "ChunkCount",
+          "jsonName": null,
+          "type": "System.Int64",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "EmbeddingTokenCount",
+          "jsonName": null,
+          "type": "System.Int64",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "DocumentsWithoutTokenCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
       "summary": null,
       "remarks": null,
       "description": null,

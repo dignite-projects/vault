@@ -19,6 +19,7 @@
     <PackageReference Include="Microsoft.Extensions.DataIngestion.Markdig" />
     <!-- Pins the reader's Markdig to the repository's version (DataIngestion.Markdig asks for >= 0.43). -->
     <PackageReference Include="Markdig.Signed" />
+    <PackageReference Include="HtmlAgilityPack" />
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" />
     <ProjectReference Include="..\Dignite.Vault.Index.Application.Contracts\Dignite.Vault.Index.Application.Contracts.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Index.Domain\Dignite.Vault.Index.Domain.csproj" />

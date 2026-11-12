@@ -20,6 +20,7 @@ using Dignite.Vault.Index.Search;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 using OpenAI;
 using Shouldly;
@@ -82,6 +83,8 @@ public class VaultIndexEvaluationTestModule : AbpModule
         context.Services.AddSingleton(Substitute.For<IDocumentAppService>());
         context.Services.AddSingleton(Substitute.For<IDocumentTypeAppService>());
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
+        context.Services.AddSingleton<HtmlTablesSwitch>();
+        context.Services.Replace(ServiceDescriptor.Transient<IndexChunker, EvaluationChunker>());
 
         if (string.IsNullOrWhiteSpace(SqlServerTestDatabase.ServerConnectionString) || string.IsNullOrWhiteSpace(EvaluationModel.ModelId))
         {
@@ -183,6 +186,109 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         _output.WriteLine(report);
         var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-evaluation.md");
         await File.WriteAllTextAsync(path, report);
+    }
+
+    /// <summary>
+    /// The chunking strategies compared on the same cases. "HTML tables dropped" is how every strategy read a table
+    /// written as HTML before the chunker rewrote it as Markdown: DataIngestion's reader leaves it out.
+    /// </summary>
+    private static readonly (string Name, ResolvedIndexProfile Profile, bool HtmlTables)[] Strategies =
+    [
+        ("heading 400", new(ChunkingStrategy.Heading, 400, 0), true),
+        ("heading 400, HTML tables dropped", new(ChunkingStrategy.Heading, 400, 0), false),
+        ("heading 200", new(ChunkingStrategy.Heading, 200, 0), true),
+        ("heading 800", new(ChunkingStrategy.Heading, 800, 0), true),
+        ("token 400/40", new(ChunkingStrategy.Token, 400, 40), true)
+    ];
+
+    /// <summary>
+    /// Indexes the corpus once per chunking strategy (as the layer default profile) and ranks every case with the
+    /// fused legs and with the search service as configured (reranked when a rerank model is set). The report goes to
+    /// <c>VAULT_INDEX_EVAL_STRATEGY_REPORT</c> or <c>index-strategies.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Compare_chunking_strategies()
+    {
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        Arrange(set);
+        var cases = set.Cases();
+        var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
+        var results = new List<CaseResult>();
+        var notes = new List<string>
+        {
+            $"Evaluation set version {set.Version}: {set.Documents.Count} documents, {cases.Count} cases ({cases.Count(c => c.Source == "table")} answered by a table)",
+            "Each strategy is the layer default profile; the corpus is indexed again for each. `fused` is RRF 1:1 of the two legs; `service` is IIndexSearchAppService as configured"
+        };
+
+        foreach (var (name, profile, htmlTables) in Strategies)
+        {
+            await ClearAsync();
+            GetRequiredService<HtmlTablesSwitch>().Enabled = htmlTables;
+            await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexProfile, Guid>>().InsertAsync(
+                new IndexProfile(Guid.NewGuid(), null, null, profile.Strategy, profile.MaxTokensPerChunk, profile.OverlapTokens)));
+            await IndexCorpusAsync(set);
+            await WaitForFullTextAsync();
+
+            var chunks = (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(c => c.Id);
+            notes.Add($"`{name}`: {chunks.Count} chunks");
+            foreach (var evaluationCase in cases)
+            {
+                var (keyword, vector) = await LegsAsync(evaluationCase.Query);
+                var fused = ReciprocalRankFusion.Fuse(keyword, vector, IndexSearchConsts.RrfK)
+                    .Take(EvaluationReport.Depth)
+                    .Select(f => chunks.TryGetValue(f.ChunkId, out var c) ? (c.DocumentId, c.HeadingPath) : (Guid.Empty, (string?)null))
+                    .ToList();
+                var service = await WithUnitOfWorkAsync(async () => (await GetRequiredService<IIndexSearchAppService>()
+                        .SearchAsync(new IndexSearchInput { Query = evaluationCase.Query, MaxResultCount = EvaluationReport.Depth }))
+                    .Hits.Select(h => (h.DocumentId, h.HeadingPath)).ToList());
+                results.Add(Score(evaluationCase, name + " · fused", fused, documentIds));
+                results.Add(Score(evaluationCase, name + " · service", service, documentIds));
+            }
+        }
+
+        GetRequiredService<HtmlTablesSwitch>().Enabled = true;
+        var reranker = GetRequiredService<IndexRanker>().Reranker;
+        notes.Add(reranker is null ? "No rerank model: `service` is the fused order" : $"Rerank model {reranker.ModelId} in `service`");
+        notes.Add($"Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+
+        var report = EvaluationReport.ToMarkdown("Vault Index chunking strategies", results, notes, "heading 400 · service");
+        _output.WriteLine(report);
+        var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_STRATEGY_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-strategies.md");
+        await File.WriteAllTextAsync(path, report);
+    }
+
+    private async Task IndexCorpusAsync(EvaluationSet set)
+    {
+        var job = GetRequiredService<IndexDocumentJob>();
+        var eventTime = new DateTime(2026, 11, 12, 0, 0, 0);
+        foreach (var document in set.Documents)
+        {
+            eventTime = eventTime.AddMinutes(1);
+            await job.ExecuteAsync(new IndexDocumentJobArgs
+            {
+                DocumentId = document.DocumentId,
+                Kind = IndexDocumentJobKind.Sync,
+                Trigger = IndexRunTrigger.Backfill,
+                EventTime = eventTime
+            });
+        }
+
+        var rows = await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexedDocument, Guid>>().GetListAsync());
+        rows.Count(r => r.Status == IndexedDocumentStatus.Indexed).ShouldBe(set.Documents.Count);
+    }
+
+    private async Task<(IReadOnlyList<ChunkMatch> Keyword, IReadOnlyList<ChunkMatch> Vector)> LegsAsync(string query)
+    {
+        var scope = new ChunkSearchScope(true, [], null);
+        var keyword = await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>()
+            .SearchKeywordsAsync(query, scope, IndexSearchConsts.CandidatesPerLeg));
+        var vector = await WithUnitOfWorkAsync(async () =>
+        {
+            var serving = (await GetRequiredService<IndexGenerationManager>().FindServingAsync())!;
+            var embedding = await GetRequiredService<IndexEmbedder>().EmbedAsync([query]);
+            return await GetRequiredService<IChunkSearchIndex>().SearchVectorsAsync(serving.Id, embedding.Vectors[0], scope, IndexSearchConsts.CandidatesPerLeg);
+        });
+        return (keyword, vector);
     }
 
     /// <summary>The rerank variants rerank this many leading candidates, as search does by default.</summary>
@@ -305,7 +411,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         await using var connection = new SqlConnection(SqlServerTestDatabase.Evaluation.ConnectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(
-            "DELETE FROM VaultIndexChunkVectors; DELETE FROM VaultIndexChunks; DELETE FROM VaultIndexRuns; DELETE FROM VaultIndexedDocuments; DELETE FROM VaultIndexGenerations;",
+            "DELETE FROM VaultIndexChunkVectors; DELETE FROM VaultIndexChunks; DELETE FROM VaultIndexRuns; DELETE FROM VaultIndexedDocuments; DELETE FROM VaultIndexGenerations; DELETE FROM VaultIndexProfiles;",
             connection);
         await command.ExecuteNonQueryAsync();
     }
@@ -332,4 +438,23 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
 
         throw new TimeoutException("The full-text index did not catch up in two minutes.");
     }
+}
+
+/// <summary>Whether the evaluation chunker rewrites HTML tables, so a run can show what reading them as Markdown changed.</summary>
+public sealed class HtmlTablesSwitch
+{
+    public bool Enabled { get; set; } = true;
+}
+
+/// <summary>The real chunker, with the HTML rewrite switchable for the "HTML tables dropped" strategy.</summary>
+public class EvaluationChunker : IndexChunker
+{
+    private readonly HtmlTablesSwitch _switch;
+
+    public EvaluationChunker(HtmlTablesSwitch htmlTablesSwitch)
+    {
+        _switch = htmlTablesSwitch;
+    }
+
+    public override string Prepare(string markdown) => _switch.Enabled ? base.Prepare(markdown) : markdown;
 }

@@ -21,7 +21,8 @@ export function provideIndex(): EnvironmentProviders {
           path: '/vault-index',
           name: INDEX_MENU,
           iconClass: 'fas fa-magnifying-glass',
-          requiredPolicy: INDEX_PERMISSIONS.Status.Default,
+          // ABP policy expression: the group shows for whoever may open any page under it.
+          requiredPolicy: `${INDEX_PERMISSIONS.Status.Default} || ${INDEX_PERMISSIONS.Profiles}`,
           order: 3,
           layout: eLayoutType.application,
         },
@@ -41,6 +42,15 @@ export function provideIndex(): EnvironmentProviders {
           parentName: INDEX_MENU,
           requiredPolicy: INDEX_PERMISSIONS.Status.Default,
           order: 1,
+          layout: eLayoutType.application,
+        },
+        {
+          path: '/vault-index/profiles',
+          name: 'VaultIndex::Menu:VaultIndex.Profiles',
+          iconClass: 'fas fa-sliders',
+          parentName: INDEX_MENU,
+          requiredPolicy: INDEX_PERMISSIONS.Profiles,
+          order: 2,
           layout: eLayoutType.application,
         },
       ]);

@@ -22,6 +22,12 @@ export const INDEX_ROUTES: Routes = [
     data: { requiredPolicy: INDEX_PERMISSIONS.Status.Default },
   },
   {
+    path: 'profiles',
+    loadComponent: () => import('./profiles/index-profiles.component').then(c => c.IndexProfilesComponent),
+    canActivate: [authGuard, permissionGuard],
+    data: { requiredPolicy: INDEX_PERMISSIONS.Profiles },
+  },
+  {
     path: 'search-test',
     loadComponent: () => import('./search-test/index-search-test.component').then(c => c.IndexSearchTestComponent),
     canActivate: [authGuard, permissionGuard],
