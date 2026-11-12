@@ -27,6 +27,13 @@ public static class IndexSearchConsts
     /// </summary>
     public const int RrfK = 60;
 
+    /// <summary>
+    /// The most documents field conditions may match for one search, which then runs within them. Past it, search asks
+    /// for a narrower condition instead of searching a cut set. Extract's own cap (DocumentConsts.MaxFieldMatchedDocumentIds)
+    /// is the same.
+    /// </summary>
+    public const int MaxFieldFilterDocuments = 10_000;
+
     /// <summary>The most fused candidates one search sends to the reranker, whatever the configuration says.</summary>
     public const int MaxRerankCandidates = 100;
 

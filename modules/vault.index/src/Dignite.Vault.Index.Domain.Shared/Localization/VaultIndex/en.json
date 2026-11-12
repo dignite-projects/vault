@@ -74,6 +74,7 @@
     "IndexStatus:Previous": "Previous",
     "IndexStatus:Next": "Next",
     "IndexStatus:Total": "{0} documents",
-    "IndexStatus:InRetrieval": "Out of retrieval"
+    "IndexStatus:InRetrieval": "Out of retrieval",
+    "VaultIndex:FieldFilterTooBroad": "The field conditions match more than {Max} documents. Add a condition to narrow them."
   }
 }

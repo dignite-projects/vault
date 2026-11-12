@@ -39,6 +39,12 @@ public class DocumentController : VaultExtractController, IDocumentAppService
         return _documentAppService.GetReadScopeAsync();
     }
 
+    // In-process for Vault Index's field filters, kept off the routable surface like GetReadScopeAsync.
+    Task<DocumentIdListDto> IDocumentAppService.GetIdsByFieldsAsync(GetDocumentIdsByFieldsInput input)
+    {
+        return _documentAppService.GetIdsByFieldsAsync(input);
+    }
+
     [HttpGet]
     public virtual Task<PagedResultDto<DocumentListItemDto>> GetListAsync(GetDocumentListInput input)
     {

@@ -23,21 +23,31 @@ public sealed class ChunkSearchScope
     /// <summary>The types the caller asked for; <c>null</c> for every readable type.</summary>
     public IReadOnlyCollection<Guid>? RequestedTypeIds { get; }
 
+    /// <summary>
+    /// The documents the caller's field conditions matched, as Extract resolved them; <c>null</c> without field
+    /// conditions.
+    /// </summary>
+    public IReadOnlyCollection<Guid>? RequestedDocumentIds { get; }
+
     public ChunkSearchScope(
         bool isUnrestricted,
         IEnumerable<Guid> readableTypeIds,
         Guid? ownerId,
-        IEnumerable<Guid>? requestedTypeIds = null)
+        IEnumerable<Guid>? requestedTypeIds = null,
+        IEnumerable<Guid>? requestedDocumentIds = null)
     {
         IsUnrestricted = isUnrestricted;
         ReadableTypeIds = isUnrestricted ? [] : readableTypeIds.Distinct().ToArray();
         OwnerId = isUnrestricted ? null : ownerId;
         RequestedTypeIds = requestedTypeIds?.Distinct().ToArray();
+        RequestedDocumentIds = requestedDocumentIds?.Distinct().ToArray();
     }
 
-    /// <summary>Nothing can match: no grant and no owner arm, or no requested type. Callers skip the query.</summary>
+    /// <summary>Nothing can match: no grant and no owner arm, or no requested type or document. Callers skip the query.</summary>
     public bool ReachesNothing
-        => (!IsUnrestricted && ReadableTypeIds.Count == 0 && OwnerId is null) || RequestedTypeIds is { Count: 0 };
+        => (!IsUnrestricted && ReadableTypeIds.Count == 0 && OwnerId is null)
+           || RequestedTypeIds is { Count: 0 }
+           || RequestedDocumentIds is { Count: 0 };
 
     /// <summary>The same rule as <see cref="ChunkScopeFilter"/>, for a single row already in memory.</summary>
     public bool Reaches(IChunkScopeFields row)
@@ -48,6 +58,11 @@ public sealed class ChunkSearchScope
         }
 
         if (RequestedTypeIds is not null && !RequestedTypeIds.Contains(row.DocumentTypeId))
+        {
+            return false;
+        }
+
+        if (RequestedDocumentIds is not null && !RequestedDocumentIds.Contains(row.DocumentId))
         {
             return false;
         }

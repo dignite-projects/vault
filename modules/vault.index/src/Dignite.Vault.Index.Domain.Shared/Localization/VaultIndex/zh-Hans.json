@@ -74,6 +74,7 @@
     "IndexStatus:Previous": "上一页",
     "IndexStatus:Next": "下一页",
     "IndexStatus:Total": "共 {0} 份",
-    "IndexStatus:InRetrieval": "不在检索中"
+    "IndexStatus:InRetrieval": "不在检索中",
+    "VaultIndex:FieldFilterTooBroad": "字段条件匹配的文档超过 {Max} 份,请再加条件缩小范围。"
   }
 }

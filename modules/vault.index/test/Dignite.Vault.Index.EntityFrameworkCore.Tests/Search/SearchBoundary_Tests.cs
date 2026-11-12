@@ -62,22 +62,49 @@ public class SearchBoundary_Tests : VaultIndexTestBase<VaultIndexIngestionTestMo
     }
 
     [Fact]
+    public async Task Requested_documents_narrow_the_read_scope_and_never_widen_it()
+    {
+        var docA = Guid.NewGuid();
+        var docB = Guid.NewGuid();
+        var docHidden = Guid.NewGuid();
+        var a = await InsertChunkAsync(TypeA, ownerId: null, documentId: docA);
+        var b = await InsertChunkAsync(TypeB, Owner, documentId: docB);
+        await InsertChunkAsync(TypeB, Owner);
+        await InsertChunkAsync(TypeA, Owner, isHidden: true, documentId: docHidden);
+
+        (await ReachAsync(new ChunkSearchScope(true, [], null, requestedDocumentIds: [docB]))).ShouldBe([b]);
+        (await ReachAsync(new ChunkSearchScope(true, [], null, requestedDocumentIds: [docA, docB]))).ShouldBe([a, b], ignoreOrder: true);
+        // A document outside the read scope, the requested type, or retrieval stays out, whoever named it.
+        (await ReachAsync(new ChunkSearchScope(false, [TypeA], null, requestedDocumentIds: [docA, docB]))).ShouldBe([a]);
+        (await ReachAsync(new ChunkSearchScope(true, [], null, requestedTypeIds: [TypeA], requestedDocumentIds: [docB]))).ShouldBeEmpty();
+        (await ReachAsync(new ChunkSearchScope(true, [], null, requestedDocumentIds: [docHidden]))).ShouldBeEmpty();
+
+        var none = new ChunkSearchScope(true, [], null, requestedDocumentIds: []);
+        none.ReachesNothing.ShouldBeTrue();
+        (await ReachAsync(none)).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task The_in_memory_rule_agrees_with_the_query()
     {
         await InsertChunkAsync(TypeA, null);
         await InsertChunkAsync(TypeB, Owner);
         await InsertChunkAsync(TypeB, Guid.NewGuid());
         await InsertChunkAsync(TypeA, Owner, isHidden: true);
+        var all = await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync());
+        var someDocuments = all.Where(c => c.DocumentTypeId == TypeB || c.IsHidden).Select(c => c.DocumentId).ToList();
         var scopes = new[]
         {
             new ChunkSearchScope(true, [], null),
             new ChunkSearchScope(false, [TypeA], null),
             new ChunkSearchScope(false, [], Owner),
             new ChunkSearchScope(false, [TypeA], Owner, [TypeB]),
-            new ChunkSearchScope(false, [], null)
+            new ChunkSearchScope(false, [], null),
+            new ChunkSearchScope(true, [], null, null, someDocuments),
+            new ChunkSearchScope(false, [TypeA], Owner, null, someDocuments),
+            new ChunkSearchScope(true, [], null, [TypeA], someDocuments)
         };
 
-        var all = await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync());
         foreach (var scope in scopes)
         {
             (await ReachAsync(scope)).ShouldBe(all.Where(scope.Reaches).Select(c => c.Id), ignoreOrder: true);
@@ -112,12 +139,12 @@ public class SearchBoundary_Tests : VaultIndexTestBase<VaultIndexIngestionTestMo
             return await repository.AsyncExecuter.ToListAsync(ChunkScopeFilter.Apply(await repository.GetQueryableAsync(), scope).Select(c => c.Id));
         });
 
-    private async Task<Guid> InsertChunkAsync(Guid typeId, Guid? ownerId, bool isHidden = false, Guid? id = null)
+    private async Task<Guid> InsertChunkAsync(Guid typeId, Guid? ownerId, bool isHidden = false, Guid? id = null, Guid? documentId = null)
     {
         var chunkId = id ?? Guid.NewGuid();
         var tenantId = GetRequiredService<ICurrentTenant>().Id;
         await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().InsertAsync(
-            new Chunk(chunkId, tenantId, Guid.NewGuid(), typeId, ownerId, 0, null, "text", new string('0', 64), isHidden)));
+            new Chunk(chunkId, tenantId, documentId ?? Guid.NewGuid(), typeId, ownerId, 0, null, "text", new string('0', 64), isHidden)));
         return chunkId;
     }
 }

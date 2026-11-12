@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Dignite.Vault.Extract.Documents;
 
 namespace Dignite.Vault.Index.Search;
 
-public class IndexSearchInput
+public class IndexSearchInput : IValidatableObject
 {
     /// <summary>What to look for, in natural language or keywords.</summary>
     [Required]
@@ -18,6 +19,23 @@ public class IndexSearchInput
     /// <summary>How many hits, 1 to <see cref="IndexSearchConsts.MaxResultCount"/>; <see cref="IndexSearchConsts.DefaultMaxResultCount"/> when empty.</summary>
     [Range(1, IndexSearchConsts.MaxResultCount)]
     public int? MaxResultCount { get; set; }
+
+    /// <summary>
+    /// Only documents whose extracted fields meet these conditions, ANDed, as Extract's own search reads them. Field
+    /// names only mean something within one type, so they need <see cref="DocumentTypeCode"/>.
+    /// </summary>
+    [MaxLength(DocumentConsts.MaxSearchFieldFilters)]
+    public List<DocumentFieldFilter>? FieldFilters { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (FieldFilters is { Count: > 0 } && string.IsNullOrWhiteSpace(DocumentTypeCode))
+        {
+            yield return new ValidationResult(
+                "DocumentTypeCode is required when field filters are specified.",
+                new[] { nameof(DocumentTypeCode) });
+        }
+    }
 }
 
 public class IndexSearchResultDto

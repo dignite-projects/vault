@@ -1,3 +1,4 @@
+import type { DocumentFieldFilter } from '../dignite/vault/extract/documents/models';
 
 export interface DocumentOutlineDto {
   documentId?: string;
@@ -37,6 +38,7 @@ export interface IndexSearchHitDto {
   textTruncated?: boolean;
   textTotalLength?: number;
   score?: number;
+  rerankScore?: number | null;
   keywordRank?: number | null;
   vectorRank?: number | null;
 }
@@ -45,10 +47,12 @@ export interface IndexSearchInput {
   query: string;
   documentTypeCode?: string | null;
   maxResultCount?: number | null;
+  fieldFilters?: DocumentFieldFilter[] | null;
 }
 
 export interface IndexSearchResultDto {
   hits?: IndexSearchHitDto[];
+  reranked?: boolean;
 }
 
 export interface OutlineNodeDto {

@@ -17,6 +17,8 @@ public interface IReadScopeFields
 /// <summary>A row retrieval reads: the read-scope facts, plus whether the document is in retrieval at all.</summary>
 public interface IChunkScopeFields : IReadScopeFields
 {
+    Guid DocumentId { get; }
+
     /// <summary>The document is out of retrieval for everyone: in Extract's recycle bin, or withheld after a reclassification.</summary>
     bool IsHidden { get; }
 }

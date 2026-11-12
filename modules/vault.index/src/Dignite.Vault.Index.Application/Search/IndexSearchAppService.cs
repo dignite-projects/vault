@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
+using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Index.Chunks;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
@@ -62,7 +63,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         var take = Math.Clamp(input.MaxResultCount ?? IndexSearchConsts.DefaultMaxResultCount, 1, IndexSearchConsts.MaxResultCount);
 
         var types = await GetVisibleTypesAsync();
-        var scope = await GetScopeAsync(input.DocumentTypeCode, types);
+        var scope = await GetScopeAsync(input.DocumentTypeCode, types, input.FieldFilters);
         if (scope.ReachesNothing)
         {
             return new IndexSearchResultDto();
@@ -290,8 +291,11 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         return await _searchIndex.SearchVectorsAsync(serving.Id, embedding.Vectors[0], scope, IndexSearchConsts.CandidatesPerLeg);
     }
 
-    protected virtual Task<ChunkSearchScope> GetScopeAsync(string? documentTypeCode, IReadOnlyDictionary<Guid, string> visibleTypes)
-        => _scopeResolver.GetScopeAsync(documentTypeCode, visibleTypes);
+    protected virtual Task<ChunkSearchScope> GetScopeAsync(
+        string? documentTypeCode,
+        IReadOnlyDictionary<Guid, string> visibleTypes,
+        List<DocumentFieldFilter>? fieldFilters = null)
+        => _scopeResolver.GetScopeAsync(documentTypeCode, visibleTypes, fieldFilters);
 
     protected virtual Task<IReadOnlyDictionary<Guid, string>> GetVisibleTypesAsync()
         => _scopeResolver.GetVisibleTypesAsync();

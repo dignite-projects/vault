@@ -188,6 +188,31 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         };
     }
 
+    public virtual async Task<DocumentIdListDto> GetIdsByFieldsAsync(GetDocumentIdsByFieldsInput input)
+    {
+        // The list's order: the read scope first (it asserts entry), then the type, then the fields, which loud-fail on
+        // a name the type does not define.
+        var scope = await _documentAccess.ResolveScopeAsync(DocumentAccessRule.Read);
+        var type = await _documentTypeRepository.FindByTypeCodeAsync(input.DocumentTypeCode)
+                   ?? throw new BusinessException(VaultExtractErrorCodes.ExtractedField.Unknown)
+                       .WithData("FieldName", input.FieldFilters[0].Name ?? string.Empty)
+                       .WithData("DocumentTypeCode", input.DocumentTypeCode);
+        var fieldQueries = await DocumentFieldQueryResolver.ResolveAsync(
+            _fieldRepository, _fieldTypeResolver, input.FieldFilters, type.Id, input.DocumentTypeCode);
+
+        var query = await _flexFieldQueryExecutor.ApplyFilterAsync(await _documentRepository.GetQueryableAsync(), fieldQueries);
+        query = query
+            .ApplyMetadataFilter(new DocumentMetadataFilter { DocumentTypeId = type.Id, ReadScope = scope })
+            .Where(DocumentQueries.ReadyForConsumers);
+
+        var ids = await AsyncExecuter.ToListAsync(query.OrderBy(d => d.Id).Select(d => d.Id).Take(input.MaxResultCount + 1));
+        return new DocumentIdListDto
+        {
+            Ids = ids.Take(input.MaxResultCount).ToList(),
+            HasMore = ids.Count > input.MaxResultCount
+        };
+    }
+
     public virtual async Task<PagedResultDto<DocumentListItemDto>> GetListAsync(GetDocumentListInput input)
     {
         // #635 decision 3: the scope is resolved FIRST — before the type code is resolved and, crucially, before

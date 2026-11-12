@@ -74,6 +74,7 @@
     "IndexStatus:Previous": "前へ",
     "IndexStatus:Next": "次へ",
     "IndexStatus:Total": "{0} 件",
-    "IndexStatus:InRetrieval": "検索対象外"
+    "IndexStatus:InRetrieval": "検索対象外",
+    "VaultIndex:FieldFilterTooBroad": "フィールド条件に一致するドキュメントが {Max} 件を超えています。条件を追加して絞り込んでください。"
   }
 }
