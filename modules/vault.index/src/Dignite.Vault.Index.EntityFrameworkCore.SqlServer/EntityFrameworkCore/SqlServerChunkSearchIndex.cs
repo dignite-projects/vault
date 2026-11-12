@@ -173,6 +173,38 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
         return rows.Select(r => new ChunkMatch(r.Id, r.DocumentId, r.Rank)).ToList();
     }
 
+    public virtual async Task<ChunkSearchIndexStatus> GetStatusAsync(Guid? generationId, CancellationToken cancellationToken = default)
+    {
+        var dbContext = await _dbContextProvider.GetDbContextAsync();
+        var vectorCount = generationId is { } id
+            ? await dbContext.ChunkVectors.LongCountAsync(v => v.GenerationId == id, cancellationToken)
+            : 0;
+
+        // Read fresh, not from the search's cache: this is where an operator checks that an install worked.
+        var indexDbContext = (DbContext)await _indexDbContextProvider.GetDbContextAsync();
+        var table = QualifiedChunkTable(indexDbContext);
+        var state = await indexDbContext.Database
+            .SqlQueryRaw<FullTextState>(
+                """
+                SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID(@table) AND is_enabled = 1) THEN 1 ELSE 0 END AS bit) AS [Available],
+                       CAST(OBJECTPROPERTYEX(OBJECT_ID(@table), 'TableFulltextPendingChanges') AS bigint) AS [PendingChanges],
+                       CAST(OBJECTPROPERTYEX(OBJECT_ID(@table), 'TableFulltextPopulateStatus') AS int) AS [PopulateStatus]
+                """,
+                new SqlParameter("@table", table))
+            .SingleAsync(cancellationToken);
+
+        if (state.Available)
+        {
+            FullTextIndexByDatabase[indexDbContext.Database.GetConnectionString() ?? string.Empty] = true;
+        }
+
+        return new ChunkSearchIndexStatus(
+            vectorCount,
+            state.Available,
+            state.Available ? state.PendingChanges : null,
+            state.Available ? state.PopulateStatus is 1 or 2 : null);
+    }
+
     protected virtual void CheckDimensions(int dimensions)
     {
         if (dimensions != _options.VectorDimensions)
@@ -218,6 +250,19 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
         var schema = entityType.GetSchema();
         var name = "[" + entityType.GetTableName()!.Replace("]", "]]") + "]";
         return schema is null ? name : "[" + schema.Replace("]", "]]") + "]." + name;
+    }
+
+    /// <summary>
+    /// The full-text index's state. <c>TableFulltextPopulateStatus</c> 1 and 2 are a full and an incremental population
+    /// (after a backfill); 3 and 4 are the routine absorption of tracked changes, which the pending count covers.
+    /// </summary>
+    public class FullTextState
+    {
+        public bool Available { get; set; }
+
+        public long? PendingChanges { get; set; }
+
+        public int? PopulateStatus { get; set; }
     }
 
     /// <summary>One row of <c>FREETEXTTABLE</c>.</summary>

@@ -30,4 +30,8 @@ export const APP_ROUTES: Routes = [
     path: 'vault-extract',
     loadChildren: () => import('@dignite/ng.vault-extract/documents').then(m => m.DOCUMENTS_ROUTES),
   },
+  {
+    path: 'vault-index',
+    loadChildren: () => import('@dignite/ng.vault-index').then(m => m.INDEX_ROUTES),
+  },
 ];

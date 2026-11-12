@@ -17,7 +17,9 @@
     "paths": {
       "@dignite/ng.vault-extract": ["../modules/vault.extract/angular/projects/vault-extract/src/public-api.ts"],
       "@dignite/ng.vault-extract/documents": ["../modules/vault.extract/angular/projects/vault-extract/documents/src/public-api.ts"],
-      "@dignite/ng.vault-extract/config": ["../modules/vault.extract/angular/projects/vault-extract/config/src/public-api.ts"]
+      "@dignite/ng.vault-extract/config": ["../modules/vault.extract/angular/projects/vault-extract/config/src/public-api.ts"],
+      "@dignite/ng.vault-index": ["../modules/vault.index/angular/projects/vault-index/src/public-api.ts"],
+      "@dignite/ng.vault-index/config": ["../modules/vault.index/angular/projects/vault-index/config/src/public-api.ts"]
     }
   },
   "angularCompilerOptions": {

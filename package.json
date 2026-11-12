@@ -4,7 +4,9 @@
   "workspaces": [
     "angular",
     "modules/vault.extract/angular",
-    "modules/vault.extract/angular/projects/vault-extract"
+    "modules/vault.extract/angular/projects/vault-extract",
+    "modules/vault.index/angular",
+    "modules/vault.index/angular/projects/vault-index"
   ],
   "dependencies": {
     "@angular/animations": "~22.2.5",

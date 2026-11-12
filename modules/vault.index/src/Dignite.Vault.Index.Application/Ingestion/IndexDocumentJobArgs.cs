@@ -37,4 +37,10 @@ public class IndexDocumentJobArgs
 
     /// <summary>The Extract event's <c>EventTime</c>; <c>null</c> for a backfill or a rerun, which skip the redelivery check.</summary>
     public DateTime? EventTime { get; set; }
+
+    /// <summary>
+    /// Re-chunk and re-embed even when the text, the chunking settings and the embedding generation are unchanged: an
+    /// operator's rebuild. A rerun the job requests for itself does not carry it.
+    /// </summary>
+    public bool Force { get; set; }
 }

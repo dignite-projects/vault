@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
-using Dignite.Vault.Extract.Documents;
-using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Index.Chunks;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
@@ -20,19 +18,15 @@ namespace Dignite.Vault.Index.Search;
 
 /// <summary>
 /// Retrieval: entry check, read scope, the two legs, fusion and assembly. It reads the caller's read scope from Extract
-/// (<see cref="IDocumentAppService.GetReadScopeAsync"/>) and nothing else of Extract's documents: Index's own rows
+/// (through <see cref="IndexReadScopeResolver"/>) and nothing else of Extract's documents: Index's own rows
 /// carry what a hit needs, and the integration service, which reads with no user, is for ingestion only (an
 /// architecture test holds that line).
 /// </summary>
 public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppService
 {
-    /// <summary>The read-scope versions this Index understands; see <see cref="DocumentReadScopeDto.Version"/>.</summary>
-    protected const int SupportedReadScopeVersion = 1;
-
     private const string ChunkSeparator = "\n\n";
 
-    private readonly IDocumentAppService _documentAppService;
-    private readonly IDocumentTypeAppService _documentTypeAppService;
+    private readonly IndexReadScopeResolver _scopeResolver;
     private readonly IChunkRepository _chunkRepository;
     private readonly IRepository<IndexedDocument, Guid> _documentRepository;
     private readonly IChunkSearchIndex _searchIndex;
@@ -40,16 +34,14 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
     private readonly IndexEmbedder _embedder;
 
     public IndexSearchAppService(
-        IDocumentAppService documentAppService,
-        IDocumentTypeAppService documentTypeAppService,
+        IndexReadScopeResolver scopeResolver,
         IChunkRepository chunkRepository,
         IRepository<IndexedDocument, Guid> documentRepository,
         IChunkSearchIndex searchIndex,
         IndexGenerationManager generationManager,
         IndexEmbedder embedder)
     {
-        _documentAppService = documentAppService;
-        _documentTypeAppService = documentTypeAppService;
+        _scopeResolver = scopeResolver;
         _chunkRepository = chunkRepository;
         _documentRepository = documentRepository;
         _searchIndex = searchIndex;
@@ -286,34 +278,11 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         return await _searchIndex.SearchVectorsAsync(serving.Id, embedding.Vectors[0], scope, IndexSearchConsts.CandidatesPerLeg);
     }
 
-    /// <summary>
-    /// The caller's read scope, from Extract, narrowed to <paramref name="documentTypeCode"/> when given. Extract refuses
-    /// a caller without its entry permission; a scope version this Index does not know is refused here.
-    /// </summary>
-    protected virtual async Task<ChunkSearchScope> GetScopeAsync(string? documentTypeCode, IReadOnlyDictionary<Guid, string> visibleTypes)
-    {
-        var readScope = await _documentAppService.GetReadScopeAsync();
-        if (readScope.Version != SupportedReadScopeVersion)
-        {
-            throw new BusinessException(VaultIndexErrorCodes.UnsupportedReadScope).WithData("Version", readScope.Version);
-        }
+    protected virtual Task<ChunkSearchScope> GetScopeAsync(string? documentTypeCode, IReadOnlyDictionary<Guid, string> visibleTypes)
+        => _scopeResolver.GetScopeAsync(documentTypeCode, visibleTypes);
 
-        IEnumerable<Guid>? requested = null;
-        if (!string.IsNullOrWhiteSpace(documentTypeCode))
-        {
-            // A code the caller cannot see narrows to nothing, the same answer as a code that does not exist.
-            requested = visibleTypes.Where(t => t.Value == documentTypeCode.Trim()).Select(t => t.Key).ToList();
-        }
-
-        return new ChunkSearchScope(readScope.IsUnrestricted, readScope.DocumentTypeIds, readScope.OwnerId, requested);
-    }
-
-    /// <summary>The document types the caller can see, id to type code, for citing hits and resolving a type filter.</summary>
-    protected virtual async Task<IReadOnlyDictionary<Guid, string>> GetVisibleTypesAsync()
-    {
-        var types = await _documentTypeAppService.GetVisibleSummariesAsync();
-        return types.ToDictionary(t => t.Id, t => t.TypeCode);
-    }
+    protected virtual Task<IReadOnlyDictionary<Guid, string>> GetVisibleTypesAsync()
+        => _scopeResolver.GetVisibleTypesAsync();
 
     /// <summary>A document's chunks within the scope, with only the outline's columns: a document can have thousands.</summary>
     protected virtual async Task<List<OutlineRow>> GetOutlineChunksAsync(Guid documentId, ChunkSearchScope scope)

@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.Data;
 using Volo.Abp.EntityFrameworkCore;
 using Volo.Abp.Modularity;
@@ -27,25 +28,43 @@ public sealed class SqlServerFactAttribute : FactAttribute
     }
 }
 
-/// <summary>A throwaway database on the configured server, created once per test run with the Index schema and full-text index.</summary>
-public static class SqlServerTestDatabase
+/// <summary>
+/// A throwaway database on the configured server, created once per test run with the Index schema and the full-text
+/// index the host's migrations create. Each test class picks its database, so their vector dimensions can differ.
+/// </summary>
+public sealed class SqlServerTestDatabase
 {
-    public const int Dimensions = 4;
+    /// <summary>The store's own tests: tiny hand-made vectors.</summary>
+    public static readonly SqlServerTestDatabase Store = new("VaultIndexSqlServerTests", 4);
 
-    private const string DatabaseName = "VaultIndexSqlServerTests";
+    /// <summary>The retrieval evaluation: real embeddings, of the dimension the host stores (1024 unless overridden).</summary>
+    public static readonly SqlServerTestDatabase Evaluation = new(
+        "VaultIndexEvaluation",
+        int.TryParse(Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_DIMENSIONS"), out var dimensions) ? dimensions : 1024);
 
-    private static readonly Lazy<string> Created = new(Create, LazyThreadSafetyMode.ExecutionAndPublication);
+    private readonly Lazy<string> _created;
+
+    private SqlServerTestDatabase(string name, int dimensions)
+    {
+        Name = name;
+        Dimensions = dimensions;
+        _created = new Lazy<string>(Create, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
 
     public static string? ServerConnectionString => Environment.GetEnvironmentVariable("VAULT_INDEX_TEST_SQLSERVER");
 
-    public static string ConnectionString => Created.Value;
+    public string Name { get; }
 
-    private static string Create()
+    public int Dimensions { get; }
+
+    public string ConnectionString => _created.Value;
+
+    private string Create()
     {
-        var builder = new SqlConnectionStringBuilder(ServerConnectionString) { InitialCatalog = DatabaseName };
+        var builder = new SqlConnectionStringBuilder(ServerConnectionString) { InitialCatalog = Name };
         var connectionString = builder.ConnectionString;
 
-        using (var context = new SchemaContext(new DbContextOptionsBuilder<SchemaContext>().UseSqlServer(connectionString).Options))
+        using (var context = new SchemaContext(new DbContextOptionsBuilder<SchemaContext>().UseSqlServer(connectionString).Options, Dimensions))
         {
             context.Database.EnsureDeleted();
             var creator = context.GetService<IRelationalDatabaseCreator>();
@@ -69,13 +88,38 @@ public static class SqlServerTestDatabase
     }
 
     /// <summary>Both models in one context, the way a host's migrations context combines them.</summary>
-    private sealed class SchemaContext(DbContextOptions<SchemaContext> options) : DbContext(options)
+    private sealed class SchemaContext(DbContextOptions<SchemaContext> options, int dimensions) : DbContext(options)
     {
+        public int Dimensions { get; } = dimensions;
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             builder.ConfigureVaultIndex();
             builder.ConfigureVaultIndexSqlServer(Dimensions);
         }
+
+        // One model per dimension: EF caches the model by context type unless told otherwise.
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+            => optionsBuilder.ReplaceService<IModelCacheKeyFactory, DimensionModelCacheKeyFactory>();
+    }
+
+    private sealed class DimensionModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+            => (context.GetType(), ((SchemaContext)context).Dimensions, designTime);
+    }
+
+    /// <summary>Applies a database's connection string and dimensions to an ABP test application.</summary>
+    public void Configure(ServiceConfigurationContext context)
+    {
+        var connectionString = ConnectionString;
+        context.Services.Configure<AbpDbConnectionOptions>(options =>
+        {
+            options.ConnectionStrings.Default = connectionString;
+            options.ConnectionStrings[VaultIndexDbProperties.ConnectionStringName] = connectionString;
+        });
+        context.Services.Configure<AbpDbContextOptions>(options => options.UseSqlServer());
+        context.Services.Configure<VaultIndexSqlServerOptions>(options => options.VectorDimensions = Dimensions);
     }
 }
 
@@ -86,18 +130,9 @@ public class VaultIndexSqlServerTestModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        if (string.IsNullOrWhiteSpace(SqlServerTestDatabase.ServerConnectionString))
+        if (!string.IsNullOrWhiteSpace(SqlServerTestDatabase.ServerConnectionString))
         {
-            return;
+            SqlServerTestDatabase.Store.Configure(context);
         }
-
-        var connectionString = SqlServerTestDatabase.ConnectionString;
-        Configure<AbpDbConnectionOptions>(options =>
-        {
-            options.ConnectionStrings.Default = connectionString;
-            options.ConnectionStrings[VaultIndexDbProperties.ConnectionStringName] = connectionString;
-        });
-        Configure<AbpDbContextOptions>(options => options.UseSqlServer());
-        Configure<VaultIndexSqlServerOptions>(options => options.VectorDimensions = SqlServerTestDatabase.Dimensions);
     }
 }

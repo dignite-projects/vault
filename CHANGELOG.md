@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index status page and retrieval evaluation** (shipped host and SPA). Under Vault Index → Index Status the
+  host SPA shows the index summary (documents by state, chunks, the serving and configured embedding models, the
+  keyword index), the indexed documents within the operator's read scope with their failures and runs, and a
+  Rebuild that re-indexes one document from its current text. New permissions `VaultIndex.Status` and
+  `VaultIndex.Status.Rebuild` (granted to the seeded `admin` by `--migrate-database`), REST under
+  `/api/vault-index/status`, and the Angular library `@dignite/ng.vault-index` (built with the host, not published
+  yet). The first evaluation set and its runner measure Hit@k and MRR for the fused search and each leg; the
+  baseline is in [Index Status and Evaluation](docs/en/deployment/index-status.md#measuring-retrieval).
 - **Vault Index search, outline and read** (shipped host), over REST (`GET /api/vault-index/search`,
   `/documents/{id}/outline`, `/read`) and MCP (`vault_index_search`, `vault_index_outline`, `vault_index_read` on the
   same `/mcp` endpoint as Extract's tools). Search fuses a Japanese full-text leg and an exact vector leg by

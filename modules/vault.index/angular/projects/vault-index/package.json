@@ -1,0 +1,24 @@
+{
+  "name": "@dignite/ng.vault-index",
+  "version": "0.6.0",
+  "description": "Angular UI library for Dignite Vault Index: the index status page.",
+  "author": "Dignite",
+  "license": "LGPL-3.0-only",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dignite-projects/vault.git"
+  },
+  "dependencies": {
+    "@abp/ng.core": "~10.7.1",
+    "@abp/ng.theme.shared": "~10.7.1",
+    "tslib": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@angular/common": "^22.0.0",
+    "@angular/core": "^22.0.0",
+    "@angular/forms": "^22.0.0",
+    "@angular/router": "^22.0.0",
+    "rxjs": "~7.8.0"
+  }
+}

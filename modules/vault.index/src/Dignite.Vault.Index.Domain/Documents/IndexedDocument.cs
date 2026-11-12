@@ -1,5 +1,6 @@
 using System;
 using Dignite.Vault.Index.Indexing;
+using Dignite.Vault.Index.Search;
 using Volo.Abp;
 using Volo.Abp.Auditing;
 using Volo.Abp.Domain.Entities;
@@ -21,7 +22,7 @@ namespace Dignite.Vault.Index.Documents;
 /// stuck forever.
 /// </para>
 /// </summary>
-public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTime, IHasModificationTime
+public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTime, IHasModificationTime, IReadScopeFields
 {
     public virtual Guid? TenantId { get; protected set; }
 
@@ -115,6 +116,15 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     /// <summary>Whether a job holds a claim on this document that is younger than <paramref name="staleAfter"/>.</summary>
     public virtual bool IsClaimed(DateTime now, TimeSpan staleAfter)
         => Status == IndexedDocumentStatus.Indexing && IndexingStartedTime is { } started && now - started < staleAfter;
+
+    /// <summary>
+    /// Records the title of the version being indexed. Taken at the claim, not at completion, so a document whose
+    /// indexing fails is still named on the status page.
+    /// </summary>
+    public virtual void SetTitle(string? title)
+    {
+        Title = CutTitle(title);
+    }
 
     public virtual void BeginIndexing(DateTime now)
     {

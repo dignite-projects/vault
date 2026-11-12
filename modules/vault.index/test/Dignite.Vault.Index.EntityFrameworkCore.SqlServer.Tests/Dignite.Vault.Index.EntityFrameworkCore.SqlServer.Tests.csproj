@@ -10,8 +10,15 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <ProjectReference Include="..\..\src\Dignite.Vault.Index.EntityFrameworkCore.SqlServer\Dignite.Vault.Index.EntityFrameworkCore.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Dignite.Vault.Index.Application\Dignite.Vault.Index.Application.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Index.TestBase\Dignite.Vault.Index.TestBase.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Evaluation\Corpus\*.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Evaluation\evaluation-set.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

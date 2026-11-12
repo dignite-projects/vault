@@ -11,6 +11,8 @@ public class VaultIndexPermissionDefinitionProvider : PermissionDefinitionProvid
         var group = context.AddGroup(VaultIndexPermissions.GroupName, L("Permission:VaultIndex"));
         group.AddPermission(VaultIndexPermissions.Search, L("Permission:VaultIndex.Search"));
         group.AddPermission(VaultIndexPermissions.Profiles, L("Permission:VaultIndex.Profiles"));
+        var status = group.AddPermission(VaultIndexPermissions.Status, L("Permission:VaultIndex.Status"));
+        status.AddChild(VaultIndexPermissions.StatusRebuild, L("Permission:VaultIndex.Status.Rebuild"));
     }
 
     private static LocalizableString L(string name)

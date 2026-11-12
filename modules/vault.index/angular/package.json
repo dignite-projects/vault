@@ -1,0 +1,12 @@
+{
+  "name": "vault-index-angular",
+  "private": true,
+  "scripts": {
+    "build": "ng build vault-index && npm run check:package-deps",
+    "check:package-deps": "node build/check-package-deps.mjs dist/vault-index",
+    "test": "ng test vault-index --watch=false",
+    "test:watch": "ng test vault-index",
+    "lint": "ng lint vault-index",
+    "generate-proxy": "ng g @abp/ng.schematics:proxy-add --module vault-index --api-name Default --source dev-app --target vault-index --url https://localhost:44348"
+  }
+}
