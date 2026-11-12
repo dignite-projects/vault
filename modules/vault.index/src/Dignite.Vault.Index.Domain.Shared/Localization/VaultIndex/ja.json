@@ -12,6 +12,8 @@
     "VaultIndex:TooManyChunks": "ドキュメントが {Count} 個のチャンクに分かれ、上限 {Max} 個を超えています。",
     "VaultIndex:EmbeddingGeneratorMissing": "Vault Index の埋め込みモデルが設定されていません。",
     "VaultIndex:EmbeddingModelChanged": "設定された埋め込みモデル {ModelId}({Dimensions} 次元)は、インデックス作成時のモデル {ServingModelId}({ServingDimensions} 次元)と異なります。新しいモデルでインデックスを再構築してください。",
-    "VaultIndex:EmbeddingDimensionMismatch": "埋め込みモデルが {Dimensions} 次元のベクトルを返しましたが、インデックスのストレージは {StorageDimensions} 次元です。"
+    "VaultIndex:EmbeddingDimensionMismatch": "埋め込みモデルが {Dimensions} 次元のベクトルを返しましたが、インデックスのストレージは {StorageDimensions} 次元です。",
+    "VaultIndex:UnsupportedReadScope": "Extract が返した読み取り範囲のバージョン {Version} は、このバージョンの Vault Index では扱えません。",
+    "VaultIndex:InvalidPointer": "'{Pointer}' は検索またはアウトラインが返したポインターではありません。"
   }
 }

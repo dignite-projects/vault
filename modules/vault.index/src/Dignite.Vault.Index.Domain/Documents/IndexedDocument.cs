@@ -31,6 +31,12 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     /// <summary>The uploader, the owner arm of Extract's read rule; <c>null</c> for a row created with no user.</summary>
     public virtual Guid? OwnerId { get; protected set; }
 
+    /// <summary>
+    /// The document's title at the last Ready version Index pulled, cut to <see cref="IndexingConsts.MaxTitleLength"/>,
+    /// so a search hit can name its source without asking Extract per hit.
+    /// </summary>
+    public virtual string? Title { get; protected set; }
+
     public virtual IndexedDocumentStatus Status { get; protected set; }
 
     /// <summary>The document is in Extract's recycle bin: kept, but excluded from retrieval until restored.</summary>
@@ -41,6 +47,9 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     /// Index only knows the old type, and the old type's grant holders must not keep reading it.
     /// </summary>
     public virtual bool IsWithheld { get; protected set; }
+
+    /// <summary>Out of retrieval for everyone; copied onto the document's chunks and vectors.</summary>
+    public virtual bool IsHidden => IsArchived || IsWithheld;
 
     /// <summary>An event arrived while a job was running for this document, so the job runs again when it ends.</summary>
     public virtual bool RerunRequested { get; protected set; }
@@ -146,6 +155,7 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         int chunkCount,
         Guid documentTypeId,
         Guid? ownerId,
+        string? title,
         DateTime now,
         bool clearLifecycleMarks)
     {
@@ -155,6 +165,7 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         ChunkCount = Check.Range(chunkCount, nameof(chunkCount), 0, int.MaxValue);
         DocumentTypeId = documentTypeId;
         OwnerId = ownerId;
+        Title = CutTitle(title);
         LastIndexedTime = now;
         Status = IndexedDocumentStatus.Indexed;
         IndexingStartedTime = null;
@@ -210,5 +221,19 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     {
         IsWithheld = true;
         RecordEvent(eventTime);
+    }
+
+    private static string? CutTitle(string? title)
+    {
+        if (title is null || title.Length <= IndexingConsts.MaxTitleLength)
+        {
+            return title;
+        }
+
+        // Never split a surrogate pair.
+        var length = char.IsHighSurrogate(title[IndexingConsts.MaxTitleLength - 1])
+            ? IndexingConsts.MaxTitleLength - 1
+            : IndexingConsts.MaxTitleLength;
+        return title[..length];
     }
 }

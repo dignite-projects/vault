@@ -1,5 +1,6 @@
 using System;
 using Dignite.Vault.Index.Indexing;
+using Dignite.Vault.Index.Search;
 using Volo.Abp;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.MultiTenancy;
@@ -16,7 +17,7 @@ namespace Dignite.Vault.Index.Chunks;
 /// can coexist while a new model is rolled out.
 /// </para>
 /// </summary>
-public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant
+public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
 {
     public virtual Guid? TenantId { get; protected set; }
 
@@ -38,6 +39,12 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant
     /// <summary>SHA-256 of <see cref="Text"/>, so a rebuild can tell which chunks are unchanged.</summary>
     public virtual string ContentHash { get; protected set; } = default!;
 
+    /// <summary>
+    /// The document is out of retrieval (recycle bin, or withheld after a reclassification). Copied from
+    /// <see cref="Documents.IndexedDocument.IsHidden"/> like the type and owner, so retrieval needs no join.
+    /// </summary>
+    public virtual bool IsHidden { get; protected set; }
+
     protected Chunk()
     {
     }
@@ -51,7 +58,8 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant
         int ordinal,
         string? headingPath,
         string text,
-        string contentHash)
+        string contentHash,
+        bool isHidden = false)
         : base(id)
     {
         TenantId = tenantId;
@@ -62,5 +70,6 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant
         HeadingPath = Check.Length(headingPath, nameof(headingPath), IndexingConsts.MaxHeadingPathLength);
         Text = Check.NotNullOrEmpty(text, nameof(text));
         ContentHash = Check.NotNullOrWhiteSpace(contentHash, nameof(contentHash), IndexingConsts.ContentHashLength, IndexingConsts.ContentHashLength);
+        IsHidden = isHidden;
     }
 }

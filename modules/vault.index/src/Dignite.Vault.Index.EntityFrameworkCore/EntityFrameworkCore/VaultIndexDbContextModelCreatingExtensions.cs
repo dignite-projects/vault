@@ -44,6 +44,8 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ContentHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
             b.Property(x => x.ProfileStamp).HasMaxLength(IndexingConsts.MaxProfileStampLength);
+            b.Property(x => x.Title).HasMaxLength(IndexingConsts.MaxTitleLength);
+            b.Ignore(x => x.IsHidden);
 
             b.HasIndex(x => new { x.TenantId, x.DocumentTypeId });
             b.HasIndex(x => new { x.TenantId, x.Status });

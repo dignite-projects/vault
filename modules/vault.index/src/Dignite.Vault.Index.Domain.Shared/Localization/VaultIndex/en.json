@@ -12,6 +12,8 @@
     "VaultIndex:TooManyChunks": "The document splits into {Count} chunks, more than the {Max} the index accepts.",
     "VaultIndex:EmbeddingGeneratorMissing": "No embedding model is configured for Vault Index.",
     "VaultIndex:EmbeddingModelChanged": "The configured embedding model {ModelId} ({Dimensions} dimensions) is not the one the index was built with, {ServingModelId} ({ServingDimensions} dimensions). Rebuild the index for the new model.",
-    "VaultIndex:EmbeddingDimensionMismatch": "The embedding model returned {Dimensions}-dimension vectors; the index storage holds {StorageDimensions}."
+    "VaultIndex:EmbeddingDimensionMismatch": "The embedding model returned {Dimensions}-dimension vectors; the index storage holds {StorageDimensions}.",
+    "VaultIndex:UnsupportedReadScope": "Extract returned a read scope of version {Version}, which this version of Vault Index does not support.",
+    "VaultIndex:InvalidPointer": "'{Pointer}' is not a pointer returned by search or outline."
   }
 }

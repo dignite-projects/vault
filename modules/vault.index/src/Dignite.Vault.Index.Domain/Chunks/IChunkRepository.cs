@@ -8,5 +8,5 @@ namespace Dignite.Vault.Index.Chunks;
 public interface IChunkRepository : IRepository<Chunk, Guid>
 {
     /// <summary>Re-copies the read-scope facts onto every chunk of a document, in one statement.</summary>
-    Task UpdateDocumentFiltersAsync(Guid documentId, Guid documentTypeId, Guid? ownerId, CancellationToken cancellationToken = default);
+    Task UpdateDocumentFiltersAsync(Guid documentId, Guid documentTypeId, Guid? ownerId, bool isHidden, CancellationToken cancellationToken = default);
 }
