@@ -266,7 +266,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         // The document title in front of every chunk (which already starts with its heading path) gives the vector
         // the context a bare passage lacks. The stored chunk text stays as the chunker cut it.
         var inputs = drafts
-            .Select(d => string.IsNullOrWhiteSpace(document.Title) ? d.Text : document.Title + "\n" + d.Text)
+            .Select(d => ChunkContext.Compose(document.Title, d.Text))
             .ToList();
         var embedding = await _embedder.EmbedAsync(inputs);
 

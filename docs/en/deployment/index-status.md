@@ -58,7 +58,7 @@ Retrieval quality is measured with an evaluation set: a corpus of documents and 
 - **39 field cases**, generated from each document's field values through per-type templates, such as "INV-2026-1112" or "株式会社みどり印刷の請求書". They ask for a document by a value a reviewed field would hold.
 - **55 written questions**, each naming the document and the heading of the section that answers it: 44 in Japanese, 5 in Chinese and 6 in English.
 
-The evaluation indexes the corpus through the real ingestion job and embedding model on a real SQL Server, then ranks every case three ways: the fused search the egress returns, the keyword leg alone and the vector leg alone. It reports **Hit@k**, the share of cases whose answer is in the top k, and **MRR@10**, the mean reciprocal rank of the first right answer in the top 10. **Document level** counts any chunk of the right document. **Passage level** also needs the right heading, and covers the written questions.
+The evaluation indexes the corpus through the real ingestion job and embedding model on a real SQL Server, then ranks every case several ways: each leg alone, fusion with keyword weights 1, 0.5 and 0.25, the same rankings reranked when a rerank model is configured, and `service`, the search service as the host would configure it. It reports **Hit@k**, the share of cases whose answer is in the top k, and **MRR@10**, the mean reciprocal rank of the first right answer in the top 10. **Document level** counts any chunk of the right document. **Passage level** also needs the right heading, and covers the written questions.
 
 Run it against a SQL Server 2025 with Full-Text Search, and any OpenAI-compatible embedding endpoint whose vectors match `VAULT_INDEX_EVAL_DIMENSIONS` (default 1024):
 
@@ -67,6 +67,7 @@ export VAULT_INDEX_TEST_SQLSERVER="Server=localhost,14333;User ID=sa;Password=..
 export VAULT_INDEX_EVAL_EMBEDDING_ENDPOINT="https://api.siliconflow.cn/v1"
 export VAULT_INDEX_EVAL_EMBEDDING_API_KEY="..."
 export VAULT_INDEX_EVAL_EMBEDDING_MODEL="BAAI/bge-m3"
+export VAULT_INDEX_EVAL_RERANK_MODEL="BAAI/bge-reranker-v2-m3"   # optional; _RERANK_ENDPOINT / _RERANK_API_KEY default to the embedding's
 export VAULT_INDEX_EVAL_REPORT="$PWD/index-evaluation.md"
 dotnet test modules/vault.index/test/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.Tests --filter "FullyQualifiedName~IndexEvaluation"
 ```
@@ -92,4 +93,17 @@ What it shows so far:
 - On field cases (identifiers, names, amounts) the keyword leg is the strongest (MRR 0.983 against 0.938 for vectors).
 - Across languages the keyword leg finds almost nothing (MRR 0.409 on the Chinese and English questions), as expected for a Japanese full-text index; the vector leg finds every one.
 
-How to weight the legs is a decision for the next release, and it will be measured on this set. The set itself is small and synthetic: grow it with real queries before relying on small differences.
+### Reranking (2026-11-12)
+
+The same set with `BAAI/bge-reranker-v2-m3` reranking the leading 30 candidates (`rerank-2026-11-12.md` next to the set):
+
+| MRR@10 | fused 1:1 | fused 0.25:1 | reranked |
+| --- | --- | --- | --- |
+| Passage level, 55 questions | 0.832 | 0.873 | 0.974 |
+| Document level, 94 cases | 0.959 | 0.948 | 0.995 |
+| Field cases, 39 | 0.957 | 0.938 | 1.000 |
+| Chinese and English questions (passage) | 0.677 | 0.741 | 0.932 |
+
+Reranking lifts every slice, and reranking the fused or the vector ranking gives the same result here. Down-weighting the keyword leg trades field cases for questions, and at a weight of 0.5 or less it ranks keyword-only finds below every vector candidate, a loss this 101-chunk corpus is too small to show. So the weights stay equal, and a rerank model is the recommended way to rank paraphrased questions. With it, the keyword leg's gap on Chinese and English questions no longer shows in the results. A query translation step for that leg is not needed for now.
+
+The set is small and synthetic: grow it with real queries before relying on small differences.

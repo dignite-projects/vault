@@ -27,6 +27,12 @@ public static class IndexSearchConsts
     /// </summary>
     public const int RrfK = 60;
 
+    /// <summary>The most fused candidates one search sends to the reranker, whatever the configuration says.</summary>
+    public const int MaxRerankCandidates = 100;
+
+    /// <summary>The most characters of one candidate (title and chunk) sent to the reranker.</summary>
+    public const int MaxRerankTextLength = 4_000;
+
     /// <summary>The most characters of one hit's text a search returns; a longer chunk is cut and says so.</summary>
     public const int MaxHitTextLength = 2_000;
 

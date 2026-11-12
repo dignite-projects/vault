@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>Extension-point contracts of Dignite Vault Index, for provider packages: the reranker. References nothing else of Vault.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.Core" />
+  </ItemGroup>
+
+</Project>

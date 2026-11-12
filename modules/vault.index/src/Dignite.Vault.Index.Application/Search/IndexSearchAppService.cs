@@ -32,6 +32,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
     private readonly IChunkSearchIndex _searchIndex;
     private readonly IndexGenerationManager _generationManager;
     private readonly IndexEmbedder _embedder;
+    private readonly IndexRanker _ranker;
 
     public IndexSearchAppService(
         IndexReadScopeResolver scopeResolver,
@@ -39,7 +40,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         IRepository<IndexedDocument, Guid> documentRepository,
         IChunkSearchIndex searchIndex,
         IndexGenerationManager generationManager,
-        IndexEmbedder embedder)
+        IndexEmbedder embedder,
+        IndexRanker ranker)
     {
         _scopeResolver = scopeResolver;
         _chunkRepository = chunkRepository;
@@ -47,6 +49,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         _searchIndex = searchIndex;
         _generationManager = generationManager;
         _embedder = embedder;
+        _ranker = ranker;
     }
 
     [UnitOfWork(isTransactional: false)]
@@ -67,7 +70,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
 
         var vectorMatches = await SearchVectorsAsync(query, scope);
         var keywordMatches = await _searchIndex.SearchKeywordsAsync(query, scope, IndexSearchConsts.CandidatesPerLeg);
-        var fused = ReciprocalRankFusion.Fuse(keywordMatches, vectorMatches, IndexSearchConsts.RrfK);
+        var fused = _ranker.Fuse(keywordMatches, vectorMatches);
 
         var result = new IndexSearchResultDto();
         if (fused.Count == 0)
@@ -75,16 +78,24 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             return result;
         }
 
-        // Load the winners plus a margin: a chunk can leave the scope between the legs and this read (its document went
-        // to the recycle bin), and it is dropped here rather than returned.
-        var candidates = fused.Take(take * 2).ToList();
+        // Load the winners plus a margin (or as many as the reranker reads): a chunk can leave the scope between the legs
+        // and this read (its document went to the recycle bin), and it is dropped here rather than returned.
+        var reranker = _ranker.Reranker;
+        var candidates = fused.Take(Math.Max(take * 2, reranker is null ? 0 : _ranker.RerankCandidateCount)).ToList();
         var ids = candidates.Select(c => c.ChunkId).ToList();
         var chunks = (await AsyncExecuter.ToListAsync(
                 ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope).Where(c => ids.Contains(c.Id))))
             .ToDictionary(c => c.Id);
         var documents = await GetDocumentsAsync(chunks.Values.Select(c => c.DocumentId));
 
-        foreach (var candidate in candidates)
+        var texts = chunks.Values.ToDictionary(
+            c => c.Id,
+            c => ChunkContext.Compose(documents.GetValueOrDefault(c.DocumentId)?.Title, c.Text));
+        var reranked = await _ranker.RerankAsync(query, candidates, texts, reranker);
+        result.Reranked = reranked is not null;
+        var ranked = reranked ?? candidates.Select(c => new RankedChunk(c, null)).ToList();
+
+        foreach (var (candidate, rerankScore) in ranked)
         {
             if (!chunks.TryGetValue(candidate.ChunkId, out var chunk))
             {
@@ -104,7 +115,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
                 TextTotalLength = chunk.Text.Length,
                 Score = candidate.Score,
                 KeywordRank = candidate.KeywordRank,
-                VectorRank = candidate.VectorRank
+                VectorRank = candidate.VectorRank,
+                RerankScore = rerankScore
             });
 
             if (result.Hits.Count == take)

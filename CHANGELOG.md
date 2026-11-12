@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index reranking** (shipped host). With `Vault:Index:RerankModelId` set (for example
+  `BAAI/bge-reranker-v2-m3` on SiliconFlow; endpoint and key default to `Vault:Extract`'s), search reorders its
+  leading 30 fused candidates with the rerank model over the Cohere / Jina rerank API, and falls back to the fused
+  order when the call fails. Search results gain `reranked` and each hit `rerankScore`. On the evaluation set it lifts
+  the passage-level MRR from 0.832 to 0.974. `Vault:IndexSearch` (`KeywordWeight`, `VectorWeight`,
+  `RerankCandidateCount`) tunes the ranking; the weights stay equal by default. New packages-to-be
+  `Dignite.Vault.Index.Abstractions` (`IReranker`) and `Dignite.Vault.Index.Reranking.Http`. See
+  [AI Provider](docs/en/configuration/ai-provider.md#rerank-model-index).
 - **Vault Index status page and retrieval evaluation** (shipped host and SPA). Under Vault Index → Index Status the
   host SPA shows the index summary (documents by state, chunks, the serving and configured embedding models, the
   keyword index), the indexed documents within the operator's read scope with their failures and runs, and a
