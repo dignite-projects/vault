@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../node_modules/@angular/cli/lib/config/schema.json",
+  "cli": {
+    "analytics": false,
+    "schematicCollections": [
+      "@angular-eslint/schematics"
+    ]
+  },
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "dev-app": {
+      "projectType": "application",
+      "root": "projects/dev-app",
+      "sourceRoot": "projects/dev-app/src"
+    },
+    "vault-index": {
+      "projectType": "library",
+      "root": "projects/vault-index",
+      "sourceRoot": "projects/vault-index/src",
+      "prefix": "lib",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "options": {
+            "project": "projects/vault-index/ng-package.json"
+          },
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/vault-index/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/vault-index/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/vault-index/tsconfig.spec.json",
+            "buildTarget": "vault-index:build",
+            "runner": "vitest",
+            "include": [
+              "**/*.spec.ts",
+              "../config/**/*.spec.ts"
+            ]
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "projects/vault-index/**/*.ts",
+              "projects/vault-index/**/*.html"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

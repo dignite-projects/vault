@@ -12,18 +12,18 @@ ABP's Angular docs: https://abp.io/docs/latest/framework/ui/angular/overview. Fo
 
 ## Workspaces
 
-- `angular/` is the host SPA (project `host`), the only runnable app. `modules/vault.extract/angular/` holds the library `vault-extract` (imported as `@dignite/ng.vault-extract`, with sub-entry-points `/documents` and `/config`) and a `dev-app` stub that exists only for proxy generation.
+- `angular/` is the host SPA (project `host`), the only runnable app. `modules/vault.extract/angular/` holds the library `vault-extract` (imported as `@dignite/ng.vault-extract`, with sub-entry-points `/documents` and `/config`); `modules/vault.index/angular/` holds `vault-index` (`@dignite/ng.vault-index`, sub-entry-point `/config`; `private` until Index is published). Each has a `dev-app` stub that exists only for proxy generation.
 - The host compiles the library from source through `angular/tsconfig.base.json` `paths`.
 - **Run `npm install` once at the repo root, never inside a workspace.** A second install makes the host bundle a second Angular runtime for the library code (`npm run check:single-angular` in `angular/` catches it).
 
 ## Generated proxies
 
 ```bash
-cd modules/vault.extract/angular
+cd modules/vault.extract/angular   # or modules/vault.index/angular
 npm run generate-proxy
 ```
 
-The host API must be running at `https://localhost:44348`. `projects/vault-extract/src/lib/proxy/` is overwritten on every run, so nothing in it is edited by hand. Hand-written code that must survive regeneration lives outside it: the FormData upload wrapper in `lib/services/`, the re-export adapter in `public-api.ts`, and the enum contract spec.
+The script calls the `@abp/ng.schematics:proxy-add` schematic directly: `abp generate-proxy` refuses to run because it looks for `@abp/ng.schematics` in the workspace's own devDependencies, and it is installed once at the root. The host API must be running at `https://localhost:44348`. `projects/<library>/src/lib/proxy/` is overwritten on every run, so nothing in it is edited by hand. Hand-written code that must survive regeneration lives outside it: the FormData upload wrapper in `lib/services/`, the re-export adapter in `public-api.ts`, and the enum contract spec.
 
 ## Conventions in this codebase
 

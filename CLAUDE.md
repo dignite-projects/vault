@@ -8,7 +8,7 @@ This file describes the current design and the rules whose violation breaks some
 
 - `modules/vault.extract/`: the channel (ABP module stack in `src/`, tests in `test/`) and its Angular library in `angular/` (`@dignite/ng.vault-extract`)
 - `modules/vault.parse/`: the text-extraction library (OCR and Markdown providers behind `ITextExtractor`)
-- `modules/vault.index/`: Vault Index, the retrieval module (P0 in progress). Its design record is the Claude Doc "Vault Index 架构方案"; it has its own `VaultIndex` connection string and its migrations live in the host under `Migrations/VaultIndex/`
+- `modules/vault.index/`: Vault Index, the retrieval module (P0 in progress), and its Angular library in `angular/` (`@dignite/ng.vault-index`, the index status page). Its design record is the Claude Doc "Vault Index 架构方案"; it has its own `VaultIndex` connection string and its migrations live in the host under `Migrations/VaultIndex/`
 - `src/Dignite.Vault.Extract.Host/`: the host application
 - `angular/`: the host SPA
 - `docs/`: operations, configuration and API documentation
@@ -71,7 +71,8 @@ Code that violates one of these is a defect, not a precedent. https://abp.io/doc
 ## Commands
 
 - One test project: `dotnet test modules/<module>/test/<Project>/<Project>.csproj` (`<module>` is `vault.extract`, `vault.parse` or `vault.index`). Tests are ABP integration style on in-memory SQLite, with Shouldly and NSubstitute.
-- Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`.
+- Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`; `npx ng test vault-index --watch=false` from `modules/vault.index/angular/`.
+- Index's SQL Server tests and retrieval evaluation run only with `VAULT_INDEX_TEST_SQLSERVER` (and `VAULT_INDEX_EVAL_EMBEDDING_*` for the evaluation) set; see `docs/en/deployment/index-status.md`.
 
 ## Decision record
 

@@ -35,4 +35,10 @@ public static class IndexSearchConsts
 
     /// <summary>The most outline nodes returned for one document; a deeper outline is cut and says so.</summary>
     public const int MaxOutlineNodes = 500;
+
+    /// <summary>
+    /// The number of chunks exact vector search was sized for after the read-scope filter (storage PoC: about 90 to
+    /// 175 ms at 49,000 rows, 0.2 s at 200,000). The status page warns past it; it is not enforced.
+    /// </summary>
+    public const long ExactSearchChunkLimit = 50_000;
 }

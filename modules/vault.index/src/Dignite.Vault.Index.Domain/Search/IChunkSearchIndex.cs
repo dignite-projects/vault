@@ -52,7 +52,23 @@ public interface IChunkSearchIndex
         ChunkSearchScope scope,
         int take,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// What an operator needs to judge the store: the ambient tenant's vectors in <paramref name="generationId"/>, and
+    /// whether the keyword leg works and how far behind it is.
+    /// </summary>
+    Task<ChunkSearchIndexStatus> GetStatusAsync(Guid? generationId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// The store's state. <see cref="KeywordIndexPendingChanges"/> and <see cref="KeywordIndexPopulating"/> describe the
+/// whole keyword index, every tenant's rows; <c>null</c> when the store cannot tell.
+/// </summary>
+public sealed record ChunkSearchIndexStatus(
+    long VectorCount,
+    bool KeywordIndexAvailable,
+    long? KeywordIndexPendingChanges,
+    bool? KeywordIndexPopulating);
 
 /// <summary>One chunk's vector, with the read-scope facts retrieval filters by.</summary>
 public sealed record ChunkVector(Guid ChunkId, Guid DocumentId, Guid DocumentTypeId, Guid? OwnerId, bool IsHidden, ReadOnlyMemory<float> Vector)

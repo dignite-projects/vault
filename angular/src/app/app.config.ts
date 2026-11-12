@@ -14,6 +14,7 @@ import { ApplicationConfig } from '@angular/core';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { provideExtract } from '@dignite/ng.vault-extract/config';
+import { provideIndex } from '@dignite/ng.vault-index/config';
 import { environment } from '../environments/environment';
 import { APP_ROUTES } from './app.routes';
 import { HOME_MENU_PROVIDER } from './home/home.menu.provider';
@@ -45,6 +46,7 @@ export const appConfig: ApplicationConfig = {
     // Menu entries. The field types the document pages need (kernel built-ins, CKEditor, Tags) are
     // registered by DOCUMENTS_ROUTES on its own lazy route, not here - see documents.routes.ts.
     provideExtract(),
+    provideIndex(),
     // Notification bell + inbox route + document click-through (#680).
     provideExtractNotifications(),
   ]

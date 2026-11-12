@@ -1,0 +1,229 @@
+<div class="container-fluid">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h2 class="h4 mb-0">{{ 'VaultIndex::Menu:VaultIndex.Status' | abpLocalization }}</h2>
+    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="refresh()">
+      <i class="fas fa-sync me-1"></i>{{ 'VaultIndex::IndexStatus:Refresh' | abpLocalization }}
+    </button>
+  </div>
+
+  @for (warning of warnings(); track warning.key) {
+    <div class="alert alert-warning py-2" role="alert">
+      <i class="fas fa-exclamation-triangle me-2"></i>{{ warning.key | abpLocalization: warning.args }}
+    </div>
+  }
+
+  @if (summary(); as s) {
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3 col-xl-2">
+        <div class="card h-100"><div class="card-body py-2">
+          <div class="small text-muted">{{ 'VaultIndex::Enum:IndexedDocumentStatus.2' | abpLocalization }}</div>
+          <div class="fs-4 fw-semibold text-success">{{ s.indexedCount | number }}</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3 col-xl-2">
+        <div class="card h-100"><div class="card-body py-2">
+          <div class="small text-muted">{{ 'VaultIndex::Enum:IndexedDocumentStatus.3' | abpLocalization }}</div>
+          <div class="fs-4 fw-semibold" [class.text-danger]="(s.failedCount ?? 0) > 0">{{ s.failedCount | number }}</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3 col-xl-2">
+        <div class="card h-100"><div class="card-body py-2">
+          <div class="small text-muted">
+            {{ 'VaultIndex::Enum:IndexedDocumentStatus.0' | abpLocalization }} / {{ 'VaultIndex::Enum:IndexedDocumentStatus.1' | abpLocalization }}
+          </div>
+          <div class="fs-4 fw-semibold">{{ s.pendingCount | number }} / {{ s.indexingCount | number }}</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3 col-xl-2">
+        <div class="card h-100"><div class="card-body py-2">
+          <div class="small text-muted">{{ 'VaultIndex::IndexStatus:InRetrieval' | abpLocalization }}</div>
+          <div class="small mt-1">{{ 'VaultIndex::IndexStatus:Archived' | abpLocalization }}: {{ s.archivedCount | number }}</div>
+          <div class="small">{{ 'VaultIndex::IndexStatus:Withheld' | abpLocalization }}: {{ s.withheldCount | number }}</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3 col-xl-2">
+        <div class="card h-100"><div class="card-body py-2">
+          <div class="small text-muted">{{ 'VaultIndex::IndexStatus:Chunks' | abpLocalization }}</div>
+          <div class="fs-4 fw-semibold">{{ s.chunkCount | number }}</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3 col-xl-2">
+        <div class="card h-100"><div class="card-body py-2">
+          <div class="small text-muted">{{ 'VaultIndex::IndexStatus:KeywordIndex' | abpLocalization }}</div>
+          @if (!s.keywordIndexAvailable) {
+            <div class="small mt-1 text-warning">—</div>
+          } @else if (s.keywordIndexPopulating) {
+            <div class="small mt-1">{{ 'VaultIndex::IndexStatus:KeywordIndexPopulating' | abpLocalization }}</div>
+          } @else if ((s.keywordIndexPendingChanges ?? 0) > 0) {
+            <div class="small mt-1">{{ 'VaultIndex::IndexStatus:KeywordIndexPending' | abpLocalization: ((s.keywordIndexPendingChanges! | number) ?? '') }}</div>
+          } @else {
+            <div class="small mt-1 text-success">{{ 'VaultIndex::IndexStatus:KeywordIndexReady' | abpLocalization }}</div>
+          }
+        </div></div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body py-2 small">
+        <span class="text-muted me-2">{{ 'VaultIndex::IndexStatus:EmbeddingModel' | abpLocalization }}</span>
+        <span class="me-4">
+          {{ 'VaultIndex::IndexStatus:ServingModel' | abpLocalization }}:
+          @if (s.servingModelId) {
+            <code>{{ s.servingModelId }}</code> ({{ s.servingDimensions }})
+          } @else {
+            {{ 'VaultIndex::IndexStatus:NotYet' | abpLocalization }}
+          }
+        </span>
+        <span>
+          {{ 'VaultIndex::IndexStatus:ConfiguredModel' | abpLocalization }}:
+          @if (s.configuredModelId) {
+            <code>{{ s.configuredModelId }}</code>
+          } @else {
+            —
+          }
+        </span>
+      </div>
+    </div>
+  }
+
+  <div class="card">
+    <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+      <span class="fw-semibold me-auto">{{ 'VaultIndex::IndexStatus:Documents' | abpLocalization }}</span>
+      <select
+        class="form-select form-select-sm w-auto"
+        [ngModel]="statusFilter()"
+        (ngModelChange)="statusFilter.set($event); applyFilter()"
+        [attr.aria-label]="'VaultIndex::IndexStatus:Status' | abpLocalization"
+      >
+        <option [ngValue]="null">{{ 'VaultIndex::IndexStatus:AllStatuses' | abpLocalization }}</option>
+        @for (option of statusOptions; track option.value) {
+          <option [ngValue]="option.value">{{ 'VaultIndex::Enum:IndexedDocumentStatus.' + option.value | abpLocalization }}</option>
+        }
+      </select>
+      <input
+        type="search"
+        class="form-control form-control-sm w-auto"
+        [placeholder]="'VaultIndex::IndexStatus:FilterPlaceholder' | abpLocalization"
+        [ngModel]="titleFilter()"
+        (ngModelChange)="titleFilter.set($event)"
+        (keyup.enter)="applyFilter()"
+        (search)="applyFilter()"
+      />
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>{{ 'VaultIndex::IndexStatus:Title' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::IndexStatus:DocumentType' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::IndexStatus:Status' | abpLocalization }}</th>
+            <th class="text-end">{{ 'VaultIndex::IndexStatus:ChunkCount' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::IndexStatus:LastIndexed' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::IndexStatus:LastError' | abpLocalization }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (document of documents(); track document.documentId) {
+            <tr>
+              <td class="text-break">
+                {{ document.title || ('VaultIndex::IndexStatus:Untitled' | abpLocalization) }}
+                <div class="small text-muted font-monospace">{{ document.documentId }}</div>
+              </td>
+              <td><code>{{ document.documentTypeCode ?? '—' }}</code></td>
+              <td>
+                <span class="badge" [class]="documentStatusBadge(document.status)">
+                  {{ 'VaultIndex::Enum:IndexedDocumentStatus.' + document.status | abpLocalization }}
+                </span>
+                @if (document.isArchived) {
+                  <span class="badge bg-body-tertiary text-body border ms-1">{{ 'VaultIndex::IndexStatus:Archived' | abpLocalization }}</span>
+                }
+                @if (document.isWithheld) {
+                  <span class="badge bg-body-tertiary text-body border ms-1">{{ 'VaultIndex::IndexStatus:Withheld' | abpLocalization }}</span>
+                }
+              </td>
+              <td class="text-end">{{ document.chunkCount | number }}</td>
+              <td class="text-nowrap">{{ document.lastIndexedTime | date: 'short' }}</td>
+              <td class="small text-danger text-break">{{ document.lastError }}</td>
+              <td class="text-end text-nowrap">
+                <button type="button" class="btn btn-link btn-sm" (click)="toggleRuns(document)">
+                  {{ (expandedId() === document.documentId ? 'VaultIndex::IndexStatus:HideRuns' : 'VaultIndex::IndexStatus:Runs') | abpLocalization }}
+                </button>
+                @if (canRebuild) {
+                  <button type="button" class="btn btn-outline-primary btn-sm" (click)="rebuild(document)">
+                    {{ 'VaultIndex::IndexStatus:Rebuild' | abpLocalization }}
+                  </button>
+                }
+              </td>
+            </tr>
+            @if (expandedId() === document.documentId) {
+              <tr>
+                <td colspan="7" class="bg-body-tertiary">
+                  @if (runsLoading()) {
+                    <div class="text-center py-2"><i class="fas fa-spinner fa-spin"></i></div>
+                  } @else if (runs().length === 0) {
+                    <div class="small text-muted py-1">{{ 'VaultIndex::IndexStatus:NoRuns' | abpLocalization }}</div>
+                  } @else {
+                    <table class="table table-sm mb-0 small">
+                      <thead>
+                        <tr>
+                          <th>{{ 'VaultIndex::IndexStatus:Started' | abpLocalization }}</th>
+                          <th>{{ 'VaultIndex::IndexStatus:Trigger' | abpLocalization }}</th>
+                          <th>{{ 'VaultIndex::IndexStatus:Status' | abpLocalization }}</th>
+                          <th class="text-end">{{ 'VaultIndex::IndexStatus:Attempt' | abpLocalization }}</th>
+                          <th class="text-end">{{ 'VaultIndex::IndexStatus:ChunkCount' | abpLocalization }}</th>
+                          <th class="text-end">{{ 'VaultIndex::IndexStatus:Tokens' | abpLocalization }}</th>
+                          <th>{{ 'VaultIndex::IndexStatus:Message' | abpLocalization }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (run of runs(); track run.id) {
+                          <tr>
+                            <td class="text-nowrap">{{ run.startedTime | date: 'short' }}</td>
+                            <td>{{ 'VaultIndex::Enum:IndexRunTrigger.' + run.trigger | abpLocalization }}</td>
+                            <td>
+                              <span class="badge" [class]="runStatusBadge(run.status)">
+                                {{ 'VaultIndex::Enum:IndexRunStatus.' + run.status | abpLocalization }}
+                              </span>
+                            </td>
+                            <td class="text-end">{{ run.attemptNumber }}</td>
+                            <td class="text-end">{{ run.chunkCount ?? '—' }}</td>
+                            <td class="text-end">{{ run.embeddingTokenCount ?? '—' }}</td>
+                            <td class="text-break">{{ run.errorMessage }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  }
+                </td>
+              </tr>
+            }
+          } @empty {
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">
+                @if (loading()) {
+                  <i class="fas fa-spinner fa-spin"></i>
+                } @else {
+                  {{ 'VaultIndex::IndexStatus:NoDocuments' | abpLocalization }}
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-footer d-flex align-items-center justify-content-between small">
+      <span class="text-muted">{{ 'VaultIndex::IndexStatus:Total' | abpLocalization: ((totalCount() | number) ?? '') }}</span>
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-secondary" [disabled]="!hasPrevious()" (click)="page(-1)">
+          {{ 'VaultIndex::IndexStatus:Previous' | abpLocalization }}
+        </button>
+        <button type="button" class="btn btn-outline-secondary" [disabled]="!hasNext()" (click)="page(1)">
+          {{ 'VaultIndex::IndexStatus:Next' | abpLocalization }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

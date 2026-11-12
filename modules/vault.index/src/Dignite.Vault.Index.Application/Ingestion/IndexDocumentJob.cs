@@ -130,7 +130,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         try
         {
-            var plan = await ComputeAsync(document!, claim);
+            var plan = await ComputeAsync(document!, claim, args.Force);
             var rerun = await ReplaceAsync(document!, claim, plan);
             if (rerun)
             {
@@ -185,6 +185,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         {
             row = new IndexedDocument(document.Id, _currentTenant.Id, document.DocumentTypeId, document.OwnerId);
             row.RecordEvent(args.EventTime);
+            row.SetTitle(document.Title);
             row.BeginIndexing(now);
             await _documentRepository.InsertAsync(row);
         }
@@ -198,6 +199,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         else
         {
             row.RecordEvent(args.EventTime);
+            row.SetTitle(document.Title);
             row.BeginIndexing(now);
             await _documentRepository.UpdateAsync(row);
         }
@@ -218,7 +220,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     }
 
     /// <summary>Everything that calls out (the model) or takes time, with no transaction open.</summary>
-    protected virtual async Task<SyncPlan> ComputeAsync(DocumentIntegrationDto document, SyncClaim claim)
+    protected virtual async Task<SyncPlan> ComputeAsync(DocumentIntegrationDto document, SyncClaim claim, bool force = false)
     {
         if (string.IsNullOrWhiteSpace(document.Markdown))
         {
@@ -237,7 +239,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var modelId = _embedder.GetModelId();
         var serving = await _generationManager.FindServingAsync();
 
-        var unchanged = claim.ContentHash == contentHash
+        var unchanged = !force
+                        && claim.ContentHash == contentHash
                         && claim.ProfileStamp == profile.Stamp
                         && serving is not null
                         && claim.GenerationId == serving.Id

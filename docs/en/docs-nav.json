@@ -143,6 +143,10 @@
           "path": "deployment/observability.md"
         },
         {
+          "text": "Index Status and Evaluation",
+          "path": "deployment/index-status.md"
+        },
+        {
           "text": "GDPR User-Data Erasure",
           "path": "deployment/gdpr-user-data-erasure.md"
         },

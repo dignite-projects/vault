@@ -197,6 +197,13 @@ public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
             .ToList();
     }
 
+    public Task<ChunkSearchIndexStatus> GetStatusAsync(Guid? generationId, CancellationToken cancellationToken = default)
+        => Task.FromResult(new ChunkSearchIndexStatus(
+            Vectors.Keys.LongCount(k => k.GenerationId == generationId),
+            KeywordIndexAvailable: true,
+            KeywordIndexPendingChanges: 0,
+            KeywordIndexPopulating: false));
+
     private static double CosineDistance(float[] a, float[] b)
     {
         double dot = 0, na = 0, nb = 0;

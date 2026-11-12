@@ -89,6 +89,24 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
         (await KeywordsAsync("賃料", Everything)).ShouldBeEmpty();
     }
 
+    [SqlServerFact]
+    public async Task The_status_counts_this_tenants_vectors_and_reports_the_keyword_index()
+    {
+        await ClearAsync();
+        await AddAsync(TypeA, OwnerX, "賃料", [1, 0, 0, 0]);
+        await AddAsync(TypeB, OwnerY, "敷金", [0, 1, 0, 0]);
+        await AddAsync(TypeA, OwnerX, "他社", [1, 0, 0, 0], tenantId: OtherTenant);
+        await WaitForFullTextAsync();
+
+        var status = await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().GetStatusAsync(Generation1));
+
+        status.VectorCount.ShouldBe(2);
+        status.KeywordIndexAvailable.ShouldBeTrue();
+        status.KeywordIndexPendingChanges.ShouldBe(0);
+        status.KeywordIndexPopulating.ShouldBe(false);
+        (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().GetStatusAsync(null))).VectorCount.ShouldBe(0);
+    }
+
     private Task<List<Guid>> VectorsAsync(Guid generationId, ChunkSearchScope scope)
         => WithUnitOfWorkAsync(async () => (await GetRequiredService<IChunkSearchIndex>()
             .SearchVectorsAsync(generationId, new float[] { 1, 0, 0, 0 }, scope, 10)).Select(m => m.ChunkId).ToList());
@@ -108,7 +126,7 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
                           AND OBJECTPROPERTYEX(OBJECT_ID('VaultIndexChunks'), 'TableFulltextItemCount') = (SELECT COUNT(*) FROM VaultIndexChunks)
                         THEN 1 ELSE 0 END
             """;
-        await using var connection = new SqlConnection(SqlServerTestDatabase.ConnectionString);
+        await using var connection = new SqlConnection(SqlServerTestDatabase.Store.ConnectionString);
         await connection.OpenAsync();
         for (var i = 0; i < 120; i++)
         {
@@ -146,7 +164,7 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
 
     private static async Task ClearAsync()
     {
-        await using var connection = new SqlConnection(SqlServerTestDatabase.ConnectionString);
+        await using var connection = new SqlConnection(SqlServerTestDatabase.Store.ConnectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand("DELETE FROM VaultIndexChunkVectors; DELETE FROM VaultIndexChunks;", connection);
         await command.ExecuteNonQueryAsync();
