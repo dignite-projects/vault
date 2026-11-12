@@ -57,8 +57,9 @@ Vault Extract is distributed as an ABP application module: the `Dignite.Vault.Ex
     "Extract": {
       "Endpoint": "https://api.openai.com/v1",
       "ApiKey": "sk-...",
-      "ChatModelId": "gpt-4o-mini",
-      "VisionOcrModelId": "gpt-4o-mini"
+      "ChatModelId": "gpt-6-luna",
+      "VisionOcrModelId": "gpt-6-luna",
+      "ReasoningEffort": "None"
     }
   }
 }

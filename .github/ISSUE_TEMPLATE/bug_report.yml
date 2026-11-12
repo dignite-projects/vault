@@ -48,7 +48,7 @@ body:
     attributes:
       label: OCR provider in use
       description: Vision LLM (default) / PaddleOCR / Azure Document Intelligence — and the chat/vision model id if relevant.
-      placeholder: Vision LLM, gpt-4o-mini
+      placeholder: Vision LLM, gpt-6-luna
     validations:
       required: false
   - type: textarea

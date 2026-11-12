@@ -651,10 +651,19 @@ public class VaultExtractHostModule : AbpModule
         // depth for the field-extraction workload itself. SlugSuggestionAppService's interactive 10s SLA is
         // enforced independently via its own linked CancellationTokenSource (InteractiveLlmCall), so neither
         // change affects it.
-        var httpClient = new HttpClient(new MaxCompletionTokensToMaxTokensHandler(new SocketsHttpHandler
+        HttpMessageHandler httpHandler = new SocketsHttpHandler
         {
             PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-        }))
+        };
+
+        // Provider quirk, opt-in: a gateway that ignores max_completion_tokens (SiliconFlow) needs the cap sent as
+        // max_tokens. Never on genuine OpenAI, whose reasoning models refuse max_tokens with a 400.
+        if (configuration.GetValue("Vault:Extract:UseLegacyMaxTokens", defaultValue: false))
+        {
+            httpHandler = new MaxCompletionTokensToMaxTokensHandler(httpHandler);
+        }
+
+        var httpClient = new HttpClient(httpHandler)
         {
             // HttpClient.Timeout defaults to 100s and fires from inside HttpClientPipelineTransport before the
             // pipeline-level NetworkTimeout below ever gets a chance to apply, silently overriding it back down
@@ -672,6 +681,21 @@ public class VaultExtractHostModule : AbpModule
                 NetworkTimeout = TimeSpan.FromSeconds(300)
             });
 
+        // A reasoning model spends reasoning tokens out of the same output cap the callers size for their visible
+        // output (field extraction's schema estimate, Vision OCR's MaxOutputTokens), so a deployment on one sets
+        // the effort here. Unset sends nothing: a provider without reasoning may reject the parameter.
+        var reasoningEffort = ReadReasoningEffort(configuration);
+        ChatClientBuilder Decorate(ChatClientBuilder builder)
+        {
+            if (reasoningEffort is { } effort)
+            {
+                // Outermost, so the telemetry span records the effort actually sent. A caller's own value wins.
+                builder.ConfigureOptions(options => options.Reasoning ??= new ReasoningOptions { Effort = effort });
+            }
+
+            return builder.UseOpenTelemetry().UseLogging();
+        }
+
         // Title-generator chat client: single-shot, tool-free, prompt-unique-per-call so
         // distributed caching is a net negative. Consumed by
         // DocumentParseBackgroundJob.TryGenerateTitleAsync and SlugSuggestionAppService via
@@ -681,11 +705,9 @@ public class VaultExtractHostModule : AbpModule
         // ChatResponseFormat.ForJsonSchema for the slug call to keep working.
         var titleGeneratorModelId = configuration["Vault:Extract:TitleGeneratorModelId"]
             ?? chatModelId;
-        context.Services.AddKeyedChatClient(
+        Decorate(context.Services.AddKeyedChatClient(
             VaultExtractConsts.TitleGeneratorChatClientKey,
-            _ => openAIClient.GetChatClient(titleGeneratorModelId).AsIChatClient())
-            .UseOpenTelemetry()
-            .UseLogging();
+            _ => openAIClient.GetChatClient(titleGeneratorModelId).AsIChatClient()));
 
         // Structured-output chat client: shared by classification (MAF RunAsync<T>) plus
         // direct JSON-schema callers such as field extraction. All are tool-free and
@@ -697,11 +719,9 @@ public class VaultExtractHostModule : AbpModule
         // keep it on a strong model rather than trimming cost here.
         var structuredModelId = configuration["Vault:Extract:StructuredModelId"]
             ?? chatModelId;
-        context.Services.AddKeyedChatClient(
+        Decorate(context.Services.AddKeyedChatClient(
             VaultExtractConsts.StructuredChatClientKey,
-            _ => openAIClient.GetChatClient(structuredModelId).AsIChatClient())
-            .UseOpenTelemetry()
-            .UseLogging();
+            _ => openAIClient.GetChatClient(structuredModelId).AsIChatClient()));
 
         // Vision OCR chat client: consumed by VisionLlmOcrProvider via
         // [FromKeyedServices(VisionLlmOcrConsts.VisionChatClientKey)] to transcribe photos / thermal
@@ -719,17 +739,34 @@ public class VaultExtractHostModule : AbpModule
                 "src/Dignite.Vault.Extract.Host/appsettings.secrets.json (git-ignored) or environment variables. " +
                 "See docs/en/text-extraction/ocr-vision-llm.md.");
         }
-        context.Services.AddKeyedChatClient(
+        Decorate(context.Services.AddKeyedChatClient(
             VisionLlmOcrConsts.VisionChatClientKey,
-            _ => openAIClient.GetChatClient(visionOcrModelId).AsIChatClient())
-            .UseOpenTelemetry()
-            .UseLogging();
+            _ => openAIClient.GetChatClient(visionOcrModelId).AsIChatClient()));
+    }
+
+    private static ReasoningEffort? ReadReasoningEffort(IConfiguration configuration)
+    {
+        var value = configuration["Vault:Extract:ReasoningEffort"];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        // IsDefined rejects a numeric string, which TryParse would accept as any int.
+        if (Enum.TryParse<ReasoningEffort>(value, ignoreCase: true, out var effort) && Enum.IsDefined(effort))
+        {
+            return effort;
+        }
+
+        throw new AbpException(
+            $"Vault:Extract:ReasoningEffort must be one of {string.Join(", ", Enum.GetNames<ReasoningEffort>())}, " +
+            $"or empty to send no reasoning effort; got '{value}'. See docs/en/configuration/ai-provider.md.");
     }
 
     /// <summary>
     /// Rewrites <c>max_completion_tokens</c> to <c>max_tokens</c> in every outgoing chat-completions request body.
     /// <para>
-    /// <b>Why this exists</b>: the <c>OpenAI</c> SDK (2.10.0, pulled in by <c>Microsoft.Extensions.AI.OpenAI</c>)
+    /// <b>Why this exists</b>: the <c>OpenAI</c> SDK (2.14.0, pulled in by <c>Microsoft.Extensions.AI.OpenAI</c>)
     /// unconditionally serializes <see cref="ChatOptions.MaxOutputTokens"/> / <c>ChatCompletionOptions.MaxOutputTokenCount</c>
     /// as OpenAI's current <c>max_completion_tokens</c> field, which replaced the legacy <c>max_tokens</c> field for
     /// chat completions. SiliconFlow's OpenAI-compatible endpoint does not recognize <c>max_completion_tokens</c> —
@@ -743,9 +780,9 @@ public class VaultExtractHostModule : AbpModule
     /// the sizing logic still matters once this rewrite makes <c>MaxOutputTokens</c> take effect at all.
     /// </para>
     /// <para>
-    /// Scoped to this method's SiliconFlow wiring, not the SDK globally: a host that switches to genuine OpenAI (see
-    /// the "non-OpenAI wire protocol" comment above) should drop this handler along with the rest of this method,
-    /// since real OpenAI already understands <c>max_completion_tokens</c> and does not need the rewrite.
+    /// Installed only when <c>Vault:Extract:UseLegacyMaxTokens</c> is <c>true</c>, which a SiliconFlow deployment
+    /// sets. It must stay off for genuine OpenAI and Azure OpenAI, the shipped default: they understand
+    /// <c>max_completion_tokens</c>, and their reasoning models refuse <c>max_tokens</c> with a 400.
     /// </para>
     /// </summary>
     private sealed class MaxCompletionTokensToMaxTokensHandler(HttpMessageHandler innerHandler) : DelegatingHandler(innerHandler)
