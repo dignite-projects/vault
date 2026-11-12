@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>SQL Server storage for Dignite Vault Index: the chunk vector table (SQL Server 2025 or Azure SQL vector type) and the default chunk search index, committed in the same transaction as the chunk rows.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.EntityFrameworkCore.SqlServer" />
+    <ProjectReference Include="..\Dignite.Vault.Index.EntityFrameworkCore\Dignite.Vault.Index.EntityFrameworkCore.csproj" />
+  </ItemGroup>
+
+</Project>

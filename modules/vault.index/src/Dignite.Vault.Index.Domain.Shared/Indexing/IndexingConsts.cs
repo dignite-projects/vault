@@ -10,4 +10,6 @@ public static class IndexingConsts
     public const int MaxTemplateNameLength = 64;
 
     public const int MaxModelIdLength = 256;
+
+    public const int MaxProfileStampLength = 64;
 }

@@ -6,6 +6,12 @@
     "Permission:VaultIndex.Profiles": "管理索引配置",
     "Feature:VaultIndex": "Vault Index",
     "Feature:VaultIndex.Enable": "启用 Vault Index",
-    "Feature:VaultIndex.Enable:Description": "允许租户使用 Vault Index 的应用服务:检索和索引管理。"
+    "Feature:VaultIndex.Enable:Description": "允许租户使用 Vault Index 的应用服务:检索和索引管理。",
+    "VaultIndex:EmptyDocument": "文档没有可索引的文本。",
+    "VaultIndex:DocumentTooLarge": "文档正文有 {Length} 个字符,超过索引上限 {MaxLength} 个字符。",
+    "VaultIndex:TooManyChunks": "文档切成了 {Count} 个分块,超过上限 {Max} 个。",
+    "VaultIndex:EmbeddingGeneratorMissing": "Vault Index 没有配置嵌入模型。",
+    "VaultIndex:EmbeddingModelChanged": "当前配置的嵌入模型 {ModelId}({Dimensions} 维)不是建索引时用的 {ServingModelId}({ServingDimensions} 维)。请用新模型重建索引。",
+    "VaultIndex:EmbeddingDimensionMismatch": "嵌入模型返回的是 {Dimensions} 维向量,索引存储是 {StorageDimensions} 维。"
   }
 }

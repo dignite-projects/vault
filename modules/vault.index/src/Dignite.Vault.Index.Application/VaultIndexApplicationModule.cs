@@ -1,4 +1,6 @@
 using Dignite.Vault.Extract;
+using Dignite.Vault.Index.Ingestion;
+using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.Application;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.Modularity;
@@ -15,4 +17,9 @@ namespace Dignite.Vault.Index;
 )]
 public class VaultIndexApplicationModule : AbpModule
 {
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        var configuration = context.Services.GetConfiguration();
+        Configure<VaultIndexIngestionOptions>(configuration.GetSection("Vault:IndexIngestion"));
+    }
 }

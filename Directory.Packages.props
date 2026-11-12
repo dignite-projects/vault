@@ -94,6 +94,11 @@
         <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />
         <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.11.0" />
         <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
+        <!-- Vault Index ingestion. 10.11.0-preview.1 is the build that depends on Microsoft.Extensions.AI 10.11.0, the version
+             above; 11.0.0-preview.1 would pull Microsoft.Extensions.AI 11.0.0 into the net10.0 host. -->
+        <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="10.11.0-preview.1.26513.7" />
+        <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="10.11.0-preview.1.26513.7" />
+        <PackageVersion Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="1.0.1" />
         <PackageVersion Include="Microsoft.Agents.AI" Version="1.20.0" />
     </ItemGroup>
 
@@ -157,7 +162,9 @@
              Both entries below: SkiaSharp is referenced directly by Ocr.VisionLlm (image downscaling, #692). -->
         <PackageVersion Include="SkiaSharp" Version="3.119.2" />
         <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
-        <PackageVersion Include="Markdig" Version="1.3.2" />
+        <!-- Markdig.Signed, not Markdig: Microsoft.Extensions.DataIngestion.Markdig depends on the signed package, and the two
+             ship the same Markdig.dll, so a host that carries both ends up with whichever copy wins. Same version, same code. -->
+        <PackageVersion Include="Markdig.Signed" Version="1.3.2" />
         <!-- ElBruno.MarkItDotNet.Excel 0.6.0 requires ClosedXML >= 0.105.0. Keep the
              application export writer and XLSX Markdown converter on one resolved version. -->
         <PackageVersion Include="ClosedXML" Version="0.105.0" />

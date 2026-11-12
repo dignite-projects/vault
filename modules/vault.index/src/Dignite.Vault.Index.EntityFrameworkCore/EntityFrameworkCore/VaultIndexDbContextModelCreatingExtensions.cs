@@ -43,6 +43,7 @@ public static class VaultIndexDbContextModelCreatingExtensions
             // The id is Extract's document id, assigned by the caller, never generated here.
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ContentHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
+            b.Property(x => x.ProfileStamp).HasMaxLength(IndexingConsts.MaxProfileStampLength);
 
             b.HasIndex(x => new { x.TenantId, x.DocumentTypeId });
             b.HasIndex(x => new { x.TenantId, x.Status });
@@ -93,6 +94,14 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.ModelId).IsRequired().HasMaxLength(IndexingConsts.MaxModelIdLength);
 
             b.HasIndex(x => new { x.TenantId, x.Status });
+
+            // At most one serving generation per layer: two first jobs racing to create it collide here, and the loser
+            // is retried and finds the winner. The filter replaces EF's IS NOT NULL one, so on SQL Server the Host's
+            // NULL TenantId is constrained too.
+            b.HasIndex(x => x.TenantId)
+                .HasDatabaseName("IX_VaultIndexGenerations_TenantId_Serving")
+                .IsUnique()
+                .HasFilter("[Status] = " + (int)IndexGenerationStatus.Serving);
         });
     }
 }

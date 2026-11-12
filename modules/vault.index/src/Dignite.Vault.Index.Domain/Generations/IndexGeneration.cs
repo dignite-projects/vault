@@ -45,4 +45,17 @@ public class IndexGeneration : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         Dimensions = Check.Range(dimensions, nameof(dimensions), 1, int.MaxValue);
         Status = IndexGenerationStatus.Building;
     }
+
+    /// <summary>Makes this the generation search reads. The caller retires the one it replaces.</summary>
+    public virtual void StartServing(DateTime now)
+    {
+        Status = IndexGenerationStatus.Serving;
+        ServingSince = now;
+    }
+
+    public virtual void Retire(DateTime now)
+    {
+        Status = IndexGenerationStatus.Retired;
+        RetiredTime = now;
+    }
 }

@@ -6,6 +6,12 @@
     "Permission:VaultIndex.Profiles": "インデックス設定の管理",
     "Feature:VaultIndex": "Vault Index",
     "Feature:VaultIndex.Enable": "Vault Index を有効にする",
-    "Feature:VaultIndex.Enable:Description": "テナントが Vault Index のアプリケーションサービス(検索とインデックス管理)を使えるようにします。"
+    "Feature:VaultIndex.Enable:Description": "テナントが Vault Index のアプリケーションサービス(検索とインデックス管理)を使えるようにします。",
+    "VaultIndex:EmptyDocument": "インデックスするテキストがありません。",
+    "VaultIndex:DocumentTooLarge": "ドキュメントのテキストが {Length} 文字あり、インデックスの上限 {MaxLength} 文字を超えています。",
+    "VaultIndex:TooManyChunks": "ドキュメントが {Count} 個のチャンクに分かれ、上限 {Max} 個を超えています。",
+    "VaultIndex:EmbeddingGeneratorMissing": "Vault Index の埋め込みモデルが設定されていません。",
+    "VaultIndex:EmbeddingModelChanged": "設定された埋め込みモデル {ModelId}({Dimensions} 次元)は、インデックス作成時のモデル {ServingModelId}({ServingDimensions} 次元)と異なります。新しいモデルでインデックスを再構築してください。",
+    "VaultIndex:EmbeddingDimensionMismatch": "埋め込みモデルが {Dimensions} 次元のベクトルを返しましたが、インデックスのストレージは {StorageDimensions} 次元です。"
   }
 }
