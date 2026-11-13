@@ -1,6 +1,7 @@
 import { IndexedDocumentStatus } from '../proxy/indexing/indexed-document-status.enum';
 import { IndexRunStatus } from '../proxy/indexing/index-run-status.enum';
-import { documentStatusBadge, runStatusBadge, summaryWarnings } from './index-status.view';
+import { IndexArtifactState } from '../proxy/indexing/index-artifact-state.enum';
+import { canRecompile, documentStatusBadge, runStatusBadge, summariesBadge, summaryWarnings } from './index-status.view';
 
 describe('index status view', () => {
   const healthy = {
@@ -42,5 +43,15 @@ describe('index status view', () => {
     expect(documentStatusBadge(IndexedDocumentStatus.Failed)).toBe('bg-danger');
     expect(documentStatusBadge(IndexedDocumentStatus.Indexed)).toBe('bg-success');
     expect(runStatusBadge(IndexRunStatus.Skipped)).toBe('bg-secondary');
+    expect(IndexArtifactState.Outdated).toBe(3);
+    expect(summariesBadge(IndexArtifactState.Current)).toBe('bg-success');
+    expect(summariesBadge(IndexArtifactState.Outdated)).toBe('bg-warning text-dark');
+  });
+
+  it('offers a recompile only where summaries exist or are due and a model can compile them', () => {
+    expect(canRecompile({ summariesState: IndexArtifactState.Outdated }, true)).toBe(true);
+    expect(canRecompile({ summariesState: IndexArtifactState.Pending }, true)).toBe(true);
+    expect(canRecompile({ summariesState: IndexArtifactState.None }, true)).toBe(false);
+    expect(canRecompile({ summariesState: IndexArtifactState.Current }, false)).toBe(false);
   });
 });

@@ -58,7 +58,10 @@ describe('index profiles view', () => {
 
   it('mentions the summaries only when saving compiles some', () => {
     expect(summaryText({ summaryDocumentCount: 0 })).toBeNull();
-    expect(summaryText({ summaryDocumentCount: 3 })).toEqual({ key: 'VaultIndex::Profiles:EstimateSummaries', args: ['3'] });
+    expect(summaryText({ summaryDocumentCount: 3, summaryCallCount: 12 })).toEqual({
+      key: 'VaultIndex::Profiles:EstimateSummaries',
+      args: ['3', '12'],
+    });
   });
 
   it('reads and writes the enrichment switches as flags', () => {

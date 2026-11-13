@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index summary operations** (shipped host and SPA). The index status page shows where each document's
+  summaries stand (pending, current, out of date) with their compile time, LLM tokens and note, and counts the
+  documents with summaries. **Recompile** (`POST /api/vault-index/status/documents/{id}/recompile`, permission
+  `VaultIndex.Status.Rebuild`) compiles them again; it is refused without a chat model
+  (`VaultIndex:ChatModelUnavailable`) or when the type does not compile summaries (`VaultIndex:SummariesOff`). The
+  profile estimate counts about the model calls compiling would take. See
+  [Index Status and Evaluation](docs/en/deployment/index-status.md#the-status-page).
 - **Vault Index type catalog** (shipped host). `GET /api/vault-index/catalog` and the MCP tool `vault_index_catalog`
   list the documents of one type that the caller can read, ordered by title and paged (at most 50), each with its
   document summary where the type compiles summaries; `fieldFilters` narrow it as they narrow search. It is built

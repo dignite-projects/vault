@@ -82,6 +82,18 @@
     "IndexStatus:Total": "{0} 件",
     "IndexStatus:InRetrieval": "検索対象外",
     "VaultIndex:FieldFilterTooBroad": "フィールド条件に一致するドキュメントが {Max} 件を超えています。条件を追加して絞り込んでください。",
+    "VaultIndex:ChatModelUnavailable": "Vault Index のチャットモデル(Vault:Index:ChatModelId)が設定されていないため、要約をコンパイルできません。",
+    "VaultIndex:SummariesOff": "この文書の種類は要約をコンパイルしません。先にインデックス設定で有効にしてください。",
+    "Enum:IndexArtifactState.0": "なし",
+    "Enum:IndexArtifactState.1": "未作成",
+    "Enum:IndexArtifactState.2": "最新",
+    "Enum:IndexArtifactState.3": "古い",
+    "IndexStatus:Summaries": "要約",
+    "IndexStatus:SummaryNotes": "注記あり {0} 件",
+    "IndexStatus:Recompile": "再コンパイル",
+    "IndexStatus:RecompileConfirm": "最新であっても、この文書の要約をチャンクから作り直しますか?モデルを呼び出します。",
+    "IndexStatus:RecompileQueued": "コンパイルを予約しました。",
+    "IndexStatus:SummariesCompiled": "{0} にコンパイル、LLM トークン {1} / {2}",
     "SearchTest:Query": "クエリ",
     "SearchTest:DocumentTypeCode": "ドキュメント種別コード",
     "SearchTest:AllTypes": "読めるすべての種別",
@@ -161,6 +173,6 @@
     "Profiles:Compilation": "コンパイル",
     "Profiles:Summaries": "節と文書の要約",
     "Profiles:SummariesHint": "同期のたびに、LLM がアウトラインの各節を 1 文で要約し、文書全体の短い要約を書きます。アウトライン(REST と MCP)に表示されます。1 文書あたり数回モデルを呼び出します。",
-    "Profiles:EstimateSummaries": "{0} 件の文書で要約をコンパイルします。"
+    "Profiles:EstimateSummaries": "{0} 件の文書で要約をコンパイルします(モデル呼び出し約 {1} 回)。"
   }
 }

@@ -2,6 +2,7 @@ import type { PagedAndSortedResultRequestDto } from '@abp/ng.core';
 import type { IndexedDocumentStatus } from '../indexing/indexed-document-status.enum';
 import type { IndexRunTrigger } from '../indexing/index-run-trigger.enum';
 import type { IndexRunStatus } from '../indexing/index-run-status.enum';
+import type { IndexArtifactState } from '../indexing/index-artifact-state.enum';
 
 export interface GetIndexedDocumentListInput extends PagedAndSortedResultRequestDto {
   status?: IndexedDocumentStatus | null;
@@ -39,6 +40,9 @@ export interface IndexStatusSummaryDto {
   keywordIndexAvailable?: boolean;
   keywordIndexPendingChanges?: number | null;
   keywordIndexPopulating?: boolean | null;
+  chatModelAvailable?: boolean;
+  summaryDocumentCount?: number;
+  summaryNoteCount?: number;
 }
 
 export interface IndexedDocumentStatusDto {
@@ -54,4 +58,9 @@ export interface IndexedDocumentStatusDto {
   lastIndexedTime?: string | null;
   lastModificationTime?: string | null;
   lastError?: string | null;
+  summariesState?: IndexArtifactState;
+  summariesCompiledTime?: string | null;
+  summariesInputTokenCount?: number | null;
+  summariesOutputTokenCount?: number | null;
+  summariesNote?: string | null;
 }

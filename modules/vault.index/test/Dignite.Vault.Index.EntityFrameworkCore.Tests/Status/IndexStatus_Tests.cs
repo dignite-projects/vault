@@ -7,6 +7,7 @@ using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Extract.Documents.Integration;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Ingestion;
+using Dignite.Vault.Index.Profiles;
 using Dignite.Vault.Index.Permissions;
 using Dignite.Vault.Index.Runs;
 using NSubstitute;
@@ -133,6 +134,17 @@ public class IndexStatus_Tests : VaultIndexTestBase<VaultIndexIngestionTestModul
         var latest = (await GetRequiredService<IRepository<IndexRun, Guid>>().GetListAsync()).OrderBy(r => r.StartedTime).Last();
         latest.Status.ShouldBe(IndexRunStatus.Succeeded);
         latest.Trigger.ShouldBe(IndexRunTrigger.Manual);
+    }
+
+    [Fact]
+    public async Task Without_a_chat_model_no_summaries_are_pending_and_a_recompile_is_refused()
+    {
+        await GetRequiredService<IIndexProfileAppService>().SetAsync(new IndexProfileInput { DocumentTypeId = LeaseType, Compilation = IndexCompilation.Summaries });
+        await IndexAsync(Lease, LeaseType, "# 契約\n\n賃料は月額。", "賃貸借契約書");
+
+        (await _status.GetSummaryAsync()).ChatModelAvailable.ShouldBeFalse();
+        (await _status.GetDocumentListAsync(new GetIndexedDocumentListInput())).Items.Single().SummariesState.ShouldBe(IndexArtifactState.None);
+        (await Should.ThrowAsync<BusinessException>(() => _status.RecompileAsync(Lease))).Code.ShouldBe(VaultIndexErrorCodes.ChatModelUnavailable);
     }
 
     [Fact]

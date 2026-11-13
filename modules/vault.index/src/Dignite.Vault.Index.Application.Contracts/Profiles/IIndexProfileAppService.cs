@@ -136,4 +136,10 @@ public class IndexRebuildEstimateDto
     /// chunks the change rebuilds. 0 when the settings compile nothing or there is no chat model.
     /// </summary>
     public int SummaryDocumentCount { get; set; }
+
+    /// <summary>
+    /// About the model calls compiling them takes: per document, one per eight chunks and two for the upper sections
+    /// and the document summary. On the evaluation set this came within one call of the calls made.
+    /// </summary>
+    public int SummaryCallCount { get; set; }
 }

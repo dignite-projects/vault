@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Dignite.Vault.Index.Artifacts;
 using Dignite.Vault.Index.Chunks;
+using Dignite.Vault.Index.Compilation;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Ingestion;
 using Dignite.Vault.Index.Permissions;
+using Dignite.Vault.Index.Profiles;
 using Dignite.Vault.Index.Runs;
 using Dignite.Vault.Index.Search;
 using Microsoft.AspNetCore.Authorization;
@@ -23,7 +26,11 @@ namespace Dignite.Vault.Index.Status;
 /// The index status page. The summary counts the tenant's rows and shows nothing of a document's content; the
 /// document list and runs show titles and errors, so they pass the rows through the caller's read scope, the same rule
 /// search uses. A rebuild queues an ordinary index job with <see cref="IndexDocumentJobArgs.Force"/> set, so it goes
-/// through the same claim, retry cap and run record as an event.
+/// through the same claim, retry cap and run record as an event; a recompile queues the compile job the same way.
+/// <para>
+/// A document's summaries are current while their source hash matches its enabled chunks and language, the check the
+/// compile job and the outline make; the list computes it for the page it shows.
+/// </para>
 /// </summary>
 public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppService
 {
@@ -38,6 +45,9 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
     private readonly IChunkSearchIndex _searchIndex;
     private readonly IndexReadScopeResolver _scopeResolver;
     private readonly IBackgroundJobManager _backgroundJobManager;
+    private readonly IRepository<Artifact, Guid> _artifactRepository;
+    private readonly IndexProfileResolver _profileResolver;
+    private readonly DocumentSummaryCompilerProvider _compilerProvider;
 
     public IndexStatusAppService(
         IRepository<IndexedDocument, Guid> documentRepository,
@@ -47,7 +57,10 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
         IndexEmbedder embedder,
         IChunkSearchIndex searchIndex,
         IndexReadScopeResolver scopeResolver,
-        IBackgroundJobManager backgroundJobManager)
+        IBackgroundJobManager backgroundJobManager,
+        IRepository<Artifact, Guid> artifactRepository,
+        IndexProfileResolver profileResolver,
+        DocumentSummaryCompilerProvider compilerProvider)
     {
         _documentRepository = documentRepository;
         _chunkRepository = chunkRepository;
@@ -57,6 +70,9 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
         _searchIndex = searchIndex;
         _scopeResolver = scopeResolver;
         _backgroundJobManager = backgroundJobManager;
+        _artifactRepository = artifactRepository;
+        _profileResolver = profileResolver;
+        _compilerProvider = compilerProvider;
     }
 
     public virtual async Task<IndexStatusSummaryDto> GetSummaryAsync()
@@ -70,6 +86,7 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             .ToDictionary(x => x.Status, x => x.Count);
         var serving = await _generationManager.FindServingAsync();
         var store = await _searchIndex.GetStatusAsync(serving?.Id);
+        var summaries = (await _artifactRepository.GetQueryableAsync()).Where(a => a.TemplateName == ArtifactTemplateNames.Summaries);
 
         return new IndexStatusSummaryDto
         {
@@ -88,7 +105,10 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             ConfiguredModelId = GetConfiguredModelId(),
             KeywordIndexAvailable = store.KeywordIndexAvailable,
             KeywordIndexPendingChanges = store.KeywordIndexPendingChanges,
-            KeywordIndexPopulating = store.KeywordIndexPopulating
+            KeywordIndexPopulating = store.KeywordIndexPopulating,
+            ChatModelAvailable = _compilerProvider.IsAvailable,
+            SummaryDocumentCount = await AsyncExecuter.CountAsync(summaries),
+            SummaryNoteCount = await AsyncExecuter.CountAsync(summaries.Where(a => a.Note != null))
         };
     }
 
@@ -116,6 +136,7 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             .Skip(input.SkipCount)
             .Take(input.MaxResultCount));
         var errors = await GetLastErrorsAsync(page.Where(d => d.Status == IndexedDocumentStatus.Failed).Select(d => d.Id).ToList());
+        var summaries = await GetSummaryStatesAsync(page);
 
         return new PagedResultDto<IndexedDocumentStatusDto>(totalCount, page.Select(d => new IndexedDocumentStatusDto
         {
@@ -130,7 +151,12 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             FailedAttempts = d.FailedAttempts,
             LastIndexedTime = d.LastIndexedTime,
             LastModificationTime = d.LastModificationTime ?? d.CreationTime,
-            LastError = errors.GetValueOrDefault(d.Id)
+            LastError = errors.GetValueOrDefault(d.Id),
+            SummariesState = summaries[d.Id].State,
+            SummariesCompiledTime = summaries[d.Id].Artifact is { } artifact ? artifact.LastModificationTime ?? artifact.CreationTime : null,
+            SummariesInputTokenCount = summaries[d.Id].Artifact?.InputTokenCount,
+            SummariesOutputTokenCount = summaries[d.Id].Artifact?.OutputTokenCount,
+            SummariesNote = summaries[d.Id].Artifact?.Note
         }).ToList());
     }
 
@@ -173,6 +199,75 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             Trigger = IndexRunTrigger.Manual,
             Force = true
         });
+    }
+
+    public virtual async Task RecompileAsync(Guid documentId)
+    {
+        await AuthorizationService.CheckAsync(VaultIndexPermissions.StatusRebuild);
+        var document = await GetReadableDocumentAsync(documentId);
+
+        if (!_compilerProvider.IsAvailable)
+        {
+            throw new BusinessException(VaultIndexErrorCodes.ChatModelUnavailable);
+        }
+
+        if (!(await _profileResolver.ResolveAsync(document.DocumentTypeId)).Compilation.HasFlag(IndexCompilation.Summaries))
+        {
+            throw new BusinessException(VaultIndexErrorCodes.SummariesOff);
+        }
+
+        await _backgroundJobManager.EnqueueAsync(new IndexCompileJobArgs
+        {
+            DocumentId = documentId,
+            TenantId = CurrentTenant.Id,
+            Force = true
+        });
+    }
+
+    /// <summary>
+    /// Where each document's summaries stand: compiled or not, and if compiled, current or not, by the source hash the
+    /// compile job writes and the template version. Pending only where the type asks for them and a model can compile.
+    /// </summary>
+    protected virtual async Task<Dictionary<Guid, (IndexArtifactState State, Artifact? Artifact)>> GetSummaryStatesAsync(
+        IReadOnlyCollection<IndexedDocument> documents)
+    {
+        var ids = documents.Select(d => d.Id).ToList();
+        var artifacts = ids.Count == 0
+            ? []
+            : await AsyncExecuter.ToListAsync((await _artifactRepository.GetQueryableAsync())
+                .Where(a => a.TemplateName == ArtifactTemplateNames.Summaries && a.DocumentId != null && ids.Contains(a.DocumentId.Value)));
+        var compiledIds = artifacts.Select(a => a.DocumentId!.Value).ToList();
+        var chunks = (compiledIds.Count == 0
+                ? []
+                : await AsyncExecuter.ToListAsync((await _chunkRepository.GetQueryableAsync())
+                    .Where(c => compiledIds.Contains(c.DocumentId) && !c.IsDisabled)
+                    .Select(c => new { c.DocumentId, c.Ordinal, c.HeadingPath, c.ContentHash })))
+            .ToLookup(c => c.DocumentId);
+
+        var wanted = new Dictionary<Guid, bool>();
+        foreach (var typeId in documents.Select(d => d.DocumentTypeId).Distinct())
+        {
+            var compilation = _compilerProvider.Effective((await _profileResolver.ResolveAsync(typeId)).Compilation);
+            wanted[typeId] = compilation.HasFlag(IndexCompilation.Summaries);
+        }
+
+        var states = new Dictionary<Guid, (IndexArtifactState, Artifact?)>();
+        foreach (var document in documents)
+        {
+            var artifact = artifacts.FirstOrDefault(a => a.DocumentId == document.Id);
+            if (artifact is null)
+            {
+                states[document.Id] = (wanted[document.DocumentTypeId] ? IndexArtifactState.Pending : IndexArtifactState.None, null);
+                continue;
+            }
+
+            var current = artifact.SourceHash == DocumentSummaries.SourceHash(
+                              document.Language, chunks[document.Id].Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash)))
+                          && DocumentSummaries.FromJson(artifact.Content)?.Version == DocumentSummaries.CurrentVersion;
+            states[document.Id] = (current ? IndexArtifactState.Current : IndexArtifactState.Outdated, artifact);
+        }
+
+        return states;
     }
 
     /// <summary>The document's row, if the caller's read scope reaches it; not found otherwise.</summary>

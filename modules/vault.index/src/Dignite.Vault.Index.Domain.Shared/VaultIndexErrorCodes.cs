@@ -37,4 +37,10 @@ public static class VaultIndexErrorCodes
 
     /// <summary>The field conditions matched more documents than one search narrows to; a narrower condition is needed.</summary>
     public const string FieldFilterTooBroad = Namespace + ":FieldFilterTooBroad";
+
+    /// <summary>The host registers no chat model under <see cref="VaultIndexConsts.ChatClientKey"/>, so nothing is compiled.</summary>
+    public const string ChatModelUnavailable = Namespace + ":ChatModelUnavailable";
+
+    /// <summary>The document's type does not compile summaries; a recompile would only remove them.</summary>
+    public const string SummariesOff = Namespace + ":SummariesOff";
 }

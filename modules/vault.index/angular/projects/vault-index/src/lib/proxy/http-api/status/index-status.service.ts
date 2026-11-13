@@ -49,4 +49,13 @@ export class IndexStatusService {
       url: `/api/vault-index/status/documents/${documentId}/rebuild`,
     },
       { apiName: this.apiName,...config });
+  
+
+  
+  recompile = (documentId: string, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, void>({
+      method: 'POST',
+      url: `/api/vault-index/status/documents/${documentId}/recompile`,
+    },
+      { apiName: this.apiName,...config });
 }

@@ -94,8 +94,10 @@ public class IndexProfileAppService : VaultIndexAppService, IIndexProfileAppServ
             var compiled = (await _artifactRepository.GetQueryableAsync())
                 .Where(a => a.TemplateName == ArtifactTemplateNames.Summaries && a.DocumentId != null)
                 .Select(a => a.DocumentId!.Value);
-            estimate.SummaryDocumentCount = await AsyncExecuter.CountAsync(
-                applying.Where(d => d.ProfileStamp != stamp || !compiled.Contains(d.Id)));
+            var toCompile = applying.Where(d => d.ProfileStamp != stamp || !compiled.Contains(d.Id));
+            estimate.SummaryDocumentCount = await AsyncExecuter.CountAsync(toCompile);
+            estimate.SummaryCallCount = await AsyncExecuter.SumAsync(toCompile.Select(d =>
+                (d.ChunkCount + DocumentSummaryCompiler.ItemsPerCall - 1) / DocumentSummaryCompiler.ItemsPerCall + 2));
         }
 
         return estimate;
