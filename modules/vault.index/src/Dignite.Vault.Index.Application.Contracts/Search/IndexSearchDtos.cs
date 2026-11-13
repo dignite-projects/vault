@@ -133,6 +133,59 @@ public class OutlineNodeDto
     public int ChunkCount { get; set; }
 }
 
+public class GetIndexCatalogInput : IValidatableObject
+{
+    /// <summary>The type to list (Extract's type code).</summary>
+    [Required]
+    [StringLength(128)]
+    public string DocumentTypeCode { get; set; } = default!;
+
+    /// <summary>Only documents whose extracted fields meet these conditions, ANDed, as search reads them.</summary>
+    [MaxLength(DocumentConsts.MaxSearchFieldFilters)]
+    public List<DocumentFieldFilter>? FieldFilters { get; set; }
+
+    public int SkipCount { get; set; }
+
+    /// <summary>1 to <see cref="IndexSearchConsts.MaxCatalogPageSize"/>; <see cref="IndexSearchConsts.DefaultCatalogPageSize"/> when empty.</summary>
+    [Range(1, IndexSearchConsts.MaxCatalogPageSize)]
+    public int? MaxResultCount { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (SkipCount < 0)
+        {
+            yield return new ValidationResult("SkipCount cannot be negative.", new[] { nameof(SkipCount) });
+        }
+    }
+}
+
+public class IndexCatalogDto
+{
+    public string? DocumentTypeCode { get; set; }
+
+    /// <summary>One page, ordered by title.</summary>
+    public List<IndexCatalogItemDto> Items { get; set; } = new();
+
+    /// <summary>Every document the catalog holds for the caller, across pages.</summary>
+    public int TotalCount { get; set; }
+}
+
+public class IndexCatalogItemDto
+{
+    public Guid DocumentId { get; set; }
+
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// The document summary, under the same conditions as <see cref="DocumentOutlineDto.DocumentSummary"/>; <c>null</c>
+    /// when the type compiles none or it is not up to date with the document's chunks.
+    /// </summary>
+    public string? Summary { get; set; }
+
+    /// <summary>When the version the index holds was indexed.</summary>
+    public DateTime? LastIndexedTime { get; set; }
+}
+
 public class IndexReadInput
 {
     /// <summary>A pointer from search (<c>chunk:…</c>) or outline (<c>node:…</c>).</summary>

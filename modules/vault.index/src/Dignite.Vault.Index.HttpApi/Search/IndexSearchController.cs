@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Dignite.Vault.Index.HttpApi.Search;
 
-/// <summary>Search, outline and read over HTTP. Authorization, the feature gate and the read scope are in the application service.</summary>
+/// <summary>Search, outline, catalog and read over HTTP. Authorization, the feature gate and the read scope are in the application service.</summary>
 [Area("vault-index")]
 [Route("api/vault-index")]
 public class IndexSearchController : VaultIndexController, IIndexSearchAppService
@@ -27,6 +27,12 @@ public class IndexSearchController : VaultIndexController, IIndexSearchAppServic
     public virtual Task<DocumentOutlineDto> GetOutlineAsync(Guid documentId)
     {
         return _searchAppService.GetOutlineAsync(documentId);
+    }
+
+    [HttpGet("catalog")]
+    public virtual Task<IndexCatalogDto> GetCatalogAsync([FromQuery] GetIndexCatalogInput input)
+    {
+        return _searchAppService.GetCatalogAsync(input);
     }
 
     [HttpGet("read")]

@@ -119,7 +119,10 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         }
 
         var outline = DocumentOutline.Build(chunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath)));
-        var summaries = await GetFreshSummariesAsync(document, chunks);
+        var summaries = (await GetFreshSummariesAsync(
+                [document],
+                chunks.Select(c => new SummarySourceRow(documentId, c.Ordinal, c.HeadingPath, c.ContentHash))))
+            .GetValueOrDefault(documentId);
         return new DocumentOutlineDto
         {
             DocumentId = documentId,
@@ -142,6 +145,49 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             TotalNodeCount = outline.Nodes.Count,
             ChunkCount = chunks.Count
         };
+    }
+
+    public virtual async Task<IndexCatalogDto> GetCatalogAsync(GetIndexCatalogInput input)
+    {
+        Check.NotNull(input, nameof(input));
+        await AuthorizationService.CheckAsync(VaultIndexPermissions.Search);
+
+        var typeCode = Check.NotNullOrWhiteSpace(input.DocumentTypeCode, nameof(input.DocumentTypeCode)).Trim();
+        var take = Math.Clamp(input.MaxResultCount ?? IndexSearchConsts.DefaultCatalogPageSize, 1, IndexSearchConsts.MaxCatalogPageSize);
+        var skip = Math.Max(0, input.SkipCount);
+
+        var types = await GetVisibleTypesAsync();
+        var scope = await GetScopeAsync(typeCode, types, input.FieldFilters);
+        var result = new IndexCatalogDto { DocumentTypeCode = typeCode };
+        if (scope.ReachesNothing)
+        {
+            return result;
+        }
+
+        // The documents with a chunk in retrieval for this caller: the one scope assembly search uses, so a hidden
+        // document, a document outside the read scope and one no field filter admits are left out alike.
+        var inRetrieval = ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope);
+        var documentIds = inRetrieval.Select(c => c.DocumentId).Distinct();
+        var documents = (await _documentRepository.GetQueryableAsync()).Where(d => documentIds.Contains(d.Id));
+
+        result.TotalCount = await AsyncExecuter.CountAsync(documents);
+        var page = await AsyncExecuter.ToListAsync(documents.OrderBy(d => d.Title).ThenBy(d => d.Id).Skip(skip).Take(take));
+        var pageIds = page.Select(d => d.Id).ToList();
+        var chunks = await AsyncExecuter.ToListAsync(inRetrieval
+            .Where(c => pageIds.Contains(c.DocumentId))
+            .Select(c => new SummarySourceRow(c.DocumentId, c.Ordinal, c.HeadingPath, c.ContentHash)));
+        var summaries = await GetFreshSummariesAsync(page, chunks);
+
+        result.Items = page
+            .Select(d => new IndexCatalogItemDto
+            {
+                DocumentId = d.Id,
+                Title = d.Title,
+                Summary = summaries.GetValueOrDefault(d.Id)?.Document,
+                LastIndexedTime = d.LastIndexedTime
+            })
+            .ToList();
+        return result;
     }
 
     public virtual async Task<IndexReadResultDto> ReadAsync(IndexReadInput input)
@@ -261,22 +307,42 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
     protected sealed record OutlineRow(int Ordinal, string? HeadingPath, Guid DocumentTypeId, string ContentHash);
 
     /// <summary>
-    /// The document's compiled summaries, only while they were built from exactly the chunks the outline shows: after a
-    /// re-chunk, a disabled chunk or a language change they describe something else, and none are shown until the
-    /// compile job has caught up. The chunks were read within the caller's scope, so the document is readable.
+    /// The documents' compiled summaries, each only while it was built from exactly the chunks given for its document,
+    /// the ones the caller sees: after a re-chunk, a disabled chunk or a language change they describe something else,
+    /// and none are shown until the compile job has caught up. The chunks were read within the caller's scope, so every
+    /// document with chunks here is readable.
     /// </summary>
-    protected virtual async Task<DocumentSummaries?> GetFreshSummariesAsync(IndexedDocument document, IReadOnlyList<OutlineRow> chunks)
+    protected virtual async Task<Dictionary<Guid, DocumentSummaries>> GetFreshSummariesAsync(
+        IReadOnlyCollection<IndexedDocument> documents,
+        IEnumerable<SummarySourceRow> chunks)
     {
-        var artifact = await _artifactRepository.FirstOrDefaultAsync(
-            a => a.DocumentId == document.Id && a.TemplateName == ArtifactTemplateNames.Summaries);
-        if (artifact is null
-            || artifact.SourceHash != DocumentSummaries.SourceHash(document.Language, chunks.Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash))))
+        var fresh = new Dictionary<Guid, DocumentSummaries>();
+        var ids = documents.Select(d => d.Id).ToList();
+        if (ids.Count == 0)
         {
-            return null;
+            return fresh;
         }
 
-        return DocumentSummaries.FromJson(artifact.Content);
+        var artifacts = await AsyncExecuter.ToListAsync((await _artifactRepository.GetQueryableAsync())
+            .Where(a => a.TemplateName == ArtifactTemplateNames.Summaries && a.DocumentId != null && ids.Contains(a.DocumentId.Value)));
+        var byDocument = chunks.ToLookup(c => c.DocumentId);
+        foreach (var document in documents)
+        {
+            var artifact = artifacts.FirstOrDefault(a => a.DocumentId == document.Id);
+            if (artifact is not null
+                && artifact.SourceHash == DocumentSummaries.SourceHash(
+                    document.Language, byDocument[document.Id].Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash)))
+                && DocumentSummaries.FromJson(artifact.Content) is { } summaries)
+            {
+                fresh[document.Id] = summaries;
+            }
+        }
+
+        return fresh;
     }
+
+    /// <summary>A chunk as summary freshness reads it.</summary>
+    protected sealed record SummarySourceRow(Guid DocumentId, int Ordinal, string? HeadingPath, string ContentHash);
 
     protected virtual async Task<Dictionary<Guid, IndexedDocument>> GetDocumentsAsync(IEnumerable<Guid> documentIds)
     {

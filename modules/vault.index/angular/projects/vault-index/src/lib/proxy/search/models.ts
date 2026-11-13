@@ -11,6 +11,26 @@ export interface DocumentOutlineDto {
   chunkCount?: number;
 }
 
+export interface GetIndexCatalogInput {
+  documentTypeCode: string;
+  fieldFilters?: DocumentFieldFilter[] | null;
+  skipCount?: number;
+  maxResultCount?: number | null;
+}
+
+export interface IndexCatalogDto {
+  documentTypeCode?: string | null;
+  items?: IndexCatalogItemDto[];
+  totalCount?: number;
+}
+
+export interface IndexCatalogItemDto {
+  documentId?: string;
+  title?: string | null;
+  summary?: string | null;
+  lastIndexedTime?: string | null;
+}
+
 export interface IndexReadInput {
   pointer: string;
 }
