@@ -157,7 +157,7 @@ An index profile can have an LLM add to each chunk a few keywords and the questi
 
 It uses Extract's endpoint and key and its `UseLegacyMaxTokens` setting. The model is told the document's language, which Extract detects; asked only to follow the text, a model can take kanji-heavy Japanese for Chinese.
 
-- **Enrichment.** One call reads 10 chunks. On the evaluation set both kinds took about 670 input and 1,020 output tokens per document. A call that fails or returns something unreadable leaves its chunks without enrichment and is noted on the index run; the document is still indexed.
+- **Enrichment.** One call reads 10 chunks. On the evaluation set both kinds took about 670 input and 1,020 output tokens per document. An answer that cannot be read is asked for once more, as for summaries. A call that still fails leaves its chunks without enrichment and is noted on the index run; the document is still indexed.
 - **Summaries.** A separate job after each sync summarizes the sections bottom-up, eight per call, then the document. A summary that states a number its text does not is not kept: the compile model has filled document summaries with invented dates. An answer that cannot be read is asked for once more: in JSON schema mode Qwen3 sometimes opens the object and then writes only whitespace. A call that still fails leaves its sections without summaries and is noted on the artifact; when every call fails, the job is retried later.
 
 ## Picking a Chat Model

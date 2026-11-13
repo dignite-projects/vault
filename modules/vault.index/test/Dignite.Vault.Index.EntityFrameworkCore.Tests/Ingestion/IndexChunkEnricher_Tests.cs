@@ -116,7 +116,7 @@ public class IndexChunkEnricher_Tests
     }
 
     [Fact]
-    public async Task An_answer_that_is_not_json_counts_as_a_failure()
+    public async Task An_answer_that_is_not_json_twice_counts_as_a_failure()
     {
         var model = new ScriptedEnrichmentChatClient { Answer = _ => "Sure! Here are the keywords." };
         var enricher = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance);
@@ -125,6 +125,31 @@ public class IndexChunkEnricher_Tests
 
         chunks.ShouldAllBe(c => !c.HasMetadata);
         enricher.FailedChunkCount.ShouldBe(3);
+        (model.Calls.Count, enricher.CallCount).ShouldBe((IndexChunkEnricher.MaxAttempts, IndexChunkEnricher.MaxAttempts));
+    }
+
+    [Fact]
+    public async Task An_unreadable_answer_is_asked_for_once_more()
+    {
+        var model = new ScriptedEnrichmentChatClient { UnreadableOnCalls = [1] };
+        var enricher = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance);
+
+        var chunks = await RunAsync(enricher, 3);
+
+        model.Calls[1].User.ShouldBe(model.Calls[0].User);
+        chunks.ShouldAllBe(c => c.Metadata.ContainsKey(IndexChunkEnricher.KeywordsKey));
+        (enricher.CallCount, enricher.FailedChunkCount).ShouldBe((2, 0));
+    }
+
+    [Fact]
+    public async Task A_call_that_throws_is_not_asked_again()
+    {
+        var model = new ScriptedEnrichmentChatClient { FailOnCall = 1 };
+        var enricher = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance);
+
+        await RunAsync(enricher, 3);
+
+        (model.Calls.Count, enricher.FailedChunkCount).ShouldBe((1, 3));
     }
 
     [Fact]
@@ -171,6 +196,9 @@ public sealed class ScriptedEnrichmentChatClient : IChatClient
     /// <summary>The call (from 1) that throws.</summary>
     public int? FailOnCall { get; set; }
 
+    /// <summary>The calls (from 1) that answer an open object and whitespace, as a model in JSON schema mode can.</summary>
+    public HashSet<int> UnreadableOnCalls { get; set; } = [];
+
     public Func<int, string>? Answer { get; set; }
 
     public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -183,7 +211,7 @@ public sealed class ScriptedEnrichmentChatClient : IChatClient
         }
 
         var passages = Regex.Matches(Calls[^1].User, "Passage (\\d+):").Count;
-        var text = Answer?.Invoke(passages) ?? JsonSerializer.Serialize(new {
+        var text = UnreadableOnCalls.Contains(Calls.Count) ? "{  \n\t\t  \n" : Answer?.Invoke(passages) ?? JsonSerializer.Serialize(new {
             chunks = Enumerable.Range(0, passages).Select(i => new {
                 index = i,
                 keywords = new[] { "kw" + i, "term" },

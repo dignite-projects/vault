@@ -26,8 +26,10 @@ namespace Dignite.Vault.Index.Ingestion;
 /// keywords and questions of a chunk do not need its last lines, and the batch stays bounded.
 /// </para>
 /// <para>
-/// Best effort, as DataIngestion's enrichers are: a batch whose call fails or whose answer cannot be read leaves its
-/// chunks without enrichment and is counted in <see cref="FailedChunkCount"/>; the index run still succeeds.
+/// An answer that cannot be read is asked for once more: in JSON schema mode a model can open the object and then emit
+/// only whitespace until its token limit, which a second call usually does not repeat. Best effort beyond that, as
+/// DataIngestion's enrichers are: a batch whose call fails, or whose answer cannot be read twice, leaves its chunks
+/// without enrichment and is counted in <see cref="FailedChunkCount"/>; the index run still succeeds.
 /// </para>
 /// </summary>
 public class IndexChunkEnricher : IngestionChunkProcessor<string>
@@ -45,6 +47,9 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
     public const int MaxKeywordLength = 64;
     public const int MaxQuestions = 5;
     public const int MaxQuestionLength = 200;
+
+    /// <summary>Calls for one batch's answer when the first cannot be read.</summary>
+    public const int MaxAttempts = 2;
 
     private const string Instructions =
         "You prepare passages of a business document for search. For each passage, return its index and ";
@@ -117,50 +122,71 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
 
     protected virtual async Task EnrichAsync(IReadOnlyList<IngestionChunk<string>> batch, CancellationToken cancellationToken)
     {
-        CallCount++;
-        try
+        var answer = await AskAsync(batch, cancellationToken);
+        if (answer is null)
         {
-            var response = await _chatClient.GetResponseAsync(
-                BuildMessages(batch),
-                new ChatOptions
-                {
-                    ResponseFormat = ChatResponseFormat.ForJsonSchema(
-                        AIJsonUtilities.CreateJsonSchema(typeof(EnrichmentAnswer)), "chunk_enrichment"),
-                    MaxOutputTokens = 200 + batch.Count * 300
-                },
-                cancellationToken);
-            InputTokenCount += response.Usage?.InputTokenCount ?? 0;
-            OutputTokenCount += response.Usage?.OutputTokenCount ?? 0;
+            FailedChunkCount += batch.Count;
+            return;
+        }
 
-            var answer = LlmJson.Read<EnrichmentAnswer>(response.Text);
-            var enriched = 0;
-            foreach (var item in answer?.Chunks ?? [])
+        var enriched = 0;
+        foreach (var item in answer.Chunks)
+        {
+            if (item.Index < 0 || item.Index >= batch.Count)
             {
-                if (item.Index < 0 || item.Index >= batch.Count)
-                {
-                    continue;
-                }
-
-                var chunk = batch[item.Index];
-                if (_enrichment.HasFlag(IndexEnrichment.Keywords))
-                {
-                    chunk.Metadata[KeywordsKey] = Clean(item.Keywords, MaxKeywords, MaxKeywordLength);
-                }
-
-                if (_enrichment.HasFlag(IndexEnrichment.Questions))
-                {
-                    chunk.Metadata[QuestionsKey] = Clean(item.Questions, MaxQuestions, MaxQuestionLength);
-                }
-
-                enriched++;
+                continue;
             }
 
-            FailedChunkCount += batch.Count - Math.Min(enriched, batch.Count);
+            var chunk = batch[item.Index];
+            if (_enrichment.HasFlag(IndexEnrichment.Keywords))
+            {
+                chunk.Metadata[KeywordsKey] = Clean(item.Keywords, MaxKeywords, MaxKeywordLength);
+            }
+
+            if (_enrichment.HasFlag(IndexEnrichment.Questions))
+            {
+                chunk.Metadata[QuestionsKey] = Clean(item.Questions, MaxQuestions, MaxQuestionLength);
+            }
+
+            enriched++;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+
+        FailedChunkCount += batch.Count - Math.Min(enriched, batch.Count);
+    }
+
+    /// <summary>
+    /// One model call for the batch, asked again once when the answer cannot be read; <c>null</c> when the call fails or
+    /// no answer can be read.
+    /// </summary>
+    protected virtual async Task<EnrichmentAnswer?> AskAsync(IReadOnlyList<IngestionChunk<string>> batch, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
         {
-            _logger.LogWarning(exception, "Enriching {Count} chunks failed; they are indexed without enrichment.", batch.Count);
-            FailedChunkCount += batch.Count;
+            CallCount++;
+            try
+            {
+                var response = await _chatClient.GetResponseAsync(
+                    BuildMessages(batch),
+                    new ChatOptions
+                    {
+                        ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                            AIJsonUtilities.CreateJsonSchema(typeof(EnrichmentAnswer)), "chunk_enrichment"),
+                        MaxOutputTokens = 200 + batch.Count * 300
+                    },
+                    cancellationToken);
+                InputTokenCount += response.Usage?.InputTokenCount ?? 0;
+                OutputTokenCount += response.Usage?.OutputTokenCount ?? 0;
+                return LlmJson.Read<EnrichmentAnswer>(response.Text) ?? throw new FormatException("The model returned no answer.");
+            }
+            catch (Exception exception) when (attempt < MaxAttempts && exception is System.Text.Json.JsonException or FormatException)
+            {
+                _logger.LogInformation("An enrichment answer for {Count} chunks could not be read; asking again.", batch.Count);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logger.LogWarning(exception, "Enriching {Count} chunks failed; they are indexed without enrichment.", batch.Count);
+                return null;
+            }
         }
     }
 
