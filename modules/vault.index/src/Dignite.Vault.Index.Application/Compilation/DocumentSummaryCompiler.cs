@@ -51,11 +51,23 @@ public sealed class SummaryCompilation
 /// </para>
 /// <para>
 /// Every document text is wrapped with <see cref="PromptBoundary"/> under its boundary rule; the instructions are
-/// constants, and the language is named from <see cref="PromptLanguage"/>'s table. An answer that cannot be read is
-/// asked for once more: in JSON schema mode a model can open the object and then emit only whitespace until its token
-/// limit, which a second call usually does not repeat. Best effort beyond that: a batch whose call fails, or whose
-/// answer cannot be read twice, leaves its sections without summaries, its parents are summarized from what there is,
-/// and the compilation says so in its note.
+/// constants, and the language is named from <see cref="PromptLanguage"/>'s table.
+/// </para>
+/// <para>
+/// Faithful to the text:
+/// <list type="bullet">
+/// <item>A summary that states a number its item does not (<see cref="SummaryFacts"/>) is not kept; the document
+/// summary is asked for once more first.</item>
+/// <item>An item with no text and no summarized inputs is not sent: the model would write it from the heading alone.</item>
+/// <item>A document whose text sits under one top heading is summarized from that heading's text and its subsections'
+/// summaries, not expanded from the heading's one sentence.</item>
+/// </list>
+/// </para>
+/// <para>
+/// An answer that cannot be read is asked for once more: in JSON schema mode a model can open the object and then emit
+/// only whitespace until its token limit, which a second call usually does not repeat. Best effort beyond that: a batch
+/// whose call fails, or whose answer cannot be read twice, leaves its sections without summaries, its parents are
+/// summarized from what there is, and the compilation says so in its note.
 /// </para>
 /// </summary>
 public class DocumentSummaryCompiler
@@ -94,7 +106,8 @@ public class DocumentSummaryCompiler
         + "sections or parts, in order.";
 
     private const string ContentInstruction =
-        " Use only what the given text supports; for an item with no content, return an empty summary.";
+        " Use only what the given text states, and never say what it leaves out; for an item with no content, return an "
+        + "empty summary.";
 
     private const string CutNote = "(The text is cut here; it continues beyond what is shown.)";
 
@@ -143,13 +156,20 @@ public class DocumentSummaryCompiler
 
         foreach (var level in tasks.GroupBy(t => t.Level).OrderBy(g => g.Key))
         {
-            foreach (var batch in Batch(level.ToList()))
+            var items = level.ToList();
+            foreach (var empty in items.Where(t => !HasContent(t)))
+            {
+                // Nothing to read but a heading: its text is elsewhere and its subsections could not be summarized.
+                empty.Failed = true;
+            }
+
+            foreach (var batch in Batch(items.Where(HasContent).ToList()))
             {
                 await SummarizeSectionsAsync(batch, cancellationToken);
             }
         }
 
-        await SummarizeDocumentAsync(document, cancellationToken);
+        await SummarizeDocumentAsync(DocumentSource(document), document, cancellationToken);
 
         var summaries = new DocumentSummaries { Document = document.Summary };
         foreach (var (key, task) in sectionTasks)
@@ -164,6 +184,12 @@ public class DocumentSummaryCompiler
         if (failed > 0)
         {
             notes.Add($"{failed} of {tasks.Count} sections and parts could not be summarized.");
+        }
+
+        var unsupported = tasks.Count(t => t.Unsupported) + (document.Unsupported ? 1 : 0);
+        if (unsupported > 0)
+        {
+            notes.Add($"{unsupported} summaries were left out: they stated numbers their text does not.");
         }
 
         if (document.Failed)
@@ -324,6 +350,32 @@ public class DocumentSummaryCompiler
         }
     }
 
+    /// <summary>An item worth a call: it has text of its own, or an input with a summary.</summary>
+    private static bool HasContent(SummaryTask task) => task.Text.Length > 0 || task.Inputs.Any(i => i.Summary is not null);
+
+    /// <summary>
+    /// What the document summary is written from: the document itself, or, while it has no text of its own and a single
+    /// section under it, that section's text and inputs, so the summary reads the subsections' summaries and not the
+    /// one sentence written for the section.
+    /// </summary>
+    protected virtual SummaryTask DocumentSource(SummaryTask document)
+    {
+        var source = document;
+        while (source.Text.Length == 0 && source.Inputs.Count == 1 && source.Inputs[0].Inputs.Count + source.Inputs[0].Text.Length > 0)
+        {
+            source = source.Inputs[0];
+        }
+
+        if (ReferenceEquals(source, document))
+        {
+            return document;
+        }
+
+        var merged = new SummaryTask { Heading = document.Heading, Text = source.Text, TextCut = source.TextCut };
+        merged.Inputs.AddRange(source.Inputs);
+        return merged;
+    }
+
     /// <summary>Items of one level, at most <see cref="ItemsPerCall"/> and <see cref="MaxCallTextLength"/> per call.</summary>
     protected virtual IEnumerable<List<(SummaryTask Task, string Rendered)>> Batch(List<SummaryTask> tasks)
     {
@@ -415,7 +467,15 @@ public class DocumentSummaryCompiler
         {
             if (item.Index >= 0 && item.Index < batch.Count && answered.Add(item.Index))
             {
-                batch[item.Index].Task.Summary = Clean(item.Summary, MaxSectionSummaryLength);
+                var (task, rendered) = batch[item.Index];
+                var summary = Clean(item.Summary, MaxSectionSummaryLength);
+                if (summary is not null && SummaryFacts.Unsupported(summary, rendered).Count > 0)
+                {
+                    task.Unsupported = true;
+                    summary = null;
+                }
+
+                task.Summary = summary;
             }
         }
 
@@ -425,17 +485,43 @@ public class DocumentSummaryCompiler
         }
     }
 
-    protected virtual async Task SummarizeDocumentAsync(SummaryTask document, CancellationToken cancellationToken)
+    /// <param name="source">What the summary is written from (<see cref="DocumentSource"/>).</param>
+    /// <param name="document">Where the summary goes.</param>
+    protected virtual async Task SummarizeDocumentAsync(SummaryTask source, SummaryTask document, CancellationToken cancellationToken)
     {
+        if (!HasContent(source))
+        {
+            // The title alone is no source: a model asked to summarize it writes a plausible document instead.
+            document.Failed = true;
+            return;
+        }
+
+        var rendered = Render(source, "Title");
         List<ChatMessage> messages =
         [
             new(ChatRole.System, DocumentInstructions + _languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule),
-            new(ChatRole.User, Render(document, "Title"))
+            new(ChatRole.User, rendered)
         ];
 
-        var answer = await AskAsync<DocumentAnswer>(messages, "document_summary", 800, cancellationToken);
-        document.Summary = Clean(answer?.Summary, MaxDocumentSummaryLength);
-        document.Failed = answer is null;
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            var answer = await AskAsync<DocumentAnswer>(messages, "document_summary", 800, cancellationToken);
+            if (answer is null)
+            {
+                document.Failed = true;
+                return;
+            }
+
+            var summary = Clean(answer.Summary, MaxDocumentSummaryLength);
+            if (summary is null || SummaryFacts.Unsupported(summary, rendered).Count == 0)
+            {
+                document.Summary = summary;
+                document.Unsupported = false;
+                return;
+            }
+
+            document.Unsupported = true;
+        }
     }
 
     /// <summary>
@@ -505,6 +591,9 @@ public class DocumentSummaryCompiler
         public string? Summary { get; set; }
 
         public bool Failed { get; set; }
+
+        /// <summary>The model's summary stated a number its text does not, and was not kept.</summary>
+        public bool Unsupported { get; set; }
     }
 
     protected sealed class SectionAnswer

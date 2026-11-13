@@ -421,7 +421,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
             }
         }
 
-        var report = NavigationReport(set, cases.Count, results, artifacts, compileCalls, outlines);
+        var report = NavigationReport(set, cases.Count, results, artifacts, compileCalls, outlines) + Faithfulness(set, artifacts, outlines);
         _output.WriteLine(report);
         var reportPath = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_NAVIGATION_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-navigation.md");
         await File.WriteAllTextAsync(reportPath, report);
@@ -574,6 +574,72 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
 
         return report.ToString();
     }
+
+    /// <summary>
+    /// How far the compiled summaries can be trusted, by what can be checked without a judge: the summaries that state a
+    /// number the document's text does not (<see cref="SummaryFacts"/> against the whole document), and how many
+    /// documents and sections got one.
+    /// </summary>
+    private static string Faithfulness(EvaluationSet set, List<Artifact> artifacts, Dictionary<string, DocumentOutlineDto> outlines)
+    {
+        int documents = 0, documentsUnsupported = 0, documentsOmitting = 0, sections = 0, sectionsUnsupported = 0;
+        var examples = new List<string>();
+        var documentLines = new List<string>();
+        foreach (var artifact in artifacts)
+        {
+            var document = set.Documents.Single(d => d.DocumentId == artifact.DocumentId);
+            var summaries = DocumentSummaries.FromJson(artifact.Content);
+            if (summaries is null)
+            {
+                continue;
+            }
+
+            if (summaries.Document is { } documentSummary)
+            {
+                documents++;
+                documentLines.Add($"`{document.Id}`: {documentSummary}");
+                if (OmissionPhrase.IsMatch(documentSummary))
+                {
+                    documentsOmitting++;
+                }
+
+                if (SummaryFacts.Unsupported(documentSummary, document.Markdown) is { Count: > 0 } invented)
+                {
+                    documentsUnsupported++;
+                    examples.Add($"`{document.Id}` document: {string.Join(", ", invented)} in \"{documentSummary}\"");
+                }
+            }
+
+            foreach (var (key, summary) in summaries.Sections)
+            {
+                sections++;
+                if (SummaryFacts.Unsupported(summary, document.Markdown) is { Count: > 0 } invented)
+                {
+                    sectionsUnsupported++;
+                    examples.Add($"`{document.Id}` {key}: {string.Join(", ", invented)} in \"{summary}\"");
+                }
+            }
+        }
+
+        var nodes = outlines.Values.Sum(o => o.TotalNodeCount);
+        var report = new System.Text.StringBuilder("\n## Faithfulness\n\n");
+        report.Append("| Summaries | Written | Of | Stating a number the document does not | Saying what the text lacks |\n| --- | ---: | ---: | ---: | ---: |\n");
+        report.Append($"| Document | {documents} | {set.Documents.Count} | {documentsUnsupported} | {documentsOmitting} |\n");
+        report.Append($"| Section | {sections} | {nodes} | {sectionsUnsupported} | |\n");
+        if (examples.Count > 0)
+        {
+            report.Append("\n").Append(string.Join("\n", examples.Select(e => "- " + e))).Append("\n");
+        }
+
+        report.Append("\nDocument summaries:\n\n").Append(string.Join("\n", documentLines.OrderBy(l => l, StringComparer.Ordinal).Select(l => "- " + l))).Append("\n");
+
+        return report.ToString();
+    }
+
+    /// <summary>A summary that talks about what it or the text leaves out, instead of what the text says.</summary>
+    private static readonly System.Text.RegularExpressions.Regex OmissionPhrase = new(
+        "記載されていない|記載がない|記載はない|含まない|含まれていない|含まれない|明記されていない|不明|未記載|触れていない|not (stated|mentioned|specified|included)",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     private sealed record NavigationResult(
         EvaluationCase Case, bool WithSummaries, bool Precise, bool Covers, int ChunkCount, string? Answer, string? PickedTitle);

@@ -13,8 +13,12 @@ namespace Dignite.Vault.Index.Compilation;
 /// </summary>
 public sealed class DocumentSummaries
 {
-    /// <summary>Moves when the prompts change enough that compiled summaries should be redone at their next compilation.</summary>
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// Moves when compiling changes enough that summaries written before should not be served: outline and catalog
+    /// serve only this version, and the next compilation redoes older ones. 2: document summaries no longer written from
+    /// one sentence or the title alone, and summaries stating numbers their text does not are dropped.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 

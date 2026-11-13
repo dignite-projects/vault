@@ -308,8 +308,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
 
     /// <summary>
     /// The documents' compiled summaries, each only while it was built from exactly the chunks given for its document,
-    /// the ones the caller sees: after a re-chunk, a disabled chunk or a language change they describe something else,
-    /// and none are shown until the compile job has caught up. The chunks were read within the caller's scope, so every
+    /// the ones the caller sees, and by the current template version: after a re-chunk, a disabled chunk or a language
+    /// change they describe something else, and none are shown until the compile job has caught up. The chunks were read within the caller's scope, so every
     /// document with chunks here is readable.
     /// </summary>
     protected virtual async Task<Dictionary<Guid, DocumentSummaries>> GetFreshSummariesAsync(
@@ -332,7 +332,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             if (artifact is not null
                 && artifact.SourceHash == DocumentSummaries.SourceHash(
                     document.Language, byDocument[document.Id].Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash)))
-                && DocumentSummaries.FromJson(artifact.Content) is { } summaries)
+                && DocumentSummaries.FromJson(artifact.Content) is { Version: DocumentSummaries.CurrentVersion } summaries)
             {
                 fresh[document.Id] = summaries;
             }
