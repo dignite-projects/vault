@@ -90,6 +90,13 @@ On SiliconFlow:
 }
 ```
 
+**Which model.** Four models were measured on the [evaluation set](../deployment/index-status.md#embedding-models-2026-11-13), all at 1024 dimensions: `BAAI/bge-m3`, and `Qwen/Qwen3-Embedding` at 0.6B, 4B and 8B.
+
+- **With the rerank model, the choice barely matters.** Every model puts the answering section first for 0.96 to 0.97 of the written questions.
+- **Without one, `Qwen/Qwen3-Embedding-4B` does better** (`EmbeddingDimensions` 1024) on questions asked in Chinese or English (0.81 against 0.73) and on questions a table answers (0.92 against 0.83). It does the same on Japanese ones.
+
+So use `BAAI/bge-m3` with the rerank model: it is free on SiliconFlow and 1024-dimensional natively. Use `Qwen/Qwen3-Embedding-4B` where no rerank model is available and people ask in a language other than the documents'. Qwen3 was measured without its query instruction, which Index does not add.
+
 ## Rerank model (`Index`)
 
 Search can reorder its leading candidates with a rerank model, a cross-encoder that reads the query and each candidate together. On the [evaluation set](../deployment/index-status.md#measuring-retrieval) it raises the share of questions whose answering section comes first from 0.76 to 0.96. Without one, search returns the fused order of its two legs.
