@@ -8,7 +8,18 @@ import { debounceTime, filter, of, switchMap } from 'rxjs';
 import { IndexProfileService } from '../proxy/http-api/profiles/index-profile.service';
 import { ChunkingStrategy, chunkingStrategyOptions } from '../proxy/indexing/chunking-strategy.enum';
 import type { IndexProfileDto, IndexRebuildEstimateDto } from '../proxy/profiles/models';
-import { type ProfileForm, MAX_CHUNK_TOKENS, MIN_CHUNK_TOKENS, estimateText, formError, formFor, resetInput, toInput } from './index-profiles.view';
+import {
+  type ProfileForm,
+  MAX_CHUNK_TOKENS,
+  MIN_CHUNK_TOKENS,
+  enrichmentCallText,
+  enrichmentKeys,
+  estimateText,
+  formError,
+  formFor,
+  resetInput,
+  toInput,
+} from './index-profiles.view';
 
 /**
  * The index profile page: how each document type is chunked, with the rebuild a change would cause shown before it
@@ -30,8 +41,10 @@ export class IndexProfilesComponent implements OnInit {
   readonly strategyOptions = chunkingStrategyOptions;
   readonly minTokens = MIN_CHUNK_TOKENS;
   readonly maxTokens = MAX_CHUNK_TOKENS;
+  readonly enrichmentKeys = enrichmentKeys;
 
   rows = signal<IndexProfileDto[]>([]);
+  enrichmentAvailable = signal(false);
   loading = signal(true);
   editing = signal<IndexProfileDto | null>(null);
   form = signal<ProfileForm | null>(null);
@@ -47,6 +60,10 @@ export class IndexProfilesComponent implements OnInit {
   readonly estimateMessage = computed(() => {
     const estimate = this.estimate();
     return estimate ? estimateText(estimate) : null;
+  });
+  readonly enrichmentMessage = computed(() => {
+    const estimate = this.estimate();
+    return estimate ? enrichmentCallText(estimate) : null;
   });
 
   private backdropPressed = false;
@@ -165,6 +182,7 @@ export class IndexProfilesComponent implements OnInit {
       .subscribe({
         next: result => {
           this.rows.set(result.items ?? []);
+          this.enrichmentAvailable.set(result.enrichmentAvailable ?? false);
           this.loading.set(false);
         },
         error: () => this.loading.set(false),

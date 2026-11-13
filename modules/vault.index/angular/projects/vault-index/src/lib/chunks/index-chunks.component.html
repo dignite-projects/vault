@@ -37,6 +37,18 @@
                 [style.max-height]="expanded().has(chunk.id!) ? null : '6.5em'"
                 [style.overflow]="expanded().has(chunk.id!) ? null : 'hidden'"
               >{{ chunk.text }}</div>
+              @if (chunk.keywords) {
+                <div class="small mt-1">
+                  <span class="text-muted me-1">{{ 'VaultIndex::Profiles:Keywords' | abpLocalization }}:</span>
+                  <span class="text-break">{{ chunk.keywords }}</span>
+                </div>
+              }
+              @if (chunk.questions) {
+                <div class="small">
+                  <span class="text-muted me-1">{{ 'VaultIndex::Profiles:Questions' | abpLocalization }}:</span>
+                  <span class="text-break" [style.white-space]="'pre-wrap'">{{ chunk.questions }}</span>
+                </div>
+              }
               <button type="button" class="btn btn-link btn-sm p-0" (click)="toggleText(chunk)">
                 {{ (expanded().has(chunk.id!) ? 'VaultIndex::Chunks:Collapse' : 'VaultIndex::Chunks:Expand') | abpLocalization }}
               </button>

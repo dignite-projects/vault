@@ -198,7 +198,8 @@ public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
         var repository = _serviceProvider.GetRequiredService<IChunkRepository>();
         var chunks = await repository.AsyncExecuter.ToListAsync(ChunkScopeFilter.Apply(await repository.GetQueryableAsync(), scope));
         return chunks
-            .Select(c => (Chunk: c, Score: terms.Count(t => c.Text.Contains(t, StringComparison.OrdinalIgnoreCase))))
+            // Every indexed text column, as SQL Server's FREETEXTTABLE(*): the chunk text and its enrichment.
+            .Select(c => (Chunk: c, Score: terms.Count(t => (c.Text + "\n" + c.Keywords + "\n" + c.Questions).Contains(t, StringComparison.OrdinalIgnoreCase))))
             .Where(x => x.Score > 0)
             .OrderByDescending(x => x.Score)
             .ThenBy(x => x.Chunk.Id)

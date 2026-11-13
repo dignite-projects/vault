@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index chunk enrichment** (shipped host and SPA; off by default). An index profile can have an LLM add to
+  each chunk a few keywords (in the keyword index) and the questions it answers (in the keyword index and in what is
+  embedded); search results do not show them, the chunk view does. Needs `Vault:Index:EnrichmentModelId`, a chat
+  model on Extract's endpoint; without it the switches are disabled. One call per 10 chunks; a failed call leaves its
+  chunks unenriched and is noted on the run, whose LLM tokens the status page shows. The rebuild estimate counts the
+  enrichment calls. Index migrations `Enrichment` (`Keywords` and `Questions` on `VaultIndexChunks`, `Enrichment` on
+  `VaultIndexProfiles`) and `EnrichmentFullText` (both columns in the full-text index, where Full-Text Search is
+  installed). On the evaluation set it lifts the fused ranking but not reranked search. See
+  [AI Provider](docs/en/configuration/ai-provider.md#enrichment-model-index).
 - **Vault Index profiles and table-aware chunking** (shipped host and SPA). **Index profiles** sets, per document
   type or as the layer default, how documents are chunked (by headings or by tokens, chunk size, overlap). Before
   saving it shows what the change would rebuild (documents, chunks, the embedding tokens they last took); saving

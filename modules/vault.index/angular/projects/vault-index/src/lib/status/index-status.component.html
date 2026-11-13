@@ -177,6 +177,7 @@
                           <th class="text-end">{{ 'VaultIndex::IndexStatus:Attempt' | abpLocalization }}</th>
                           <th class="text-end">{{ 'VaultIndex::IndexStatus:ChunkCount' | abpLocalization }}</th>
                           <th class="text-end">{{ 'VaultIndex::IndexStatus:Tokens' | abpLocalization }}</th>
+                          <th class="text-end">{{ 'VaultIndex::IndexStatus:LlmTokens' | abpLocalization }}</th>
                           <th>{{ 'VaultIndex::IndexStatus:Message' | abpLocalization }}</th>
                         </tr>
                       </thead>
@@ -193,6 +194,13 @@
                             <td class="text-end">{{ run.attemptNumber }}</td>
                             <td class="text-end">{{ run.chunkCount ?? '—' }}</td>
                             <td class="text-end">{{ run.embeddingTokenCount ?? '—' }}</td>
+                            <td class="text-end text-nowrap">
+                              @if (run.llmInputTokenCount !== null && run.llmInputTokenCount !== undefined) {
+                                {{ run.llmInputTokenCount }} / {{ run.llmOutputTokenCount ?? 0 }}
+                              } @else {
+                                —
+                              }
+                            </td>
                             <td class="text-break">{{ run.errorMessage }}</td>
                           </tr>
                         }

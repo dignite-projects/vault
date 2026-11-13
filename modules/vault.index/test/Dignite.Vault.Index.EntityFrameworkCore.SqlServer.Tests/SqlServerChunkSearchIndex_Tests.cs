@@ -95,6 +95,18 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
     }
 
     [SqlServerFact]
+    public async Task The_keyword_leg_reads_the_enrichment_columns()
+    {
+        await ClearAsync();
+        var rent = await AddAsync(TypeA, OwnerX, "賃料は月額十八万五千円とする。", [1, 0, 0, 0], keywords: "家賃 支払期日");
+        var deposit = await AddAsync(TypeA, OwnerX, "敷金は賃料の二か月分とする。", [0, 1, 0, 0], questions: "退去時に敷金は返還されますか");
+        await WaitForFullTextAsync();
+
+        (await KeywordsAsync("家賃", Everything)).ShouldBe([rent.ChunkId]);
+        (await KeywordsAsync("返還", Everything)).ShouldBe([deposit.ChunkId]);
+    }
+
+    [SqlServerFact]
     public async Task Hiding_a_document_takes_it_out_of_both_legs()
     {
         await ClearAsync();
@@ -192,7 +204,8 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
     }
 
     private async Task<ChunkVector> AddAsync(
-        Guid typeId, Guid ownerId, string text, float[] vector, bool isHidden = false, Guid? tenantId = null, bool isDisabled = false)
+        Guid typeId, Guid ownerId, string text, float[] vector, bool isHidden = false, Guid? tenantId = null, bool isDisabled = false,
+        string? keywords = null, string? questions = null)
     {
         var chunk = new ChunkVector(Guid.NewGuid(), Guid.NewGuid(), typeId, ownerId, isHidden, vector, isDisabled);
         using (GetRequiredService<ICurrentTenant>().Change(tenantId))
@@ -200,7 +213,7 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
             await WithUnitOfWorkAsync(async () =>
             {
                 await GetRequiredService<IChunkRepository>().InsertAsync(new Chunk(
-                    chunk.ChunkId, tenantId, chunk.DocumentId, typeId, ownerId, 0, null, text, new string('0', 64), isHidden, isDisabled));
+                    chunk.ChunkId, tenantId, chunk.DocumentId, typeId, ownerId, 0, null, text, new string('0', 64), isHidden, isDisabled, keywords, questions));
                 await GetRequiredService<IChunkSearchIndex>().ReplaceDocumentAsync(chunk.DocumentId, Generation1, [chunk]);
             });
         }

@@ -28,6 +28,9 @@ public class IndexProfile : AuditedAggregateRoot<Guid>, IMultiTenant
 
     public virtual int OverlapTokens { get; protected set; }
 
+    /// <summary>What an LLM adds to each chunk; nothing by default.</summary>
+    public virtual IndexEnrichment Enrichment { get; protected set; }
+
     public virtual int Version { get; protected set; }
 
     protected IndexProfile()
@@ -40,12 +43,14 @@ public class IndexProfile : AuditedAggregateRoot<Guid>, IMultiTenant
         Guid? documentTypeId,
         ChunkingStrategy chunkingStrategy,
         int maxTokensPerChunk,
-        int overlapTokens)
+        int overlapTokens,
+        IndexEnrichment enrichment = IndexEnrichment.None)
         : base(id)
     {
         TenantId = tenantId;
         DocumentTypeId = documentTypeId;
         ApplyChunking(chunkingStrategy, maxTokensPerChunk, overlapTokens);
+        Enrichment = enrichment;
         Version = 1;
     }
 
@@ -58,6 +63,18 @@ public class IndexProfile : AuditedAggregateRoot<Guid>, IMultiTenant
         }
 
         ApplyChunking(chunkingStrategy, maxTokensPerChunk, overlapTokens);
+        Version++;
+    }
+
+    /// <summary>Changes what an LLM adds to each chunk, and moves <see cref="Version"/> when it actually changed.</summary>
+    public virtual void SetEnrichment(IndexEnrichment enrichment)
+    {
+        if (enrichment == Enrichment)
+        {
+            return;
+        }
+
+        Enrichment = enrichment;
         Version++;
     }
 

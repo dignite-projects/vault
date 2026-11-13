@@ -1,7 +1,6 @@
 import { RestService, Rest } from '@abp/ng.core';
-import type { ListResultDto } from '@abp/ng.core';
 import { Injectable, inject } from '@angular/core';
-import type { IndexProfileDto, IndexProfileInput, IndexRebuildEstimateDto } from '../../profiles/models';
+import type { IndexProfileDto, IndexProfileInput, IndexProfileListDto, IndexRebuildEstimateDto } from '../../profiles/models';
 
 @Injectable({
   providedIn: 'root',
@@ -13,7 +12,7 @@ export class IndexProfileService {
 
   
   getList = (config?: Partial<Rest.Config>) =>
-    this.restService.request<any, ListResultDto<IndexProfileDto>>({
+    this.restService.request<any, IndexProfileListDto>({
       method: 'GET',
       headers: { Accept: 'application/json' },
       url: '/api/vault-index/profiles',
@@ -27,7 +26,7 @@ export class IndexProfileService {
       method: 'GET',
       headers: { Accept: 'application/json' },
       url: '/api/vault-index/profiles/rebuild-estimate',
-      params: { documentTypeId: input.documentTypeId, chunkingStrategy: input.chunkingStrategy, maxTokensPerChunk: input.maxTokensPerChunk, overlapTokens: input.overlapTokens },
+      params: { documentTypeId: input.documentTypeId, chunkingStrategy: input.chunkingStrategy, maxTokensPerChunk: input.maxTokensPerChunk, overlapTokens: input.overlapTokens, enrichment: input.enrichment },
     },
       { apiName: this.apiName,...config });
   

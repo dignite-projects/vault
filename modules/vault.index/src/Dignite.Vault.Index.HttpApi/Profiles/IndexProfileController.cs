@@ -19,7 +19,7 @@ public class IndexProfileController : VaultIndexController, IIndexProfileAppServ
     }
 
     [HttpGet]
-    public virtual Task<ListResultDto<IndexProfileDto>> GetListAsync()
+    public virtual Task<IndexProfileListDto> GetListAsync()
     {
         return _profileAppService.GetListAsync();
     }

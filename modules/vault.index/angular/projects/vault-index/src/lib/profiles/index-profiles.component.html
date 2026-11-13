@@ -11,6 +11,7 @@
             <th>{{ 'VaultIndex::Profiles:Strategy' | abpLocalization }}</th>
             <th class="text-end">{{ 'VaultIndex::Profiles:MaxTokens' | abpLocalization }}</th>
             <th class="text-end">{{ 'VaultIndex::Profiles:Overlap' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::Profiles:Enrichment' | abpLocalization }}</th>
             <th class="text-end">{{ 'VaultIndex::Profiles:Documents' | abpLocalization }}</th>
             <th></th>
           </tr>
@@ -32,6 +33,13 @@
               <td>{{ strategyKey(row.chunkingStrategy) | abpLocalization }}</td>
               <td class="text-end">{{ row.maxTokensPerChunk | number }}</td>
               <td class="text-end">{{ row.overlapTokens | number }}</td>
+              <td>
+                @for (key of enrichmentKeys(row.enrichment); track key) {
+                  <span class="badge bg-body-tertiary text-body border me-1">{{ key | abpLocalization }}</span>
+                } @empty {
+                  <span class="text-muted">—</span>
+                }
+              </td>
               <td class="text-end">{{ row.indexedDocumentCount | number }}</td>
               <td class="text-end text-nowrap">
                 <button type="button" class="btn btn-outline-primary btn-sm" (click)="edit(row)">
@@ -46,7 +54,7 @@
             </tr>
           } @empty {
             <tr>
-              <td colspan="6" class="text-center text-muted py-4">
+              <td colspan="7" class="text-center text-muted py-4">
                 @if (loading()) {
                   <i class="fas fa-spinner fa-spin"></i>
                 }
@@ -127,6 +135,36 @@
                   />
                 </div>
               </div>
+              <div class="mb-3">
+                <div class="form-label">{{ 'VaultIndex::Profiles:Enrichment' | abpLocalization }}</div>
+                <div class="form-check form-check-inline">
+                  <input
+                    id="profile-keywords"
+                    name="keywords"
+                    type="checkbox"
+                    class="form-check-input"
+                    [disabled]="!enrichmentAvailable()"
+                    [ngModel]="f.keywords"
+                    (ngModelChange)="update('keywords', $event)"
+                  />
+                  <label class="form-check-label" for="profile-keywords">{{ 'VaultIndex::Profiles:Keywords' | abpLocalization }}</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input
+                    id="profile-questions"
+                    name="questions"
+                    type="checkbox"
+                    class="form-check-input"
+                    [disabled]="!enrichmentAvailable()"
+                    [ngModel]="f.questions"
+                    (ngModelChange)="update('questions', $event)"
+                  />
+                  <label class="form-check-label" for="profile-questions">{{ 'VaultIndex::Profiles:Questions' | abpLocalization }}</label>
+                </div>
+                <div class="form-text">
+                  {{ (enrichmentAvailable() ? 'VaultIndex::Profiles:EnrichmentHint' : 'VaultIndex::Profiles:EnrichmentUnavailable') | abpLocalization }}
+                </div>
+              </div>
               @if (error(); as e) {
                 <div class="small text-danger mb-2">{{ e | abpLocalization: '' + minTokens : '' + maxTokens }}</div>
               }
@@ -136,6 +174,9 @@
                   <i class="fas fa-spinner fa-spin"></i>
                 } @else if (estimateMessage(); as m) {
                   {{ m.key | abpLocalization: m.args }}
+                  @if (enrichmentMessage(); as e) {
+                    {{ e.key | abpLocalization: e.args }}
+                  }
                 } @else {
                   —
                 }

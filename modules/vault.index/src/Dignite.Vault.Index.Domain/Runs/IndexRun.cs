@@ -58,12 +58,22 @@ public class IndexRun : AggregateRoot<Guid>, IMultiTenant
         Status = IndexRunStatus.Running;
     }
 
-    public virtual void Succeed(DateTime finishedTime, int chunkCount, long? embeddingTokenCount)
+    public virtual void Succeed(
+        DateTime finishedTime,
+        int chunkCount,
+        long? embeddingTokenCount,
+        long? llmInputTokenCount = null,
+        long? llmOutputTokenCount = null,
+        string? note = null)
     {
         Status = IndexRunStatus.Succeeded;
         FinishedTime = finishedTime;
         ChunkCount = chunkCount;
         EmbeddingTokenCount = embeddingTokenCount;
+        LlmInputTokenCount = llmInputTokenCount;
+        LlmOutputTokenCount = llmOutputTokenCount;
+        // A success can still carry a note: enrichment that failed for some chunks, which does not fail the run.
+        ErrorMessage = note;
     }
 
     /// <summary>Nothing to do: the content and settings were unchanged, or the document was no longer Ready.</summary>

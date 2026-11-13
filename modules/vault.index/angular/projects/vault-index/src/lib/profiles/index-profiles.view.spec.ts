@@ -1,8 +1,15 @@
 import { ChunkingStrategy } from '../proxy/indexing/chunking-strategy.enum';
-import { estimateText, formError, formFor, resetInput, toInput } from './index-profiles.view';
+import { IndexEnrichment } from '../proxy/indexing/index-enrichment.enum';
+import { enrichmentCallText, enrichmentKeys, estimateText, formError, formFor, resetInput, toInput } from './index-profiles.view';
 
 describe('index profiles view', () => {
-  const layerDefault = { documentTypeId: null, chunkingStrategy: ChunkingStrategy.Token, maxTokensPerChunk: 600, overlapTokens: 60 };
+  const layerDefault = {
+    documentTypeId: null,
+    chunkingStrategy: ChunkingStrategy.Token,
+    maxTokensPerChunk: 600,
+    overlapTokens: 60,
+    enrichment: IndexEnrichment.Questions,
+  };
 
   it('accepts sizes within the bounds and an overlap smaller than the chunk', () => {
     const form = formFor({ documentTypeId: 't', chunkingStrategy: ChunkingStrategy.Heading, maxTokensPerChunk: 400, overlapTokens: 0 });
@@ -22,7 +29,23 @@ describe('index profiles view', () => {
       chunkingStrategy: ChunkingStrategy.Token,
       maxTokensPerChunk: 600,
       overlapTokens: 60,
+      enrichment: IndexEnrichment.Questions,
     });
+  });
+
+  it('reads and writes the enrichment switches as flags', () => {
+    const form = formFor({ ...layerDefault, enrichment: IndexEnrichment.Keywords | IndexEnrichment.Questions });
+
+    expect([form.keywords, form.questions]).toEqual([true, true]);
+    expect(toInput({ ...form, questions: false }).enrichment).toBe(IndexEnrichment.Keywords);
+    expect(toInput({ ...form, keywords: false, questions: false }).enrichment).toBe(IndexEnrichment.None);
+    expect(enrichmentKeys(IndexEnrichment.Questions)).toEqual(['VaultIndex::Profiles:Questions']);
+    expect(enrichmentKeys(undefined)).toEqual([]);
+  });
+
+  it('mentions the model calls only when enrichment adds some', () => {
+    expect(enrichmentCallText({ enrichmentCallCount: 0 })).toBeNull();
+    expect(enrichmentCallText({ enrichmentCallCount: 12 })).toEqual({ key: 'VaultIndex::Profiles:EstimateEnrichment', args: ['12'] });
   });
 
   it('says when nothing would be rebuilt, and counts documents with no recorded tokens', () => {

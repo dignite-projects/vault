@@ -68,4 +68,10 @@ public class IndexChunkDto
     public string Text { get; set; } = default!;
 
     public bool IsDisabled { get; set; }
+
+    /// <summary>Keywords an LLM chose for the chunk, space-separated; <c>null</c> when it was not enriched.</summary>
+    public string? Keywords { get; set; }
+
+    /// <summary>Questions an LLM found the chunk answers, one per line; <c>null</c> when it was not enriched.</summary>
+    public string? Questions { get; set; }
 }

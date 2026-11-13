@@ -14,8 +14,11 @@ using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Vault.Index.Ingestion;
 
-/// <summary>One chunk before it is stored: its position, its heading path and its text.</summary>
-public sealed record IndexChunkDraft(int Ordinal, string? HeadingPath, string Text);
+/// <summary>
+/// One chunk before it is stored: its position, its heading path, its text, and what an enricher added (keywords
+/// space-separated, questions one per line), when one ran.
+/// </summary>
+public sealed record IndexChunkDraft(int Ordinal, string? HeadingPath, string Text, string? Keywords = null, string? Questions = null);
 
 /// <summary>
 /// Splits a document's Markdown with DataIngestion: <see cref="MarkdownReader"/> builds the document tree, then
@@ -44,6 +47,7 @@ public class IndexChunker : ITransientDependency
         string markdown,
         string identifier,
         ResolvedIndexProfile profile,
+        IngestionChunkProcessor<string>? enricher = null,
         CancellationToken cancellationToken = default)
     {
         markdown = Prepare(markdown);
@@ -60,8 +64,15 @@ public class IndexChunker : ITransientDependency
             ? new DocumentTokenChunker(options)
             : new HeaderChunker(options);
 
+        // DataIngestion's order: the chunker, then the chunk processors over its output.
+        var chunks = chunker.ProcessAsync(document, cancellationToken);
+        if (enricher is not null)
+        {
+            chunks = enricher.ProcessAsync(chunks, cancellationToken);
+        }
+
         var drafts = new List<IndexChunkDraft>();
-        await foreach (var chunk in chunker.ProcessAsync(document, cancellationToken))
+        await foreach (var chunk in chunks)
         {
             if (string.IsNullOrWhiteSpace(chunk.Content))
             {
@@ -71,9 +82,25 @@ public class IndexChunker : ITransientDependency
             var headingPath = string.IsNullOrWhiteSpace(chunk.Context)
                 ? null
                 : TextTruncator.AtCharBoundary(chunk.Context, IndexingConsts.MaxHeadingPathLength);
-            drafts.Add(new IndexChunkDraft(drafts.Count, headingPath, chunk.Content));
+            drafts.Add(new IndexChunkDraft(
+                drafts.Count,
+                headingPath,
+                chunk.Content,
+                Join(chunk, IndexChunkEnricher.KeywordsKey, " ", IndexingConsts.MaxKeywordsLength),
+                Join(chunk, IndexChunkEnricher.QuestionsKey, "\n", IndexingConsts.MaxQuestionsLength)));
         }
 
         return drafts;
+    }
+
+    private static string? Join(IngestionChunk<string> chunk, string key, string separator, int maxLength)
+    {
+        if (!chunk.HasMetadata || !chunk.Metadata.TryGetValue(key, out var value) || value is not IEnumerable<string> values)
+        {
+            return null;
+        }
+
+        var joined = string.Join(separator, values);
+        return joined.Length == 0 ? null : TextTruncator.AtCharBoundary(joined, maxLength);
     }
 }

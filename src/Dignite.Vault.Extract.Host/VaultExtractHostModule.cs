@@ -162,8 +162,8 @@ namespace Dignite.Vault.Extract.Host;
     typeof(VaultParseOpenXmlModule),         // OpenXML: PPTX (slide text/notes, #307) + DOCX (headings/tables/lists/inline formatting/hyperlinks/text boxes, #308), each with charts/tables + embedded-image transcription. Claims .pptx and .docx. REQUIRED for .pptx (ElBruno has no PresentationML converter -> empty Markdown, no OCR fallback since .pptx != .pdf); .docx degrades gracefully to ElBruno if this module is omitted.
     typeof(VaultParseElBrunoMarkItDownModule),
     typeof(VaultParseVisionLlmOcrModule)                  // Vision-LLM OCR for photos, receipts, and image PDFs; current default OCR provider (#259). IOcrProvider implementations are mutually exclusive: when switching providers, update the .csproj ProjectReference and ConfigureAI keyed vision IChatClient together. See docs/en/text-extraction/ocr-vision-llm.md.
-                                                            // typeof(VaultParsePaddleOcrModule),                 // Local PaddleOCR sidecar (free CPU, PP-StructureV3); to switch back, uncomment this, comment VisionLlm, and restore its .csproj ProjectReference
-                                                            // typeof(VaultParseAzureDocumentIntelligenceModule), // Cloud option (higher accuracy); when switching, also comment / enable the matching ProjectReference in .csproj
+                                                          // typeof(VaultParsePaddleOcrModule),                 // Local PaddleOCR sidecar (free CPU, PP-StructureV3); to switch back, uncomment this, comment VisionLlm, and restore its .csproj ProjectReference
+                                                          // typeof(VaultParseAzureDocumentIntelligenceModule), // Cloud option (higher accuracy); when switching, also comment / enable the matching ProjectReference in .csproj
 )]
 public class VaultExtractHostModule : AbpModule
 {
@@ -745,6 +745,19 @@ public class VaultExtractHostModule : AbpModule
         Decorate(context.Services.AddKeyedChatClient(
             VisionLlmOcrConsts.VisionChatClientKey,
             _ => openAIClient.GetChatClient(visionOcrModelId).AsIChatClient()));
+
+        // Vault Index's chunk enrichment (keywords, answerable questions), consumed through
+        // VaultIndexConsts.EnrichmentChatClientKey when an index profile switches it on. Optional, and with no fallback to
+        // ChatModelId: enrichment calls a model for every batch of chunks of every document, so a deployment opts in
+        // with a model it chose for that volume (a small instruct model will do). Without it, profiles' enrichment is
+        // saved but not applied. Same endpoint and key as Extract's models.
+        var enrichmentModelId = configuration["Vault:Index:EnrichmentModelId"];
+        if (!string.IsNullOrWhiteSpace(enrichmentModelId))
+        {
+            Decorate(context.Services.AddKeyedChatClient(
+                VaultIndexConsts.EnrichmentChatClientKey,
+                _ => openAIClient.GetChatClient(enrichmentModelId).AsIChatClient()));
+        }
     }
 
     /// <summary>

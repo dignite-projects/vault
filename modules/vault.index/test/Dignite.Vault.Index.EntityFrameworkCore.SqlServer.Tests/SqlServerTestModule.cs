@@ -77,7 +77,8 @@ public sealed class SqlServerTestDatabase
         foreach (var sql in new[]
                  {
                      "CREATE FULLTEXT CATALOG VaultIndexCatalog",
-                     "CREATE FULLTEXT INDEX ON VaultIndexChunks ([Text] LANGUAGE 1041) KEY INDEX PK_VaultIndexChunks ON VaultIndexCatalog WITH CHANGE_TRACKING AUTO"
+                     // As the host's FullTextSearch and EnrichmentFullText migrations leave it.
+                     "CREATE FULLTEXT INDEX ON VaultIndexChunks ([Text] LANGUAGE 1041, [Keywords] LANGUAGE 1041, [Questions] LANGUAGE 1041) KEY INDEX PK_VaultIndexChunks ON VaultIndexCatalog WITH CHANGE_TRACKING AUTO"
                  })
         {
             using var command = new SqlCommand(sql, connection);

@@ -7,4 +7,10 @@ public static class VaultIndexConsts
     /// model id from the generator's metadata and records it on the embedding generation.
     /// </summary>
     public const string EmbeddingGeneratorKey = "VaultIndex.Embedding";
+
+    /// <summary>
+    /// The key a host registers the <c>IChatClient</c> under that enriches chunks (keywords, answerable questions).
+    /// Optional: without it, a profile's enrichment is not applied.
+    /// </summary>
+    public const string EnrichmentChatClientKey = "VaultIndex.Enrichment";
 }

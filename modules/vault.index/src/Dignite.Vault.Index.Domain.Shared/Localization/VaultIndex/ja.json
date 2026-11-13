@@ -74,6 +74,7 @@
     "IndexStatus:Finished": "終了",
     "IndexStatus:Attempt": "試行",
     "IndexStatus:Tokens": "埋め込みトークン",
+    "IndexStatus:LlmTokens": "LLM トークン(入力 / 出力)",
     "IndexStatus:Message": "メッセージ",
     "IndexStatus:Refresh": "更新",
     "IndexStatus:Previous": "前へ",
@@ -150,6 +151,12 @@
     "Profiles:InvalidOverlap": "重なりは 0 以上、チャンクサイズ未満にしてください。",
     "Profiles:EstimateNothing": "保存しても再構築は発生しません。別の設定で索引された文書はありません。",
     "Profiles:Estimate": "保存すると {0} 件の文書(現在 {1} チャンク)を再構築します。前回の索引では {2} 埋め込みトークンを使いました。",
-    "Profiles:EstimateWithUnknown": "保存すると {0} 件の文書(現在 {1} チャンク)を再構築します。前回の索引では {2} 埋め込みトークンを使いました。うち {3} 件は記録がありません。"
+    "Profiles:EstimateWithUnknown": "保存すると {0} 件の文書(現在 {1} チャンク)を再構築します。前回の索引では {2} 埋め込みトークンを使いました。うち {3} 件は記録がありません。",
+    "Profiles:Enrichment": "拡張",
+    "Profiles:Keywords": "キーワード",
+    "Profiles:Questions": "回答できる質問",
+    "Profiles:EnrichmentHint": "LLM が各チャンクにキーワード(キーワード索引用)と、そのチャンクで答えられる質問(キーワード索引と埋め込み用)を付けます。10 チャンクごとに約 1 回モデルを呼び出します。",
+    "Profiles:EnrichmentUnavailable": "ホストに拡張用モデル(Vault:Index:EnrichmentModelId)が設定されていないため、拡張は有効にできません。",
+    "Profiles:EstimateEnrichment": "拡張では約 {0} 回モデルを呼び出します。"
   }
 }
