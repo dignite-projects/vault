@@ -92,6 +92,12 @@ public class DocumentOutlineDto
 
     public string? DocumentTypeCode { get; set; }
 
+    /// <summary>
+    /// A short summary of the whole document, when its type's index profile compiles summaries and they are up to date
+    /// with its chunks; <c>null</c> otherwise. Written by an LLM from the document's text.
+    /// </summary>
+    public string? DocumentSummary { get; set; }
+
     /// <summary>The heading tree in document order, parents before children.</summary>
     public List<OutlineNodeDto> Nodes { get; set; } = new();
 
@@ -110,6 +116,12 @@ public class OutlineNodeDto
     public string Pointer { get; set; } = default!;
 
     public string Title { get; set; } = default!;
+
+    /// <summary>
+    /// One sentence on what the section and its subsections cover, under the same conditions as
+    /// <see cref="DocumentOutlineDto.DocumentSummary"/>.
+    /// </summary>
+    public string? Summary { get; set; }
 
     /// <summary>The depth in the tree, from 1.</summary>
     public int Depth { get; set; }

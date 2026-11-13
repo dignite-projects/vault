@@ -68,9 +68,11 @@ The table can be ordered by any of these, which answers most "why is this passag
 
 Tables written as HTML, as Azure Document Intelligence writes every table (merged cells, captions), are read as tables too: the chunker rewrites them as Markdown tables first, repeating a merged cell's text into every cell it spans and putting the caption above. Figures (`<figure>`) become their text.
 
-**Enrichment** has an LLM add to each chunk a few keywords, which go into the keyword index, and the questions it answers, which go into the keyword index and into what is embedded. Neither appears in what search returns. It is off by default: it costs a model call per 10 chunks, and with a rerank model it changed nothing on the evaluation set (below). It needs an [enrichment model](../configuration/ai-provider.md#enrichment-model-index); without one the switches are disabled, and a profile saved with enrichment rebuilds nothing until a model is added.
+**Enrichment** has an LLM add to each chunk a few keywords, which go into the keyword index, and the questions it answers, which go into the keyword index and into what is embedded. Neither appears in what search returns. It is off by default: it costs a model call per 10 chunks, and with a rerank model it changed nothing on the evaluation set (below). It needs the [Index chat model](../configuration/ai-provider.md#index-chat-model-vaultindex); without one the switches are disabled, and a profile saved with enrichment rebuilds nothing until a model is added.
 
-Editing a row shows, before anything is saved, what the change would rebuild: the indexed documents whose chunks it changes, their chunks today, and the embedding tokens their last successful indexing took, which is about what re-embedding them costs; with enrichment on, also the model calls it would make. Saving queues the rebuild in the background at low priority: the affected documents are re-chunked and re-embedded one by one, through the same queue and retry cap as an event, and a document whose settings did not change is skipped. **Use default** removes a type's own profile, with the same estimate first.
+**Section and document summaries** have an LLM write one sentence for each section of the [outline](../egress/index-search.md#outline) and a short summary of the whole document. They are built bottom-up: each section from its own text and its subsections' summaries, the document from the text before its first heading and its top sections' summaries. A section too long for one call is summarized in parts first. Above 300 sections, the deepest levels are summarized only within their parents. They are compiled by their own job after each sync, so the chunks serve first, and are stored as an artifact of the document. The outline shows them only while they match the document's chunks: a re-chunk, a disabled chunk or a language change hides them until the next compilation. Turning them on and saving compiles them for the type's documents in the background. Turning them off removes them as the rebuild reaches each document. They need the same chat model as enrichment.
+
+Editing a row shows, before anything is saved, what the change would rebuild: the indexed documents whose chunks it changes, their chunks today, and the embedding tokens their last successful indexing took, which is about what re-embedding them costs; with enrichment on, also the model calls it would make; with summaries on, the documents whose summaries would be compiled. Saving queues the rebuild in the background at low priority: the affected documents are re-chunked and re-embedded one by one, through the same queue and retry cap as an event, and a document whose settings did not change is skipped. **Use default** removes a type's own profile, with the same estimate first.
 
 ## REST API
 
@@ -176,5 +178,18 @@ The same set, heading chunking at 400 tokens, enriched by `Qwen/Qwen3-30B-A3B-In
 | Document, 108 cases, fused legs only | 0.946 | 0.944 | 0.955 | 0.957 |
 
 With a rerank model, enrichment changes nothing on this set: the reranker reads the chunk text and already puts the answer first. Without one, the questions lift the fused ranking, most for questions asked in another language than the document's. Both kinds together took 22 model calls for the 21 documents, about 670 input and 1,020 output tokens per document. So enrichment stays off by default; it is worth a try on a deployment without a rerank model.
+
+### Outline navigation (2026-11-13)
+
+Version 3 of the set adds two documents whose article headings carry no caption, only "第5条", as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters (23 documents, 84 written questions answered under a heading). `Compare_navigation` compiles section and document summaries with `VAULT_INDEX_EVAL_CHAT_MODEL`, then has the same model pick, from the expected document's outline, the one section that answers each question: once from the titles, once from the titles and summaries. A pick counts when its heading path contains the expected heading. With `Qwen/Qwen3-30B-A3B-Instruct-2507` (`navigation-2026-11-13.md` next to the set):
+
+| Questions | Titles | Titles and summaries |
+| --- | --- | --- |
+| All, 84 | 76% | 99% |
+| Captioned headings, 69 | 90% | 100% |
+| Uncaptioned headings, 15 | 13% | 93% |
+| Chinese and English, 20 | 70% | 100% |
+
+Titles alone fail where they say nothing ("第5条"), and where a table or list section is named for its form rather than its content ("単価一覧" for a delivery time). Compiling took about 3 model calls, 1,750 input and 460 output tokens per document. Summaries stay off by default, to be switched on per type where an agent navigates long or poorly titled documents.
 
 The set is small and synthetic: grow it with real queries before relying on small differences.

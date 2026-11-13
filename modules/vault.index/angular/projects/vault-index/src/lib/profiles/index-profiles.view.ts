@@ -1,6 +1,7 @@
 import type { IndexProfileDto, IndexProfileInput, IndexRebuildEstimateDto } from '../proxy/profiles/models';
 import { ChunkingStrategy } from '../proxy/indexing/chunking-strategy.enum';
 import { IndexEnrichment } from '../proxy/indexing/index-enrichment.enum';
+import { IndexCompilation } from '../proxy/indexing/index-compilation.enum';
 
 /** The bounds the server enforces (IndexProfileConsts); the form checks them first so the operator sees why. */
 export const MIN_CHUNK_TOKENS = 100;
@@ -14,6 +15,7 @@ export interface ProfileForm {
   overlapTokens: number | null;
   keywords: boolean;
   questions: boolean;
+  summaries: boolean;
 }
 
 export function formFor(row: IndexProfileDto): ProfileForm {
@@ -24,6 +26,7 @@ export function formFor(row: IndexProfileDto): ProfileForm {
     overlapTokens: row.overlapTokens ?? 0,
     keywords: hasFlag(row.enrichment, IndexEnrichment.Keywords),
     questions: hasFlag(row.enrichment, IndexEnrichment.Questions),
+    summaries: hasCompilation(row.compilation, IndexCompilation.Summaries),
   };
 }
 
@@ -49,6 +52,7 @@ export function toInput(form: ProfileForm): IndexProfileInput {
     maxTokensPerChunk: form.maxTokensPerChunk ?? 0,
     overlapTokens: form.overlapTokens ?? 0,
     enrichment: (form.keywords ? IndexEnrichment.Keywords : 0) | (form.questions ? IndexEnrichment.Questions : 0),
+    compilation: form.summaries ? IndexCompilation.Summaries : IndexCompilation.None,
   };
 }
 
@@ -60,6 +64,7 @@ export function resetInput(row: IndexProfileDto, layerDefault: IndexProfileDto):
     maxTokensPerChunk: layerDefault.maxTokensPerChunk ?? 0,
     overlapTokens: layerDefault.overlapTokens ?? 0,
     enrichment: layerDefault.enrichment ?? IndexEnrichment.None,
+    compilation: layerDefault.compilation ?? IndexCompilation.None,
   };
 }
 
@@ -83,8 +88,22 @@ export function enrichmentCallText(estimate: IndexRebuildEstimateDto): { key: st
   return calls > 0 ? { key: 'VaultIndex::Profiles:EstimateEnrichment', args: [calls.toLocaleString()] } : null;
 }
 
+/** The documents whose summaries saving would compile, as a localization key and its argument; <c>null</c> when none. */
+export function summaryText(estimate: IndexRebuildEstimateDto): { key: string; args: string[] } | null {
+  const documents = estimate.summaryDocumentCount ?? 0;
+  return documents > 0 ? { key: 'VaultIndex::Profiles:EstimateSummaries', args: [documents.toLocaleString()] } : null;
+}
+
+export function hasSummaries(row: IndexProfileDto): boolean {
+  return hasCompilation(row.compilation, IndexCompilation.Summaries);
+}
+
 function hasFlag(value: IndexEnrichment | undefined, flag: IndexEnrichment): boolean {
   return ((value ?? IndexEnrichment.None) & flag) === flag;
+}
+
+function hasCompilation(value: IndexCompilation | undefined, flag: IndexCompilation): boolean {
+  return ((value ?? IndexCompilation.None) & flag) === flag;
 }
 
 /** The estimate as a localization key and its arguments. */

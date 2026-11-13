@@ -156,7 +156,11 @@
     "Profiles:Keywords": "关键词",
     "Profiles:Questions": "可回答的问题",
     "Profiles:EnrichmentHint": "由 LLM 给每块加关键词(进关键词索引)和它能回答的问题(进关键词索引和嵌入)。约每 10 块调用一次模型。",
-    "Profiles:EnrichmentUnavailable": "宿主没有配置增强模型(Vault:Index:EnrichmentModelId),所以不能开启增强。",
-    "Profiles:EstimateEnrichment": "增强约调用模型 {0} 次。"
+    "Profiles:ChatModelUnavailable": "宿主没有配置 Index 的对话模型(Vault:Index:ChatModelId),所以不能开启增强和摘要。",
+    "Profiles:EstimateEnrichment": "增强约调用模型 {0} 次。",
+    "Profiles:Compilation": "编译",
+    "Profiles:Summaries": "节摘要与文档摘要",
+    "Profiles:SummariesHint": "每次同步后,由 LLM 给大纲的每一节写一句话摘要,并写一段文档摘要。大纲(REST 和 MCP)会带上它们。每份文档调用模型几次。",
+    "Profiles:EstimateSummaries": "将为 {0} 份文档编译摘要。"
   }
 }

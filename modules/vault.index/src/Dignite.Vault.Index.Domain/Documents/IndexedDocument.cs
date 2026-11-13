@@ -38,6 +38,12 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     /// </summary>
     public virtual string? Title { get; protected set; }
 
+    /// <summary>
+    /// The document's language tag at the version the current chunks were built from (Extract's, such as <c>ja</c>), so
+    /// what an LLM writes about it is in its language; <c>null</c> when Extract had none or it was too long to keep.
+    /// </summary>
+    public virtual string? Language { get; protected set; }
+
     public virtual IndexedDocumentStatus Status { get; protected set; }
 
     /// <summary>The document is in Extract's recycle bin: kept, but excluded from retrieval until restored.</summary>
@@ -166,6 +172,7 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         Guid documentTypeId,
         Guid? ownerId,
         string? title,
+        string? language,
         DateTime now,
         bool clearLifecycleMarks)
     {
@@ -176,6 +183,7 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         DocumentTypeId = documentTypeId;
         OwnerId = ownerId;
         Title = CutTitle(title);
+        Language = string.IsNullOrWhiteSpace(language) || language.Trim().Length > IndexingConsts.MaxLanguageLength ? null : language.Trim();
         LastIndexedTime = now;
         Status = IndexedDocumentStatus.Indexed;
         IndexingStartedTime = null;

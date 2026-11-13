@@ -44,6 +44,9 @@ public class IndexProfileInput : IValidatableObject
     /// <summary>What an LLM adds to each chunk; nothing by default.</summary>
     public IndexEnrichment Enrichment { get; set; }
 
+    /// <summary>What an LLM compiles from each document; nothing by default.</summary>
+    public IndexCompilation Compilation { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (OverlapTokens >= MaxTokensPerChunk)
@@ -62,16 +65,21 @@ public class IndexProfileInput : IValidatableObject
         {
             yield return new ValidationResult("Unknown enrichment.", new[] { nameof(Enrichment) });
         }
+
+        if ((Compilation & ~IndexCompilation.Summaries) != 0)
+        {
+            yield return new ValidationResult("Unknown compilation.", new[] { nameof(Compilation) });
+        }
     }
 }
 
 public class IndexProfileListDto : ListResultDto<IndexProfileDto>
 {
     /// <summary>
-    /// The host has an enrichment model. Without one, a profile's enrichment is saved but not applied, and saving it
-    /// rebuilds nothing.
+    /// The host has Index's chat model. Without one, a profile's enrichment and compilation are saved but not applied,
+    /// and saving them rebuilds and compiles nothing.
     /// </summary>
-    public bool EnrichmentAvailable { get; set; }
+    public bool ChatModelAvailable { get; set; }
 }
 
 public class IndexProfileDto
@@ -93,6 +101,8 @@ public class IndexProfileDto
     public int OverlapTokens { get; set; }
 
     public IndexEnrichment Enrichment { get; set; }
+
+    public IndexCompilation Compilation { get; set; }
 
     /// <summary>Documents of this type in the index; for the layer default, every document in the layer.</summary>
     public int IndexedDocumentCount { get; set; }
@@ -117,7 +127,13 @@ public class IndexRebuildEstimateDto
 
     /// <summary>
     /// The model calls enrichment would make, about one per batch of chunks of each document; 0 when the settings
-    /// enrich nothing or there is no enrichment model.
+    /// enrich nothing or there is no chat model.
     /// </summary>
     public int EnrichmentCallCount { get; set; }
+
+    /// <summary>
+    /// Indexed documents whose summaries would be compiled: those the settings apply to that have none yet or whose
+    /// chunks the change rebuilds. 0 when the settings compile nothing or there is no chat model.
+    /// </summary>
+    public int SummaryDocumentCount { get; set; }
 }

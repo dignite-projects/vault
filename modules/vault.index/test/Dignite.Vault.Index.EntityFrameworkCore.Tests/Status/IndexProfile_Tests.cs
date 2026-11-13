@@ -167,7 +167,7 @@ public class IndexProfile_Tests : VaultIndexTestBase<VaultIndexIngestionTestModu
     {
         await IndexAllAsync();
 
-        (await _profiles.GetListAsync()).EnrichmentAvailable.ShouldBeFalse();
+        (await _profiles.GetListAsync()).ChatModelAvailable.ShouldBeFalse();
         var estimate = await _profiles.GetRebuildEstimateAsync(new IndexProfileInput { DocumentTypeId = LeaseType, Enrichment = IndexEnrichment.Keywords });
         (estimate.DocumentCount, estimate.EnrichmentCallCount).ShouldBe((0, 0));
 
@@ -176,6 +176,22 @@ public class IndexProfile_Tests : VaultIndexTestBase<VaultIndexIngestionTestModu
         await IndexAsync(LeaseA, LeaseType, Lease);
         var lease = await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexedDocument, Guid>>().GetAsync(LeaseA));
         lease.ProfileStamp.ShouldBe(ResolvedIndexProfile.BuiltIn.Stamp);
+    }
+
+    [Fact]
+    public async Task Without_a_chat_model_summaries_are_saved_but_nothing_is_compiled()
+    {
+        await IndexAllAsync();
+        var input = new IndexProfileInput { DocumentTypeId = LeaseType, Compilation = IndexCompilation.Summaries };
+
+        (await _profiles.GetRebuildEstimateAsync(input)).SummaryDocumentCount.ShouldBe(0);
+        await _profiles.SetAsync(input);
+        (await _profiles.GetListAsync()).Items.Single(r => r.DocumentTypeCode == "lease").Compilation.ShouldBe(IndexCompilation.Summaries);
+
+        _jobs.ClearReceivedCalls();
+        await IndexAsync(LeaseA, LeaseType, Lease);
+        _jobs.ReceivedCalls().ShouldNotContain(c => c.GetArguments().FirstOrDefault() is Compilation.IndexCompileJobArgs);
+        await Should.ThrowAsync<AbpValidationException>(() => _profiles.SetAsync(new IndexProfileInput { Compilation = (IndexCompilation)2 }));
     }
 
     [Fact]

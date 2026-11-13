@@ -112,15 +112,18 @@ The host calls the rerank API that Cohere introduced and Jina, SiliconFlow and v
 
 Keep the weights equal. Down-weighting the keyword leg helped paraphrased questions on the evaluation set without a reranker, but at a keyword weight of 0.5 or less a chunk only the keyword leg finds ranks below every vector candidate. That is how an invoice number or a name gets lost in a large corpus. A reranker fixes the paraphrase case without that cost.
 
-## Enrichment model (`Index`)
+## Index chat model (`Vault:Index`)
 
-An index profile can have an LLM add to each chunk a few keywords and the questions it answers ([Index Profiles](../deployment/index-status.md#index-profiles)). Without an enrichment model, the profile's enrichment is saved but not applied, and the switches on the profile page are disabled.
+An index profile can have an LLM add to each chunk a few keywords and the questions it answers, and compile section and document summaries for the outline ([Index Profiles](../deployment/index-status.md#index-profiles)). Both use one chat model. Without it, a profile's enrichment and summaries are saved but not applied, and their switches on the profile page are disabled.
 
 | Key | Required | Description |
 | --- | --- | --- |
-| `EnrichmentModelId` | To enrich | A chat model that honors JSON schema output, such as `Qwen/Qwen3-30B-A3B-Instruct-2507`. Unset leaves enrichment off. There is no fallback to `ChatModelId`: enrichment runs for every batch of chunks of every document, so pick a model for that volume |
+| `ChatModelId` | To enrich or summarize | A chat model that honors JSON schema output, such as `Qwen/Qwen3-30B-A3B-Instruct-2507`. Unset leaves both off. There is no fallback to `Vault:Extract:ChatModelId`: Index calls it for every document of the types that switch it on, so pick a model for that volume |
 
-It uses Extract's endpoint and key and its `UseLegacyMaxTokens` setting. One call reads 10 chunks; on the evaluation set it took about 670 input and 1,020 output tokens per document for both kinds. The model is told the document's language, which Extract detects; asked only to follow each passage, a model can take kanji-heavy Japanese for Chinese. A call that fails or returns something unreadable leaves its chunks without enrichment and is noted on the index run; the document is still indexed.
+It uses Extract's endpoint and key and its `UseLegacyMaxTokens` setting. The model is told the document's language, which Extract detects; asked only to follow the text, a model can take kanji-heavy Japanese for Chinese.
+
+- **Enrichment.** One call reads 10 chunks. On the evaluation set both kinds took about 670 input and 1,020 output tokens per document. A call that fails or returns something unreadable leaves its chunks without enrichment and is noted on the index run; the document is still indexed.
+- **Summaries.** A separate job after each sync summarizes the sections bottom-up, eight per call, then the document. An answer that cannot be read is asked for once more: in JSON schema mode Qwen3 sometimes opens the object and then writes only whitespace. A call that still fails leaves its sections without summaries and is noted on the artifact; when every call fails, the job is retried later.
 
 ## Picking a Chat Model
 
@@ -148,7 +151,7 @@ The title-generator client can run on a smaller, cheaper model than the structur
 | `VaultExtractConsts.TitleGeneratorChatClientKey` (`"extract-title-generator"`) | `Dignite.Vault.Extract.Application` | Always |
 | `VaultExtractConsts.StructuredChatClientKey` (`"extract-structured"`) | `Dignite.Vault.Extract.Application` | Always |
 | `VisionLlmOcrConsts.VisionChatClientKey` (`"extract-vision-ocr"`) | `Dignite.Vault.Parse.Ocr.VisionLlm` | Only with the Vision-LLM OCR provider |
-| `VaultIndexConsts.EnrichmentChatClientKey` (`"VaultIndex.Enrichment"`) | `Dignite.Vault.Index.Domain.Shared` | Only with `Vault:Index:EnrichmentModelId` |
+| `VaultIndexConsts.ChatClientKey` (`"VaultIndex.Chat"`) | `Dignite.Vault.Index.Domain.Shared` | Only with `Vault:Index:ChatModelId` |
 
 The vision key lives in the OCR provider project, not in `VaultExtractConsts`: an OCR provider sits below the Application layer and must not depend on it.
 
@@ -169,7 +172,8 @@ Every client is registered with `UseOpenTelemetry()` and `UseLogging()`. None us
 | `DocumentParseBackgroundJob` (title generation) | Title generator | Generates a short title from the extracted Markdown |
 | `SlugSuggestionAppService` | Title generator | Admin helper: suggests an English URL slug (schema-bound) |
 | `VisionLlmOcrProvider` | Vision | [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md) |
-| `IndexChunkEnricher` | Enrichment (Index) | Keywords and answerable questions per chunk, when a profile asks for them |
+| `IndexChunkEnricher` | Index chat model | Keywords and answerable questions per chunk, when a profile asks for them |
+| `DocumentSummaryCompiler` | Index chat model | Section and document summaries for the outline, when a profile asks for them |
 
 One `Vault:Extract` block serves all of them. To use a different model per workflow, add more keyed registrations in your own `ConfigureAI`; split a key only when production telemetry shows a real cost or quality reason.
 

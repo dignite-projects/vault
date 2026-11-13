@@ -1,6 +1,17 @@
 import { ChunkingStrategy } from '../proxy/indexing/chunking-strategy.enum';
 import { IndexEnrichment } from '../proxy/indexing/index-enrichment.enum';
-import { enrichmentCallText, enrichmentKeys, estimateText, formError, formFor, resetInput, toInput } from './index-profiles.view';
+import { IndexCompilation } from '../proxy/indexing/index-compilation.enum';
+import {
+  enrichmentCallText,
+  enrichmentKeys,
+  estimateText,
+  formError,
+  formFor,
+  hasSummaries,
+  resetInput,
+  summaryText,
+  toInput,
+} from './index-profiles.view';
 
 describe('index profiles view', () => {
   const layerDefault = {
@@ -9,6 +20,7 @@ describe('index profiles view', () => {
     maxTokensPerChunk: 600,
     overlapTokens: 60,
     enrichment: IndexEnrichment.Questions,
+    compilation: IndexCompilation.Summaries,
   };
 
   it('accepts sizes within the bounds and an overlap smaller than the chunk', () => {
@@ -30,7 +42,23 @@ describe('index profiles view', () => {
       maxTokensPerChunk: 600,
       overlapTokens: 60,
       enrichment: IndexEnrichment.Questions,
+      compilation: IndexCompilation.Summaries,
     });
+  });
+
+  it('reads and writes the summaries switch', () => {
+    const form = formFor(layerDefault);
+
+    expect(form.summaries).toBe(true);
+    expect(toInput(form).compilation).toBe(IndexCompilation.Summaries);
+    expect(toInput({ ...form, summaries: false }).compilation).toBe(IndexCompilation.None);
+    expect(hasSummaries({ compilation: IndexCompilation.None })).toBe(false);
+    expect(hasSummaries({})).toBe(false);
+  });
+
+  it('mentions the summaries only when saving compiles some', () => {
+    expect(summaryText({ summaryDocumentCount: 0 })).toBeNull();
+    expect(summaryText({ summaryDocumentCount: 3 })).toEqual({ key: 'VaultIndex::Profiles:EstimateSummaries', args: ['3'] });
   });
 
   it('reads and writes the enrichment switches as flags', () => {

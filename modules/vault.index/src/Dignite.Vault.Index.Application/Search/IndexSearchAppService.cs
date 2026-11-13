@@ -4,9 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Index.Artifacts;
 using Dignite.Vault.Index.Chunks;
+using Dignite.Vault.Index.Compilation;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
+using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Ingestion;
 using Dignite.Vault.Index.Permissions;
 using Microsoft.AspNetCore.Authorization;
@@ -30,17 +33,20 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
     private readonly IndexReadScopeResolver _scopeResolver;
     private readonly IChunkRepository _chunkRepository;
     private readonly IRepository<IndexedDocument, Guid> _documentRepository;
+    private readonly IRepository<Artifact, Guid> _artifactRepository;
     private readonly IndexSearchPipeline _pipeline;
 
     public IndexSearchAppService(
         IndexReadScopeResolver scopeResolver,
         IChunkRepository chunkRepository,
         IRepository<IndexedDocument, Guid> documentRepository,
+        IRepository<Artifact, Guid> artifactRepository,
         IndexSearchPipeline pipeline)
     {
         _scopeResolver = scopeResolver;
         _chunkRepository = chunkRepository;
         _documentRepository = documentRepository;
+        _artifactRepository = artifactRepository;
         _pipeline = pipeline;
     }
 
@@ -113,17 +119,20 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         }
 
         var outline = DocumentOutline.Build(chunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath)));
+        var summaries = await GetFreshSummariesAsync(document, chunks);
         return new DocumentOutlineDto
         {
             DocumentId = documentId,
             DocumentTitle = document.Title,
             DocumentTypeCode = types.GetValueOrDefault(chunks[0].DocumentTypeId),
+            DocumentSummary = summaries?.Document,
             Nodes = outline.Nodes
                 .Take(IndexSearchConsts.MaxOutlineNodes)
                 .Select(n => new OutlineNodeDto
                 {
                     Pointer = IndexPointer.ForNode(documentId, n.Path).ToString(),
                     Title = n.Title,
+                    Summary = summaries?.Sections.GetValueOrDefault(DocumentSummaries.Key(n.Path)),
                     Depth = n.Depth,
                     Level = n.Level,
                     ChunkCount = n.ChunkCount
@@ -246,10 +255,28 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope)
                 .Where(c => c.DocumentId == documentId)
                 .OrderBy(c => c.Ordinal)
-                .Select(c => new OutlineRow(c.Ordinal, c.HeadingPath, c.DocumentTypeId)));
+                .Select(c => new OutlineRow(c.Ordinal, c.HeadingPath, c.DocumentTypeId, c.ContentHash)));
     }
 
-    protected sealed record OutlineRow(int Ordinal, string? HeadingPath, Guid DocumentTypeId);
+    protected sealed record OutlineRow(int Ordinal, string? HeadingPath, Guid DocumentTypeId, string ContentHash);
+
+    /// <summary>
+    /// The document's compiled summaries, only while they were built from exactly the chunks the outline shows: after a
+    /// re-chunk, a disabled chunk or a language change they describe something else, and none are shown until the
+    /// compile job has caught up. The chunks were read within the caller's scope, so the document is readable.
+    /// </summary>
+    protected virtual async Task<DocumentSummaries?> GetFreshSummariesAsync(IndexedDocument document, IReadOnlyList<OutlineRow> chunks)
+    {
+        var artifact = await _artifactRepository.FirstOrDefaultAsync(
+            a => a.DocumentId == document.Id && a.TemplateName == ArtifactTemplateNames.Summaries);
+        if (artifact is null
+            || artifact.SourceHash != DocumentSummaries.SourceHash(document.Language, chunks.Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash))))
+        {
+            return null;
+        }
+
+        return DocumentSummaries.FromJson(artifact.Content);
+    }
 
     protected virtual async Task<Dictionary<Guid, IndexedDocument>> GetDocumentsAsync(IEnumerable<Guid> documentIds)
     {

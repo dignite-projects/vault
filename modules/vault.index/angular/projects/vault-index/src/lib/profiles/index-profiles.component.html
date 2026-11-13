@@ -12,6 +12,7 @@
             <th class="text-end">{{ 'VaultIndex::Profiles:MaxTokens' | abpLocalization }}</th>
             <th class="text-end">{{ 'VaultIndex::Profiles:Overlap' | abpLocalization }}</th>
             <th>{{ 'VaultIndex::Profiles:Enrichment' | abpLocalization }}</th>
+            <th>{{ 'VaultIndex::Profiles:Compilation' | abpLocalization }}</th>
             <th class="text-end">{{ 'VaultIndex::Profiles:Documents' | abpLocalization }}</th>
             <th></th>
           </tr>
@@ -40,6 +41,13 @@
                   <span class="text-muted">—</span>
                 }
               </td>
+              <td>
+                @if (hasSummaries(row)) {
+                  <span class="badge bg-body-tertiary text-body border">{{ 'VaultIndex::Profiles:Summaries' | abpLocalization }}</span>
+                } @else {
+                  <span class="text-muted">—</span>
+                }
+              </td>
               <td class="text-end">{{ row.indexedDocumentCount | number }}</td>
               <td class="text-end text-nowrap">
                 <button type="button" class="btn btn-outline-primary btn-sm" (click)="edit(row)">
@@ -54,7 +62,7 @@
             </tr>
           } @empty {
             <tr>
-              <td colspan="7" class="text-center text-muted py-4">
+              <td colspan="8" class="text-center text-muted py-4">
                 @if (loading()) {
                   <i class="fas fa-spinner fa-spin"></i>
                 }
@@ -143,7 +151,7 @@
                     name="keywords"
                     type="checkbox"
                     class="form-check-input"
-                    [disabled]="!enrichmentAvailable()"
+                    [disabled]="!chatModelAvailable()"
                     [ngModel]="f.keywords"
                     (ngModelChange)="update('keywords', $event)"
                   />
@@ -155,14 +163,32 @@
                     name="questions"
                     type="checkbox"
                     class="form-check-input"
-                    [disabled]="!enrichmentAvailable()"
+                    [disabled]="!chatModelAvailable()"
                     [ngModel]="f.questions"
                     (ngModelChange)="update('questions', $event)"
                   />
                   <label class="form-check-label" for="profile-questions">{{ 'VaultIndex::Profiles:Questions' | abpLocalization }}</label>
                 </div>
                 <div class="form-text">
-                  {{ (enrichmentAvailable() ? 'VaultIndex::Profiles:EnrichmentHint' : 'VaultIndex::Profiles:EnrichmentUnavailable') | abpLocalization }}
+                  {{ (chatModelAvailable() ? 'VaultIndex::Profiles:EnrichmentHint' : 'VaultIndex::Profiles:ChatModelUnavailable') | abpLocalization }}
+                </div>
+              </div>
+              <div class="mb-3">
+                <div class="form-label">{{ 'VaultIndex::Profiles:Compilation' | abpLocalization }}</div>
+                <div class="form-check">
+                  <input
+                    id="profile-summaries"
+                    name="summaries"
+                    type="checkbox"
+                    class="form-check-input"
+                    [disabled]="!chatModelAvailable()"
+                    [ngModel]="f.summaries"
+                    (ngModelChange)="update('summaries', $event)"
+                  />
+                  <label class="form-check-label" for="profile-summaries">{{ 'VaultIndex::Profiles:Summaries' | abpLocalization }}</label>
+                </div>
+                <div class="form-text">
+                  {{ (chatModelAvailable() ? 'VaultIndex::Profiles:SummariesHint' : 'VaultIndex::Profiles:ChatModelUnavailable') | abpLocalization }}
                 </div>
               </div>
               @if (error(); as e) {
@@ -176,6 +202,9 @@
                   {{ m.key | abpLocalization: m.args }}
                   @if (enrichmentMessage(); as e) {
                     {{ e.key | abpLocalization: e.args }}
+                  }
+                  @if (summaryMessage(); as s) {
+                    {{ s.key | abpLocalization: s.args }}
                   }
                 } @else {
                   —

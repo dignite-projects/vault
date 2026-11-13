@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents.Integration;
 using Dignite.Vault.Index.Artifacts;
 using Dignite.Vault.Index.Chunks;
+using Dignite.Vault.Index.Compilation;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Indexing;
@@ -57,6 +58,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     private readonly IndexChunker _chunker;
     private readonly IndexEmbedder _embedder;
     private readonly IndexEnricherProvider _enricherProvider;
+    private readonly DocumentSummaryCompilerProvider _compilerProvider;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly IClock _clock;
     private readonly IGuidGenerator _guidGenerator;
@@ -76,6 +78,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         IndexChunker chunker,
         IndexEmbedder embedder,
         IndexEnricherProvider enricherProvider,
+        DocumentSummaryCompilerProvider compilerProvider,
         IBackgroundJobManager backgroundJobManager,
         IClock clock,
         IGuidGenerator guidGenerator,
@@ -94,6 +97,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         _chunker = chunker;
         _embedder = embedder;
         _enricherProvider = enricherProvider;
+        _compilerProvider = compilerProvider;
         _backgroundJobManager = backgroundJobManager;
         _clock = clock;
         _guidGenerator = guidGenerator;
@@ -138,6 +142,11 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             if (rerun)
             {
                 await EnqueueSyncAsync(args.DocumentId, args.Trigger);
+            }
+            else if (plan.Compilation != IndexCompilation.None && _compilerProvider.IsAvailable)
+            {
+                // The artifacts follow the chunks: the compile job compiles only what this sync made stale.
+                await EnqueueCompileAsync(args.DocumentId);
             }
         }
         catch (BusinessException exception) when (exception.Code?.StartsWith(VaultIndexErrorCodes.Namespace + ":", StringComparison.Ordinal) == true)
@@ -237,7 +246,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                 .WithData("MaxLength", _options.MaxMarkdownLength);
         }
 
-        // The settings as they can be applied: with no enrichment model the profile's enrichment is off, and the stamp
+        // The settings as they can be applied: with no chat model the profile's enrichment is off, and the stamp
         // says so, so adding a model later re-enriches on the next rebuild.
         var profile = await _profileResolver.ResolveAsync(document.DocumentTypeId);
         profile = profile with { Enrichment = _enricherProvider.Effective(profile.Enrichment) };
@@ -254,7 +263,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                         && serving.ModelId == modelId;
         if (unchanged)
         {
-            return new SyncPlan(contentHash, profile.Stamp, serving!.Id, null, null, null);
+            return new SyncPlan(contentHash, profile.Stamp, serving!.Id, null, null, null) { Compilation = profile.Compilation };
         }
 
         var enricher = _enricherProvider.Create(profile.Enrichment, document.Language);
@@ -291,6 +300,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var generation = await _generationManager.GetOrCreateServingAsync(modelId, dimensions);
         return new SyncPlan(contentHash, profile.Stamp, generation.Id, drafts, embedding.Vectors, embedding.InputTokenCount)
         {
+            Compilation = profile.Compilation,
             LlmInputTokenCount = enricher?.InputTokenCount,
             LlmOutputTokenCount = enricher?.OutputTokenCount,
             Note = enricher is { FailedChunkCount: > 0 } failed
@@ -322,7 +332,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var chunkCount = plan.Drafts?.Count ?? row.ChunkCount;
         row.CompleteIndexing(
             plan.ContentHash, plan.ProfileStamp, plan.GenerationId, chunkCount, document.DocumentTypeId, document.OwnerId,
-            document.Title, now, clearLifecycleMarks: !lifecycleChanged);
+            document.Title, document.Language, now, clearLifecycleMarks: !lifecycleChanged);
         if (lifecycleChanged)
         {
             row.RequestRerun(null);
@@ -355,6 +365,12 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         {
             // Same text, but a new type or owner (a reclassification), or back in retrieval: only the read-scope facts move.
             await CopyFiltersAsync(row);
+        }
+
+        if (!plan.Compilation.HasFlag(IndexCompilation.Summaries))
+        {
+            // The profile no longer asks for summaries: the rebuild that follows turning them off removes them.
+            await _artifactRepository.DeleteDirectAsync(a => a.DocumentId == document.Id && a.TemplateName == ArtifactTemplateNames.Summaries);
         }
 
         var rerun = row.TakeRerunRequest();
@@ -495,6 +511,13 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         });
     }
 
+    protected virtual Task EnqueueCompileAsync(Guid documentId)
+    {
+        return _backgroundJobManager.EnqueueAsync(
+            new IndexCompileJobArgs { DocumentId = documentId, TenantId = _currentTenant.Id },
+            BackgroundJobPriority.Low);
+    }
+
     private static string Describe(BusinessException exception)
     {
         var data = string.Join(", ", exception.Data.Keys.Cast<object>().Select(k => $"{k}={exception.Data[k]}"));
@@ -524,6 +547,9 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         IReadOnlyList<ReadOnlyMemory<float>>? Vectors,
         long? EmbeddingTokenCount)
     {
+        /// <summary>What the profile asks to compile; the artifacts are compiled by their own job after the sync.</summary>
+        public IndexCompilation Compilation { get; init; }
+
         public long? LlmInputTokenCount { get; init; }
 
         public long? LlmOutputTokenCount { get; init; }

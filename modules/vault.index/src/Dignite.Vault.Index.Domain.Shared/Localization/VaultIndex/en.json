@@ -156,7 +156,11 @@
     "Profiles:Keywords": "Keywords",
     "Profiles:Questions": "Answerable questions",
     "Profiles:EnrichmentHint": "An LLM adds keywords to each chunk (keyword index) and the questions it answers (keyword index and embedding). About one model call per 10 chunks.",
-    "Profiles:EnrichmentUnavailable": "The host has no enrichment model (Vault:Index:EnrichmentModelId), so enrichment cannot be switched on.",
-    "Profiles:EstimateEnrichment": "Enrichment makes about {0} model calls."
+    "Profiles:ChatModelUnavailable": "The host has no Index chat model (Vault:Index:ChatModelId), so enrichment and summaries cannot be switched on.",
+    "Profiles:EstimateEnrichment": "Enrichment makes about {0} model calls.",
+    "Profiles:Compilation": "Compilation",
+    "Profiles:Summaries": "Section and document summaries",
+    "Profiles:SummariesHint": "An LLM writes one sentence for each section of the outline and a short summary of the document, after each sync. The outline (REST and MCP) shows them. A few model calls per document.",
+    "Profiles:EstimateSummaries": "Summaries are compiled for {0} documents."
   }
 }

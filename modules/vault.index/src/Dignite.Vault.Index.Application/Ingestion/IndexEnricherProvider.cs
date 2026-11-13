@@ -8,7 +8,7 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Vault.Index.Ingestion;
 
 /// <summary>
-/// The chunk enricher, when the host registers a chat model under <see cref="VaultIndexConsts.EnrichmentChatClientKey"/>.
+/// The chunk enricher, when the host registers a chat model under <see cref="VaultIndexConsts.ChatClientKey"/>.
 /// Without one, a profile's enrichment is not applied, and the settings stamp says so, so the documents are enriched
 /// on their next rebuild after a model is added.
 /// </summary>
@@ -25,7 +25,7 @@ public class IndexEnricherProvider : ITransientDependency
 
     public virtual bool IsAvailable => ChatClient is not null;
 
-    protected virtual IChatClient? ChatClient => _serviceProvider.GetKeyedService<IChatClient>(VaultIndexConsts.EnrichmentChatClientKey);
+    protected virtual IChatClient? ChatClient => _serviceProvider.GetKeyedService<IChatClient>(VaultIndexConsts.ChatClientKey);
 
     /// <summary>What a profile asking for <paramref name="requested"/> gets: nothing without a model.</summary>
     public virtual IndexEnrichment Effective(IndexEnrichment requested) => IsAvailable ? requested : IndexEnrichment.None;

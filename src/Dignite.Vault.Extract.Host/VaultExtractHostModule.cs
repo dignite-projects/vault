@@ -746,17 +746,17 @@ public class VaultExtractHostModule : AbpModule
             VisionLlmOcrConsts.VisionChatClientKey,
             _ => openAIClient.GetChatClient(visionOcrModelId).AsIChatClient()));
 
-        // Vault Index's chunk enrichment (keywords, answerable questions), consumed through
-        // VaultIndexConsts.EnrichmentChatClientKey when an index profile switches it on. Optional, and with no fallback to
-        // ChatModelId: enrichment calls a model for every batch of chunks of every document, so a deployment opts in
-        // with a model it chose for that volume (a small instruct model will do). Without it, profiles' enrichment is
-        // saved but not applied. Same endpoint and key as Extract's models.
-        var enrichmentModelId = configuration["Vault:Index:EnrichmentModelId"];
-        if (!string.IsNullOrWhiteSpace(enrichmentModelId))
+        // Vault Index's chat model: chunk enrichment (keywords, answerable questions) and section and document
+        // summaries, consumed through VaultIndexConsts.ChatClientKey when an index profile switches them on. Optional,
+        // and with no fallback to Vault:Extract:ChatModelId: Index calls it for every document of those types, so a
+        // deployment opts in with a model it chose for that volume (a small instruct model will do). Without it,
+        // profiles' enrichment and summaries are saved but not applied. Same endpoint and key as Extract's models.
+        var indexChatModelId = configuration["Vault:Index:ChatModelId"];
+        if (!string.IsNullOrWhiteSpace(indexChatModelId))
         {
             Decorate(context.Services.AddKeyedChatClient(
-                VaultIndexConsts.EnrichmentChatClientKey,
-                _ => openAIClient.GetChatClient(enrichmentModelId).AsIChatClient()));
+                VaultIndexConsts.ChatClientKey,
+                _ => openAIClient.GetChatClient(indexChatModelId).AsIChatClient()));
         }
     }
 

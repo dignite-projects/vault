@@ -96,10 +96,12 @@ public sealed class IndexSearchTools
 
     [McpServerTool(Name = "vault_index_outline", Title = "Document Outline", ReadOnly = true)]
     [Description("The section tree of one document, from its Markdown headings, in document order: each node with a "
-        + "pointer, its title, depth and chunk count. Pass a node's pointer to vault_index_read to read that section "
-        + "with its subsections. Use it to navigate a long document instead of reading it whole. A document with no "
-        + "headings has no nodes; read its chunks from vault_index_search hits. When truncated is true the tree has more "
-        + "nodes than were returned. "
+        + "pointer, its title, depth and chunk count. Where the document's type compiles summaries, each node also has a "
+        + "one-sentence summary of the section and its subsections, and documentSummary summarizes the whole document; "
+        + "both are written by a model from the document's text, so read the section before relying on a detail. Pass a "
+        + "node's pointer to vault_index_read to read that section with its subsections. Use it to navigate a long "
+        + "document instead of reading it whole. A document with no headings has no nodes; read its chunks from "
+        + "vault_index_search hits. When truncated is true the tree has more nodes than were returned. "
         + UntrustedText)]
     public static async Task<IndexOutlineToolResult> OutlineAsync(
         [Description("The document id (UUID), from a vault_index_search hit or a vault_extract tool.")]
@@ -126,10 +128,12 @@ public sealed class IndexSearchTools
             DocumentId = outline.DocumentId,
             DocumentTitle = PromptBoundary.WrapField(outline.DocumentTitle),
             DocumentTypeCode = outline.DocumentTypeCode,
+            DocumentSummary = PromptBoundary.WrapField(outline.DocumentSummary),
             Nodes = outline.Nodes.Select(n => new IndexOutlineToolNode
             {
                 Pointer = n.Pointer,
                 Title = PromptBoundary.WrapField(n.Title)!,
+                Summary = PromptBoundary.WrapField(n.Summary),
                 Depth = n.Depth,
                 ChunkCount = n.ChunkCount
             }).ToList(),
@@ -220,6 +224,9 @@ public sealed record IndexOutlineToolResult
 
     public string? DocumentTypeCode { get; init; }
 
+    /// <summary>Wrapped with PromptBoundary.WrapField; <c>null</c> when the document has no up-to-date summaries.</summary>
+    public string? DocumentSummary { get; init; }
+
     public required List<IndexOutlineToolNode> Nodes { get; init; }
 
     public bool Truncated { get; init; }
@@ -234,6 +241,9 @@ public sealed record IndexOutlineToolNode
     public required string Pointer { get; init; }
 
     public required string Title { get; init; }
+
+    /// <summary>Wrapped with PromptBoundary.WrapField; <c>null</c> when the section has no up-to-date summary.</summary>
+    public string? Summary { get; init; }
 
     public int Depth { get; init; }
 

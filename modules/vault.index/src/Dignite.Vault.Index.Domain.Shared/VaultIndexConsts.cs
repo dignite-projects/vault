@@ -9,8 +9,9 @@ public static class VaultIndexConsts
     public const string EmbeddingGeneratorKey = "VaultIndex.Embedding";
 
     /// <summary>
-    /// The key a host registers the <c>IChatClient</c> under that enriches chunks (keywords, answerable questions).
-    /// Optional: without it, a profile's enrichment is not applied.
+    /// The key a host registers Index's <c>IChatClient</c> under: the model that enriches chunks (keywords, answerable
+    /// questions) and compiles artifacts (section and document summaries). Optional: without it, a profile's
+    /// enrichment and compilation are not applied.
     /// </summary>
-    public const string EnrichmentChatClientKey = "VaultIndex.Enrichment";
+    public const string ChatClientKey = "VaultIndex.Chat";
 }
