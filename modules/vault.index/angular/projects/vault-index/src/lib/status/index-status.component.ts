@@ -11,7 +11,14 @@ import { IndexedDocumentStatus, indexedDocumentStatusOptions } from '../proxy/in
 import type { IndexRunDto, IndexStatusSummaryDto, IndexedDocumentStatusDto } from '../proxy/status/models';
 import { INDEX_PERMISSIONS } from '../tokens';
 import { IndexArtifactState } from '../proxy/indexing/index-artifact-state.enum';
-import { canRecompile, documentStatusBadge, runStatusBadge, summariesBadge, summaryWarnings } from './index-status.view';
+import {
+  buildingPercent,
+  canRecompile,
+  documentStatusBadge,
+  runStatusBadge,
+  summariesBadge,
+  summaryWarnings,
+} from './index-status.view';
 
 const PAGE_SIZE = 20;
 
@@ -55,6 +62,10 @@ export class IndexStatusComponent implements OnInit {
     return summary ? summaryWarnings(summary) : [];
   });
   readonly chatModelAvailable = computed(() => this.summary()?.chatModelAvailable ?? false);
+  readonly buildingPercent = computed(() => {
+    const summary = this.summary();
+    return summary ? buildingPercent(summary) : 0;
+  });
   readonly hasPrevious = computed(() => this.skip() > 0);
   readonly hasNext = computed(() => this.skip() + PAGE_SIZE < this.totalCount());
 

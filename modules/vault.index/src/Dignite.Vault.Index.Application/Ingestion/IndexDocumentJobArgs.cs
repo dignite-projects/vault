@@ -20,7 +20,14 @@ public enum IndexDocumentJobKind
     Withhold = 3,
 
     /// <summary>It was permanently deleted, or became a container: delete everything derived from it.</summary>
-    Remove = 4
+    Remove = 4,
+
+    /// <summary>
+    /// The embedding model changed: embed the document's chunks, as they are, with the configured model into its
+    /// generation. Neither pulls from Extract nor re-chunks, so a document that is in the recycle bin or back in review
+    /// moves to the new generation with the chunks it is served from.
+    /// </summary>
+    Embed = 5
 }
 
 /// <summary>The job name is a serialized string: renaming it orphans queued jobs.</summary>

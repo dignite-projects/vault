@@ -116,6 +116,24 @@ public class VaultIndexModel_Tests : VaultIndexTestBase<VaultIndexEntityFramewor
             Repo<IndexProfile>().InsertAsync(new IndexProfile(Guid.NewGuid(), TenantA, TypeId, ChunkingStrategy.Token, 300, 0))));
     }
 
+    /// <summary>On a tenant's layer, for the same SQLite reason as the profile index above.</summary>
+    [Fact]
+    public async Task A_layer_has_at_most_one_serving_and_one_building_generation()
+    {
+        using var _ = GetRequiredService<ICurrentTenant>().Change(TenantA);
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var serving = new IndexGeneration(Guid.NewGuid(), TenantA, "old-model", 8);
+            serving.StartServing(DateTime.UtcNow);
+            await Repo<IndexGeneration>().InsertAsync(serving);
+            await Repo<IndexGeneration>().InsertAsync(new IndexGeneration(Guid.NewGuid(), TenantA, "new-model", 8));
+        });
+
+        await Should.ThrowAsync<DbUpdateException>(() => WithUnitOfWorkAsync(() =>
+            Repo<IndexGeneration>().InsertAsync(new IndexGeneration(Guid.NewGuid(), TenantA, "third-model", 8))));
+    }
+
     [Fact]
     public async Task A_document_has_one_chunk_per_ordinal()
     {

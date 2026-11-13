@@ -49,7 +49,7 @@ The host also carries Vault Index, which is under development. Its tables (`Vaul
 
 ### Vault Index ingestion
 
-Index indexes a document when Extract releases it (`DocumentReadyEto`) and follows its later recycle-bin, reclassification and deletion events. It needs an embedding model, configured in [`Vault:Index`](../configuration/ai-provider.md#embedding-model-index); without one it indexes nothing. On the first `--migrate-database` with a model, every layer that has never been indexed gets a backfill of its Ready documents, queued at low priority behind Extract's own jobs.
+Index indexes a document when Extract releases it (`DocumentReadyEto`) and follows its later recycle-bin, reclassification and deletion events. It needs an embedding model, configured in [`Vault:Index`](../configuration/ai-provider.md#embedding-model-index); without one it indexes nothing. On the first `--migrate-database` with a model, every layer that has never been indexed gets a backfill of its Ready documents, queued at low priority behind Extract's own jobs. After the model is changed, `--migrate-database` also starts or resumes the rebuild for the new one in every layer; see [Changing the model](../configuration/ai-provider.md#changing-the-model).
 
 `Vault:IndexIngestion` bounds the work:
 

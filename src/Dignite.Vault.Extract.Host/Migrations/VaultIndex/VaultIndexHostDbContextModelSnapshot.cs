@@ -249,6 +249,8 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.HasIndex("TenantId", "DocumentTypeId");
 
+                    b.HasIndex("TenantId", "GenerationId");
+
                     b.HasIndex("TenantId", "Status");
 
                     b.ToTable("VaultIndexedDocuments", (string)null);
@@ -348,6 +350,10 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                         .HasFilter("[Status] = 1");
 
                     b.HasIndex("TenantId", "Status");
+
+                    b.HasIndex(new[] { "TenantId" }, "IX_VaultIndexGenerations_TenantId_Building")
+                        .IsUnique()
+                        .HasFilter("[Status] = 0");
 
                     b.ToTable("VaultIndexGenerations", (string)null);
                 });

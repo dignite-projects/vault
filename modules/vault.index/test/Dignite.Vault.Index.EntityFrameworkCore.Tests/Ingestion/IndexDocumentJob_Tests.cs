@@ -289,18 +289,24 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
-    public async Task Another_embedding_model_than_the_serving_generation_is_refused()
+    public async Task Another_embedding_model_builds_a_new_generation_which_the_only_document_completes_at_once()
     {
         ExtractReturns(Contract, TypeA);
         await RunAsync(IndexDocumentJobKind.Sync, T1);
+        var old = (await Repo<IndexGeneration>().GetListAsync()).Single();
 
         _model.ModelId = "another-model";
         ExtractReturns(Contract + "\n\n追記。", TypeA);
         await RunAsync(IndexDocumentJobKind.Sync, T2);
 
-        (await Repo<IndexedDocument>().GetAsync(DocumentId)).Status.ShouldBe(IndexedDocumentStatus.Failed);
-        (await Repo<IndexRun>().GetListAsync()).OrderBy(r => r.StartedTime).Last().ErrorMessage
-            .ShouldStartWith(VaultIndexErrorCodes.EmbeddingModelChanged);
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).Status.ShouldBe(IndexedDocumentStatus.Indexed);
+        var generations = await Repo<IndexGeneration>().GetListAsync();
+        generations.Single(g => g.Id == old.Id).Status.ShouldBe(IndexGenerationStatus.Retired);
+        var serving = generations.Single(g => g.Status == IndexGenerationStatus.Serving);
+        serving.ModelId.ShouldBe("another-model");
+        _vectors.Vectors.Keys.ShouldAllBe(k => k.GenerationId == serving.Id);
+        _vectors.Vectors.Keys.Select(k => k.ChunkId).ShouldBe((await ChunksAsync()).Select(c => c.Id), ignoreOrder: true);
+        await _jobs.Received(1).EnqueueAsync(Arg.Is<IndexBackfillJobArgs>(a => a.EmbedOnly), BackgroundJobPriority.Low, Arg.Any<TimeSpan?>());
     }
 
     [Fact]

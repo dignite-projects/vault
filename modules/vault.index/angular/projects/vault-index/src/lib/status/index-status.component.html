@@ -93,6 +93,26 @@
             —
           }
         </span>
+        @if (s.buildingModelId) {
+          <div class="mt-2">
+            {{ 'VaultIndex::IndexStatus:BuildingModel' | abpLocalization }}:
+            <code>{{ s.buildingModelId }}</code> ({{ s.buildingDimensions }}),
+            {{ 'VaultIndex::IndexStatus:BuildingProgress' | abpLocalization: ((s.buildingDocumentCount | number) ?? '') : ((s.buildingTotalCount | number) ?? '') }}
+            @if (s.buildingSince) {
+              <span class="text-muted ms-2">{{ s.buildingSince | date: 'short' }}</span>
+            }
+          </div>
+          <div
+            class="progress mt-1"
+            style="height: 4px"
+            role="progressbar"
+            [attr.aria-valuenow]="buildingPercent()"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div class="progress-bar" [style.width.%]="buildingPercent()"></div>
+          </div>
+        }
       </div>
     </div>
   }

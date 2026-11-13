@@ -45,9 +45,18 @@ public class VaultIndexIngestionTestModule : AbpModule
         context.Services.AddSingleton(generator);
         context.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>(VaultIndexConsts.EmbeddingGeneratorKey, generator);
 
+        // The previous model, as a host registers it while the index is rebuilt for a new one. Its id matches no
+        // generation until a test gives it the serving one's.
+        var previous = new PreviousEmbeddingModel(new FakeEmbeddingGenerator { ModelId = "no-previous-model" });
+        context.Services.AddSingleton(previous);
+        context.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>(VaultIndexConsts.PreviousEmbeddingGeneratorKey, previous.Generator);
+
         Configure<VaultIndexIngestionOptions>(options => options.MaxFailedAttempts = 2);
     }
 }
+
+/// <summary>The fake registered as the host's previous embedding model.</summary>
+public sealed record PreviousEmbeddingModel(FakeEmbeddingGenerator Generator);
 
 /// <summary>Deterministic vectors, a counter of calls and inputs, and a switch to fail.</summary>
 public sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
@@ -162,6 +171,16 @@ public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
     public Task DeleteDocumentAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
         foreach (var key in Vectors.Where(p => p.Value.DocumentId == documentId).Select(p => p.Key).ToList())
+        {
+            Vectors.Remove(key);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteGenerationAsync(Guid generationId, CancellationToken cancellationToken = default)
+    {
+        foreach (var key in Vectors.Keys.Where(k => k.GenerationId == generationId).ToList())
         {
             Vectors.Remove(key);
         }

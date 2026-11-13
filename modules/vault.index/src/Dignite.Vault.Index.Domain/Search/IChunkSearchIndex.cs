@@ -36,6 +36,12 @@ public interface IChunkSearchIndex
     Task DeleteDocumentAsync(Guid documentId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Removes the ambient tenant's vectors in one generation, a retired one. A store may delete in batches, so call it
+    /// outside a transaction: one generation can hold every vector of the tenant.
+    /// </summary>
+    Task DeleteGenerationAsync(Guid generationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The vector leg: the chunks of <paramref name="generationId"/> within <paramref name="scope"/> nearest to
     /// <paramref name="queryVector"/> by cosine distance, nearest first.
     /// </summary>

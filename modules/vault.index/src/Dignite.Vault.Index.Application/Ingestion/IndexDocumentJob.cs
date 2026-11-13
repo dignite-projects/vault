@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp;
 using Volo.Abp.BackgroundJobs;
+using Volo.Abp.Data;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Guids;
@@ -42,6 +43,14 @@ namespace Dignite.Vault.Index.Ingestion;
 /// Errors carrying a <c>VaultIndex:</c> code are deterministic and end the document in a terminal state at once.
 /// Anything else is transient: it is counted on the document and rethrown so ABP retries, until
 /// <see cref="VaultIndexIngestionOptions.MaxFailedAttempts"/>.
+/// <para>
+/// <b>A new embedding model.</b> Vectors go into the generation of the configured model. Once that is no longer the
+/// serving generation's model, the first vectors from it create a building generation and start the walk that queues
+/// an <see cref="IndexDocumentJobKind.Embed"/> for every document with chunks. Meanwhile a sync whose text is unchanged
+/// embeds the existing chunks into the new generation instead of skipping, and one that re-chunks also writes the
+/// serving generation, from its own model, when the host still has it, so search keeps finding the new text. After
+/// each write into the building generation the job tries to switch to it.
+/// </para>
 /// </summary>
 public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITransientDependency
 {
@@ -108,13 +117,17 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     {
         using (_currentTenant.Change(args.TenantId))
         {
-            if (args.Kind == IndexDocumentJobKind.Sync)
+            switch (args.Kind)
             {
-                await SyncAsync(args);
-            }
-            else
-            {
-                await ApplyLifecycleAsync(args);
+                case IndexDocumentJobKind.Sync:
+                    await SyncAsync(args);
+                    break;
+                case IndexDocumentJobKind.Embed:
+                    await EmbedChunksAsync(args);
+                    break;
+                default:
+                    await ApplyLifecycleAsync(args);
+                    break;
             }
         }
     }
@@ -139,6 +152,11 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         {
             var plan = await ComputeAsync(document!, claim, args.Force);
             var rerun = await ReplaceAsync(document!, claim, plan);
+            if (plan.TargetIsBuilding && plan.Vectors is not null)
+            {
+                await TrySwitchAsync(plan.GenerationId, rethrow: false);
+            }
+
             if (rerun)
             {
                 await EnqueueSyncAsync(args.DocumentId, args.Trigger);
@@ -231,7 +249,11 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             row.OwnerId);
     }
 
-    /// <summary>Everything that calls out (the model) or takes time, with no transaction open.</summary>
+    /// <summary>
+    /// Everything that calls out (the model) or takes time, with no transaction open. Three outcomes: nothing changed;
+    /// the text and settings are unchanged but the chunks have no vectors yet in the configured model's generation, so
+    /// they are embedded again as they are (no re-chunking, no enrichment call); or the document is chunked and embedded.
+    /// </summary>
     protected virtual async Task<SyncPlan> ComputeAsync(DocumentIntegrationDto document, SyncClaim claim, bool force = false)
     {
         if (string.IsNullOrWhiteSpace(document.Markdown))
@@ -253,17 +275,28 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var text = _chunker.Prepare(document.Markdown);
         var contentHash = Sha256(text);
         var modelId = _embedder.GetModelId();
-        var serving = await _generationManager.FindServingAsync();
+        var current = await _generationManager.FindTargetAsync(modelId);
 
-        var unchanged = !force
-                        && claim.ContentHash == contentHash
-                        && claim.ProfileStamp == profile.Stamp
-                        && serving is not null
-                        && claim.GenerationId == serving.Id
-                        && serving.ModelId == modelId;
-        if (unchanged)
+        var sameText = !force && claim.ContentHash == contentHash && claim.ProfileStamp == profile.Stamp;
+        if (sameText && current is not null && claim.GenerationId == current.Id)
         {
-            return new SyncPlan(contentHash, profile.Stamp, serving!.Id, null, null, null) { Compilation = profile.Compilation };
+            return new SyncPlan(contentHash, profile.Stamp, current.Id, null, null, null)
+            {
+                ModelId = modelId,
+                Compilation = profile.Compilation
+            };
+        }
+
+        if (sameText && await EmbedExistingAsync(document.Id, document.Title) is { } existing)
+        {
+            var reembedTarget = await GetOrCreateTargetAsync(modelId, existing.Dimensions);
+            return new SyncPlan(contentHash, profile.Stamp, reembedTarget.Id, null, existing.Embedding.Vectors, existing.Embedding.InputTokenCount)
+            {
+                ModelId = modelId,
+                Compilation = profile.Compilation,
+                EmbeddedChunkIds = existing.ChunkIds,
+                TargetIsBuilding = reembedTarget.Status == IndexGenerationStatus.Building
+            };
         }
 
         var enricher = _enricherProvider.Create(profile.Enrichment, document.Language);
@@ -287,19 +320,27 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             .Select(d => ChunkContext.ComposeForEmbedding(document.Title, d.Text, d.Questions))
             .ToList();
         var embedding = await _embedder.EmbedAsync(inputs);
+        var generation = await GetOrCreateTargetAsync(modelId, CheckDimensions(embedding.Vectors));
+        var building = generation.Status == IndexGenerationStatus.Building;
 
-        var dimensions = embedding.Vectors[0].Length;
-        if (embedding.Vectors.Any(v => v.Length != dimensions)
-            || (_searchIndex.VectorDimensions is { } storageDimensions && storageDimensions != dimensions))
+        // While the new model's generation is built, the serving one keeps answering searches: it gets the new chunks
+        // too, embedded by the model it was built with, when the host still has that model.
+        var serving = building ? await _generationManager.FindServingAsync() : null;
+        EmbeddingBatch? servingEmbedding = null;
+        if (serving is not null && !string.Equals(serving.ModelId, modelId, StringComparison.Ordinal) && _embedder.CanEmbed(serving.ModelId))
         {
-            throw new BusinessException(VaultIndexErrorCodes.EmbeddingDimensionMismatch)
-                .WithData("Dimensions", dimensions)
-                .WithData("StorageDimensions", _searchIndex.VectorDimensions ?? dimensions);
+            servingEmbedding = await _embedder.EmbedAsync(serving.ModelId, inputs);
+            CheckDimensions(servingEmbedding.Vectors);
         }
 
-        var generation = await _generationManager.GetOrCreateServingAsync(modelId, dimensions);
-        return new SyncPlan(contentHash, profile.Stamp, generation.Id, drafts, embedding.Vectors, embedding.InputTokenCount)
+        return new SyncPlan(
+            contentHash, profile.Stamp, generation.Id, drafts, embedding.Vectors,
+            servingEmbedding is null ? embedding.InputTokenCount : embedding.InputTokenCount + servingEmbedding.InputTokenCount)
         {
+            ModelId = modelId,
+            TargetIsBuilding = building,
+            ServingGenerationId = servingEmbedding is null ? null : serving!.Id,
+            ServingVectors = servingEmbedding?.Vectors,
             Compilation = profile.Compilation,
             LlmInputTokenCount = enricher?.InputTokenCount,
             LlmOutputTokenCount = enricher?.OutputTokenCount,
@@ -311,7 +352,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
     /// <summary>
     /// Replaces the document's chunks and vectors and completes the run, in one transaction. Returns whether another
-    /// sync must follow: an event arrived while this one ran.
+    /// sync must follow: an event arrived while this one ran, or the generations moved (a new model's build started,
+    /// switched or was abandoned), so the vectors may not be where the configured model's belong now.
     /// </summary>
     protected virtual async Task<bool> ReplaceAsync(DocumentIntegrationDto document, SyncClaim claim, SyncPlan plan)
     {
@@ -325,6 +367,23 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             return false;
         }
 
+        // Vectors go only into a generation still in use; a retired one's would never be read.
+        var serving = await _generationManager.FindServingAsync();
+        var building = await _generationManager.FindBuildingAsync();
+        bool IsLive(Guid generationId) => generationId == serving?.Id || generationId == building?.Id;
+        var stale = (await _generationManager.FindTargetAsync(plan.ModelId))?.Id != plan.GenerationId;
+
+        List<Chunk>? existing = null;
+        if (plan.EmbeddedChunkIds is not null)
+        {
+            // Re-embedded as they were; only another job taking over an expired claim could have replaced them since.
+            existing = (await _chunkRepository.GetListAsync(c => c.DocumentId == document.Id)).OrderBy(c => c.Ordinal).ToList();
+            if (!existing.Select(c => c.Id).SequenceEqual(plan.EmbeddedChunkIds))
+            {
+                throw new InvalidOperationException($"The chunks of document {document.Id} changed while they were embedded.");
+            }
+        }
+
         // A lifecycle event applied while this job ran (the document went to the recycle bin, or was reclassified)
         // is newer than the version just indexed: keep its mark and sync once more to see where the document stands.
         var lifecycleChanged = row.LastEventTime != claim.LastEventTime;
@@ -333,7 +392,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         row.CompleteIndexing(
             plan.ContentHash, plan.ProfileStamp, plan.GenerationId, chunkCount, document.DocumentTypeId, document.OwnerId,
             document.Title, document.Language, now, clearLifecycleMarks: !lifecycleChanged);
-        if (lifecycleChanged)
+        if (lifecycleChanged || stale)
         {
             row.RequestRerun(null);
         }
@@ -355,16 +414,30 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                 .ToList();
             await _chunkRepository.InsertManyAsync(chunks);
 
-            var vectors = chunks
-                .Select((c, i) => new ChunkVector(
-                    c.Id, document.Id, document.DocumentTypeId, document.OwnerId, row.IsHidden, plan.Vectors![i], c.IsDisabled))
-                .ToList();
-            await _searchIndex.ReplaceDocumentAsync(document.Id, plan.GenerationId, vectors);
+            // The old chunks' vectors go from every generation; the new ones into each generation they were computed for.
+            await _searchIndex.DeleteDocumentAsync(document.Id);
+            if (IsLive(plan.GenerationId))
+            {
+                await WriteVectorsAsync(row, document.DocumentTypeId, document.OwnerId, chunks, plan.GenerationId, plan.Vectors!);
+            }
+
+            if (plan.ServingGenerationId is { } servingId && IsLive(servingId))
+            {
+                await WriteVectorsAsync(row, document.DocumentTypeId, document.OwnerId, chunks, servingId, plan.ServingVectors!);
+            }
         }
-        else if (claim.DocumentTypeId != document.DocumentTypeId || claim.OwnerId != document.OwnerId || wasHidden != row.IsHidden)
+        else
         {
-            // Same text, but a new type or owner (a reclassification), or back in retrieval: only the read-scope facts move.
-            await CopyFiltersAsync(row);
+            if (existing is not null && IsLive(plan.GenerationId))
+            {
+                await WriteVectorsAsync(row, document.DocumentTypeId, document.OwnerId, existing, plan.GenerationId, plan.Vectors!);
+            }
+
+            if (claim.DocumentTypeId != document.DocumentTypeId || claim.OwnerId != document.OwnerId || wasHidden != row.IsHidden)
+            {
+                // Same text, but a new type or owner (a reclassification), or back in retrieval: only the read-scope facts move.
+                await CopyFiltersAsync(row);
+            }
         }
 
         if (!plan.Compilation.HasFlag(IndexCompilation.Summaries))
@@ -379,7 +452,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var run = await _runRepository.FindAsync(claim.RunId);
         if (run is not null)
         {
-            if (plan.Drafts is not null)
+            if (plan.Vectors is not null)
             {
                 run.Succeed(now, chunkCount, plan.EmbeddingTokenCount, plan.LlmInputTokenCount, plan.LlmOutputTokenCount, plan.Note);
             }
@@ -440,6 +513,250 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         }
 
         return terminal;
+    }
+
+    /// <summary>
+    /// <see cref="IndexDocumentJobKind.Embed"/>: the document's chunks, as they are, embedded by the configured model into
+    /// its generation. Takes no claim and leaves the document's status alone: it changes only which generation the
+    /// unchanged chunks have vectors in. A sync that replaces the chunks meanwhile writes that generation itself, and the
+    /// row's concurrency stamp orders the write against a lifecycle job changing the read-scope facts. A failure is
+    /// recorded as a run; a transient one is rethrown so ABP retries, until its own job timeout.
+    /// </summary>
+    protected virtual async Task EmbedChunksAsync(IndexDocumentJobArgs args)
+    {
+        if (!_embedder.IsConfigured)
+        {
+            return;
+        }
+
+        var modelId = _embedder.GetModelId();
+        Guid runId;
+        string? title;
+        using (var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true))
+        {
+            var row = await _documentRepository.FindAsync(args.DocumentId);
+            var current = await _generationManager.FindTargetAsync(modelId);
+            if (row is null || row.ChunkCount == 0 || (current is not null && row.GenerationId == current.Id))
+            {
+                await uow.CompleteAsync();
+                if (current is { Status: IndexGenerationStatus.Building })
+                {
+                    // Already there: on a retry after a switch that failed, this is what tries it again.
+                    await TrySwitchAsync(current.Id, rethrow: true);
+                }
+
+                return;
+            }
+
+            var since = current?.CreationTime ?? DateTime.MinValue;
+            var failed = await _runRepository.CountAsync(r =>
+                r.DocumentId == row.Id && r.Trigger == args.Trigger && r.Status == IndexRunStatus.Failed && r.StartedTime >= since);
+            var run = new IndexRun(_guidGenerator.Create(), _currentTenant.Id, row.Id, args.Trigger, failed + 1, _clock.Now);
+            await _runRepository.InsertAsync(run);
+            runId = run.Id;
+            title = row.Title;
+            await uow.CompleteAsync();
+        }
+
+        try
+        {
+            // The title Index kept, which a sync's pulled title equals unless it was cut at IndexingConsts.MaxTitleLength.
+            var existing = await EmbedExistingAsync(args.DocumentId, title);
+            if (existing is null)
+            {
+                await FinishRunAsync(runId, run => run.Skip(_clock.Now, "The document has no chunks."));
+                return;
+            }
+
+            var target = await GetOrCreateTargetAsync(modelId, existing.Dimensions);
+            if (await WriteEmbeddingAsync(args.DocumentId, runId, target.Id, existing) && target.Status == IndexGenerationStatus.Building)
+            {
+                await TrySwitchAsync(target.Id, rethrow: true);
+            }
+        }
+        catch (BusinessException exception) when (exception.Code?.StartsWith(VaultIndexErrorCodes.Namespace + ":", StringComparison.Ordinal) == true)
+        {
+            Logger.LogWarning("Embedding document {DocumentId} into the new generation failed for good: {Code}.", args.DocumentId, exception.Code);
+            await FinishRunAsync(runId, run => run.Fail(_clock.Now, Describe(exception)));
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Embedding document {DocumentId} into the new generation failed.", args.DocumentId);
+            await FinishRunAsync(runId, run => run.Fail(_clock.Now, exception.Message));
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Writes the vectors of <see cref="EmbedChunksAsync"/> and moves the document to <paramref name="generationId"/>, in
+    /// one transaction, unless the chunks changed while they were embedded. Returns whether it wrote.
+    /// </summary>
+    protected virtual async Task<bool> WriteEmbeddingAsync(Guid documentId, Guid runId, Guid generationId, ExistingChunksEmbedding embedding)
+    {
+        using var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true);
+        var now = _clock.Now;
+        var run = await _runRepository.GetAsync(runId);
+        var row = await _documentRepository.FindAsync(documentId);
+        var chunks = (await _chunkRepository.GetListAsync(c => c.DocumentId == documentId)).OrderBy(c => c.Ordinal).ToList();
+        var serving = await _generationManager.FindServingAsync();
+        var building = await _generationManager.FindBuildingAsync();
+
+        string? skipped = null;
+        if (row is null)
+        {
+            skipped = "The document was removed while its chunks were embedded.";
+        }
+        else if (!chunks.Select(c => c.Id).SequenceEqual(embedding.ChunkIds))
+        {
+            // The sync that replaced them wrote the generation itself, or asked for another sync that will.
+            skipped = "The chunks changed while they were embedded.";
+        }
+        else if (generationId != serving?.Id && generationId != building?.Id)
+        {
+            skipped = "The generation was abandoned while the chunks were embedded.";
+        }
+        else if (row.GenerationId == generationId)
+        {
+            skipped = "Another job embedded the chunks first.";
+        }
+
+        if (skipped is not null)
+        {
+            run.Skip(now, skipped);
+            await _runRepository.UpdateAsync(run);
+            await uow.CompleteAsync();
+            return false;
+        }
+
+        await WriteVectorsAsync(row!, row!.DocumentTypeId, row.OwnerId, chunks, generationId, embedding.Embedding.Vectors);
+        row.SetGeneration(generationId);
+        await _documentRepository.UpdateAsync(row);
+        run.Succeed(now, chunks.Count, embedding.Embedding.InputTokenCount);
+        await _runRepository.UpdateAsync(run);
+        await uow.CompleteAsync();
+        return true;
+    }
+
+    /// <summary>The document's current chunks embedded by the configured model, in chunk order; <c>null</c> when it has none.</summary>
+    protected virtual async Task<ExistingChunksEmbedding?> EmbedExistingAsync(Guid documentId, string? title)
+    {
+        var chunks = (await _chunkRepository.GetListAsync(c => c.DocumentId == documentId)).OrderBy(c => c.Ordinal).ToList();
+        if (chunks.Count == 0)
+        {
+            return null;
+        }
+
+        var embedding = await _embedder.EmbedAsync(chunks.Select(c => ChunkContext.ComposeForEmbedding(title, c.Text, c.Questions)).ToList());
+        return new ExistingChunksEmbedding(chunks.Select(c => c.Id).ToList(), embedding, CheckDimensions(embedding.Vectors));
+    }
+
+    protected virtual async Task WriteVectorsAsync(
+        IndexedDocument row,
+        Guid documentTypeId,
+        Guid? ownerId,
+        IReadOnlyList<Chunk> chunks,
+        Guid generationId,
+        IReadOnlyList<ReadOnlyMemory<float>> vectors)
+    {
+        var records = chunks
+            .Select((c, i) => new ChunkVector(c.Id, row.Id, documentTypeId, ownerId, row.IsHidden, vectors[i], c.IsDisabled))
+            .ToList();
+        await _searchIndex.ReplaceDocumentAsync(row.Id, generationId, records);
+    }
+
+    /// <summary>
+    /// The generation for the configured model, created when missing, in its own transaction. Creating a building one
+    /// starts the walk that embeds every document into it; abandoning one deletes its vectors.
+    /// </summary>
+    protected virtual async Task<IndexGeneration> GetOrCreateTargetAsync(string modelId, int dimensions)
+    {
+        IndexGenerationTarget target;
+        using (var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true))
+        {
+            target = await _generationManager.GetOrCreateTargetAsync(modelId, dimensions);
+            await uow.CompleteAsync();
+        }
+
+        if (target.StartedBuilding)
+        {
+            Logger.LogInformation("Embedding model {ModelId} is not the serving generation's: building a new generation.", modelId);
+            await _backgroundJobManager.EnqueueAsync(
+                new IndexBackfillJobArgs { TenantId = _currentTenant.Id, EmbedOnly = true },
+                BackgroundJobPriority.Low);
+        }
+
+        if (target.Abandoned)
+        {
+            await DeleteRetiredVectorsAsync();
+        }
+
+        return target.Generation;
+    }
+
+    /// <summary>
+    /// Switches to the building generation if this write completed it. Two jobs completing it at once collide on the
+    /// generation rows; the loser finds it switched. A sync swallows any other failure, since its own work is done;
+    /// an embed job rethrows it, and its retry tries again.
+    /// </summary>
+    protected virtual async Task TrySwitchAsync(Guid generationId, bool rethrow)
+    {
+        bool switched;
+        try
+        {
+            using var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true);
+            switched = await _generationManager.TrySwitchAsync(generationId);
+            await uow.CompleteAsync();
+        }
+        catch (AbpDbConcurrencyException)
+        {
+            return;
+        }
+        catch (Exception exception) when (!rethrow)
+        {
+            Logger.LogWarning(exception, "Switching to generation {GenerationId} failed; the next write into it tries again.", generationId);
+            return;
+        }
+
+        if (switched)
+        {
+            Logger.LogInformation("Every document has vectors in generation {GenerationId}; search now reads it.", generationId);
+            await DeleteRetiredVectorsAsync();
+        }
+    }
+
+    protected virtual async Task DeleteRetiredVectorsAsync()
+    {
+        using var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+        await _generationManager.DeleteRetiredVectorsAsync();
+        await uow.CompleteAsync();
+    }
+
+    protected virtual async Task FinishRunAsync(Guid runId, Action<IndexRun> finish)
+    {
+        using var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true);
+        var run = await _runRepository.FindAsync(runId);
+        if (run is not null)
+        {
+            finish(run);
+            await _runRepository.UpdateAsync(run);
+        }
+
+        await uow.CompleteAsync();
+    }
+
+    /// <summary>The vectors' common length, refused when they differ from each other or from what the store was created for.</summary>
+    protected virtual int CheckDimensions(IReadOnlyList<ReadOnlyMemory<float>> vectors)
+    {
+        var dimensions = vectors[0].Length;
+        if (vectors.Any(v => v.Length != dimensions)
+            || (_searchIndex.VectorDimensions is { } storageDimensions && storageDimensions != dimensions))
+        {
+            throw new BusinessException(VaultIndexErrorCodes.EmbeddingDimensionMismatch)
+                .WithData("Dimensions", dimensions)
+                .WithData("StorageDimensions", _searchIndex.VectorDimensions ?? dimensions);
+        }
+
+        return dimensions;
     }
 
     protected virtual async Task ApplyLifecycleAsync(IndexDocumentJobArgs args)
@@ -538,7 +855,14 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         Guid DocumentTypeId,
         Guid? OwnerId);
 
-    /// <summary>The computed result. <see cref="Drafts"/> is <c>null</c> when only the read-scope facts may need refreshing.</summary>
+    /// <summary>A document's existing chunks embedded by the configured model: their ids in chunk order, and the vectors.</summary>
+    protected sealed record ExistingChunksEmbedding(IReadOnlyList<Guid> ChunkIds, EmbeddingBatch Embedding, int Dimensions);
+
+    /// <summary>
+    /// The computed result. <see cref="Drafts"/> is <c>null</c> when the chunks stay: then <see cref="Vectors"/> is set
+    /// when they were embedded again for a new generation (<see cref="EmbeddedChunkIds"/>), and <c>null</c> when only
+    /// the read-scope facts may need refreshing.
+    /// </summary>
     protected sealed record SyncPlan(
         string ContentHash,
         string ProfileStamp,
@@ -556,5 +880,22 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         /// <summary>Something the run should say although it succeeded, such as chunks the enricher could not enrich.</summary>
         public string? Note { get; init; }
+
+        /// <summary>The configured model the plan was computed with; <see cref="GenerationId"/> is its generation.</summary>
+        public string ModelId { get; init; } = default!;
+
+        /// <summary><see cref="GenerationId"/> was being built when the plan was computed, so the write may complete it.</summary>
+        public bool TargetIsBuilding { get; init; }
+
+        /// <summary>The existing chunks <see cref="Vectors"/> belong to, in order, when the plan re-embedded them.</summary>
+        public IReadOnlyList<Guid>? EmbeddedChunkIds { get; init; }
+
+        /// <summary>
+        /// The serving generation, when <see cref="GenerationId"/> is a building one and the host still has the serving
+        /// model: <see cref="ServingVectors"/> keep the new chunks findable until the switch.
+        /// </summary>
+        public Guid? ServingGenerationId { get; init; }
+
+        public IReadOnlyList<ReadOnlyMemory<float>>? ServingVectors { get; init; }
     }
 }

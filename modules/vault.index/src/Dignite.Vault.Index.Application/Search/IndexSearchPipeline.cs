@@ -188,8 +188,9 @@ public class IndexSearchPipeline : ITransientDependency
     }
 
     /// <summary>
-    /// The vector leg, when there is one. Searching with a model other than the one the serving vectors came from would
-    /// compare two vector spaces, so it is refused, like ingestion refuses it.
+    /// The vector leg, when there is one. The query is embedded with the serving generation's model: while the index is
+    /// rebuilt for a new model, that is the host's previous model. Any other model would compare two vector spaces, so
+    /// without the serving one the search is refused.
     /// </summary>
     protected virtual async Task<IReadOnlyList<ChunkMatch>> SearchVectorsAsync(string query, ChunkSearchScope scope, int take)
     {
@@ -204,17 +205,14 @@ public class IndexSearchPipeline : ITransientDependency
             throw new BusinessException(VaultIndexErrorCodes.EmbeddingGeneratorMissing);
         }
 
-        var modelId = _embedder.GetModelId();
-        if (!string.Equals(modelId, serving.ModelId, StringComparison.Ordinal))
+        if (!_embedder.CanEmbed(serving.ModelId))
         {
             throw new BusinessException(VaultIndexErrorCodes.EmbeddingModelChanged)
-                .WithData("ModelId", modelId)
-                .WithData("Dimensions", serving.Dimensions)
-                .WithData("ServingModelId", serving.ModelId)
-                .WithData("ServingDimensions", serving.Dimensions);
+                .WithData("ModelId", _embedder.GetModelId())
+                .WithData("ServingModelId", serving.ModelId);
         }
 
-        var embedding = await _embedder.EmbedAsync([query]);
+        var embedding = await _embedder.EmbedAsync(serving.ModelId, [query]);
         return await _searchIndex.SearchVectorsAsync(serving.Id, embedding.Vectors[0], scope, take);
     }
 

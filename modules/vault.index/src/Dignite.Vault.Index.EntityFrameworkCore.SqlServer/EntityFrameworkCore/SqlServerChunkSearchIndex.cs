@@ -35,6 +35,9 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
     private readonly ICurrentTenant _currentTenant;
     private readonly VaultIndexSqlServerOptions _options;
 
+    /// <summary>Rows one statement of <see cref="DeleteGenerationAsync"/> deletes: below SQL Server's lock-escalation threshold.</summary>
+    protected const int DeleteBatchSize = 4000;
+
     public ILogger<SqlServerChunkSearchIndex> Logger { get; set; } = NullLogger<SqlServerChunkSearchIndex>.Instance;
 
     public SqlServerChunkSearchIndex(
@@ -113,6 +116,24 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
     {
         var dbContext = await _dbContextProvider.GetDbContextAsync();
         await dbContext.ChunkVectors.Where(v => v.DocumentId == documentId).ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes in batches of <see cref="DeleteBatchSize"/>, each its own statement, so retiring a generation does not
+    /// hold one long transaction or escalate to a table lock that would stall every tenant's vector search.
+    /// </summary>
+    public virtual async Task DeleteGenerationAsync(Guid generationId, CancellationToken cancellationToken = default)
+    {
+        var dbContext = await _dbContextProvider.GetDbContextAsync();
+        int deleted;
+        do
+        {
+            deleted = await dbContext.ChunkVectors
+                .Where(v => v.GenerationId == generationId)
+                .Take(DeleteBatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        while (deleted == DeleteBatchSize);
     }
 
     public virtual async Task<IReadOnlyList<ChunkMatch>> SearchVectorsAsync(
