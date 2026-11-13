@@ -37,6 +37,13 @@ export interface IndexStatusSummaryDto {
   servingDimensions?: number | null;
   servingSince?: string | null;
   configuredModelId?: string | null;
+  servingModelAvailable?: boolean;
+  buildingModelId?: string | null;
+  buildingDimensions?: number | null;
+  buildingSince?: string | null;
+  buildingDocumentCount?: number;
+  buildingTotalCount?: number;
+  buildingFailedCount?: number;
   keywordIndexAvailable?: boolean;
   keywordIndexPendingChanges?: number | null;
   keywordIndexPopulating?: boolean | null;

@@ -50,6 +50,10 @@ public static class VaultIndexDbContextModelCreatingExtensions
 
             b.HasIndex(x => new { x.TenantId, x.DocumentTypeId });
             b.HasIndex(x => new { x.TenantId, x.Status });
+
+            // While a new generation is built: the documents not in it yet, which the rebuild walk pages through and
+            // whose absence lets the generation take over.
+            b.HasIndex(x => new { x.TenantId, x.GenerationId });
         });
 
         builder.Entity<Chunk>(b =>
@@ -111,6 +115,13 @@ public static class VaultIndexDbContextModelCreatingExtensions
                 .HasDatabaseName("IX_VaultIndexGenerations_TenantId_Serving")
                 .IsUnique()
                 .HasFilter("[Status] = " + (int)IndexGenerationStatus.Serving);
+
+            // At most one building generation per layer, for the same reason: two jobs starting the rebuild for a new
+            // model at once.
+            // Named, or EF would take it for the serving index on the same column and reconfigure that one.
+            b.HasIndex(x => x.TenantId, "IX_VaultIndexGenerations_TenantId_Building")
+                .IsUnique()
+                .HasFilter("[Status] = " + (int)IndexGenerationStatus.Building);
         });
     }
 }

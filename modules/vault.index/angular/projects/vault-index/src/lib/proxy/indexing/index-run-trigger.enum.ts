@@ -5,6 +5,7 @@ export enum IndexRunTrigger {
   Backfill = 1,
   Rebuild = 2,
   Manual = 3,
+  ModelChange = 4,
 }
 
 export const indexRunTriggerOptions = mapEnumToOptions(IndexRunTrigger);

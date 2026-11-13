@@ -19,7 +19,7 @@ The summary at the top shows:
 
 - documents by state: indexed, failed, pending or indexing, and those out of retrieval (in Extract's recycle bin, or withheld after a reclassification until their next release);
 - chunks, and a warning when the tenant has more than 50,000 vectors. Vector search is exact, and the storage proof of concept sized it for about that many rows after the read-scope filter;
-- the embedding model the index was built with and the one the host is configured with. With no model configured nothing is indexed; with a different one, search is refused until the index is rebuilt;
+- the embedding model the index was built with and the one the host is configured with. With no model configured nothing is indexed. After the model changed, the [rebuild](#changing-the-embedding-model) for the new one and how far it is;
 - the keyword index: missing (Full-Text Search not installed, so search uses vectors only), populating after a backfill, or how many changes it has not absorbed yet. It follows writes by about five seconds;
 - with a chat model configured, how many documents have compiled summaries, and how many of those carry a note.
 
@@ -36,10 +36,21 @@ Errors that end a document at once carry a `VaultIndex:` code:
 | `VaultIndex:EmptyDocument` | The document has no text |
 | `VaultIndex:DocumentTooLarge` | Longer than `Vault:IndexIngestion:MaxMarkdownLength` |
 | `VaultIndex:TooManyChunks` | More chunks than `Vault:IndexIngestion:MaxChunksPerDocument` |
-| `VaultIndex:EmbeddingModelChanged` | The configured model is not the one the index was built with |
 | `VaultIndex:EmbeddingDimensionMismatch` | The model returns vectors of another length than the storage holds |
 
 Anything else is transient (a model timeout, a database error) and is retried up to `Vault:IndexIngestion:MaxFailedAttempts` times before the document is marked failed.
+
+## Changing the Embedding Model
+
+Configuring another embedding model ([Changing the model](../configuration/ai-provider.md#changing-the-model)) rebuilds the index in the background. Until the new model's vectors are complete, search reads the old ones; then it switches, and the old vectors are deleted. Each layer (the Host and each tenant) does this on its own.
+
+While it runs, the summary's embedding model line adds **Being rebuilt for** the new model, with the documents already in the new generation out of those with chunks, and when it started. Each document gets a run with the trigger **Model change**, which records the embedding tokens it took. The summary warns:
+
+- before the rebuild has started: it starts with the next document indexed, or the next `--migrate-database`;
+- while the host does not have the model the serving index was built with: search is refused (`VaultIndex:EmbeddingModelChanged`) until the new generation takes over, unless that model is configured as the previous one;
+- when documents could not be embedded with the new model. The rebuild cannot finish without them. A transient failure is retried by ABP's background-job retry for up to two days; otherwise open the document's runs for the error, fix the cause, and run `--migrate-database` to retry every document still missing. Reverting the configuration to the old model abandons the new generation instead.
+
+A document's own state (indexed, failed) does not change while it is rebuilt: the rebuild only adds vectors for the chunks it already has.
 
 ## The Chunk View
 

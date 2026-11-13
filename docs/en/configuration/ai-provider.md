@@ -73,10 +73,14 @@ Vault Index, which the shipped host carries while it is under development, turns
 | `EmbeddingEndpoint` | No | API base URL of the embedding provider. Defaults to `Vault:Extract:Endpoint` |
 | `EmbeddingApiKey` | No | Key for that provider. Defaults to `Vault:Extract:ApiKey` |
 | `EmbeddingDimensions` | Depends on the model | Sent as `dimensions` on every request. Set it for a model that can shorten its vectors (OpenAI's `text-embedding-3-*`). Set it to an empty string for a model that rejects the parameter: SiliconFlow answers `BAAI/bge-m3` with HTTP 400 when it is sent |
+| `PreviousEmbeddingModelId` | While [changing the model](#changing-the-model) | The model the index was built with, registered under `"VaultIndex.Embedding.Previous"` so search keeps working until the index rebuilt for `EmbeddingModelId` takes over. Remove it afterwards |
+| `PreviousEmbeddingEndpoint` | No | Defaults to the endpoint `EmbeddingModelId` uses |
+| `PreviousEmbeddingApiKey` | No | Defaults to the key `EmbeddingModelId` uses |
+| `PreviousEmbeddingDimensions` | Depends on the model | `EmbeddingDimensions` for the previous model; not inherited |
 
 **The model must return 1024-dimension vectors.** The shipped host's schema stores them in a `vector(1024)` column (`VaultIndexHostDbContext.VectorDimensions`); Index refuses vectors of any other length and ends the document in a failed state. `text-embedding-3-small` and `text-embedding-3-large` reach 1024 through `EmbeddingDimensions`; `BAAI/bge-m3` returns 1024 natively. Another length needs a host that changes the constant and adds a migration.
 
-**Changing the model is not a configuration change yet.** Index records the model that produced the serving vectors and refuses a different one (`VaultIndex:EmbeddingModelChanged`) rather than mixing two vector spaces. Rebuilding under a new model comes with a later Index release.
+Index records which model produced the vectors search reads, and never mixes two models' vectors. Changing the model rebuilds the index in the background: see [Changing the model](#changing-the-model).
 
 On SiliconFlow:
 
@@ -96,6 +100,30 @@ On SiliconFlow:
 - **Without one, `Qwen/Qwen3-Embedding-4B` does better** (`EmbeddingDimensions` 1024) on questions asked in Chinese or English (0.81 against 0.73) and on questions a table answers (0.92 against 0.83). It does the same on Japanese ones.
 
 So use `BAAI/bge-m3` with the rerank model: it is free on SiliconFlow and 1024-dimensional natively. Use `Qwen/Qwen3-Embedding-4B` where no rerank model is available and people ask in a language other than the documents'. Qwen3 was measured without its query instruction, which Index does not add.
+
+### Changing the model
+
+Set `EmbeddingModelId` (and `EmbeddingDimensions`) to the new model, and move the old values to `PreviousEmbeddingModelId` and `PreviousEmbeddingDimensions`, with `PreviousEmbeddingEndpoint` and `PreviousEmbeddingApiKey` when the old model ran on another provider. For `BAAI/bge-m3` to `Qwen/Qwen3-Embedding-4B` on SiliconFlow:
+
+```json
+"Vault": {
+  "Index": {
+    "EmbeddingModelId": "Qwen/Qwen3-Embedding-4B",
+    "EmbeddingDimensions": 1024,
+    "PreviousEmbeddingModelId": "BAAI/bge-m3",
+    "PreviousEmbeddingDimensions": ""
+  }
+}
+```
+
+Index then builds a new generation of vectors in the background, while search keeps reading the old one and embeds queries with the previous model. It embeds the chunks Index already holds: no document is pulled from Extract or chunked again, and no enrichment or summary model is called. A document that changes meanwhile is chunked once and embedded by both models, so search finds its new text at once. When every document is in the new generation, search switches to it and the old vectors are deleted. Then remove the `PreviousEmbedding*` keys. The [status page](../deployment/index-status.md#changing-the-embedding-model) shows the progress.
+
+- **When it starts.** With the first document Index syncs after the change, or the first `--migrate-database`, whichever comes first. The Host and each tenant rebuild and switch on their own; a tenant that receives no document waits for `--migrate-database`. The work is queued at low priority, behind Extract's jobs, and costs one embedding call per chunk.
+- **Without `PreviousEmbeddingModelId`** the host cannot embed queries for the old vectors, so search is refused (`VaultIndex:EmbeddingModelChanged`) until the switch. The rebuild runs the same way.
+- **A document that cannot be embedded** keeps the switch from happening. Its runs say why; a transient failure, such as the provider being down, is retried on ABP's background-job schedule for up to two days. Once the cause is fixed, `--migrate-database` retries every document still missing.
+- **Going back.** Setting `EmbeddingModelId` back to the old model before the switch abandons the new generation and deletes its vectors; documents changed meanwhile are embedded again by the old model.
+- **Every host instance at once.** An instance still configured with the old model treats the new generation as abandoned.
+- **The dimension stays 1024.** The new model must return vectors of the length the column was created for; one that does not is refused (`VaultIndex:EmbeddingDimensionMismatch`), no new generation is started, and the old one keeps serving. A model of another dimension needs a host that changes `VaultIndexHostDbContext.VectorDimensions` and adds a migration.
 
 ## Rerank model (`Index`)
 

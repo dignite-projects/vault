@@ -85,8 +85,12 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
                 .Select(g => new { Status = g.Key, Count = g.Count() })))
             .ToDictionary(x => x.Status, x => x.Count);
         var serving = await _generationManager.FindServingAsync();
+        var building = await _generationManager.FindBuildingAsync();
         var store = await _searchIndex.GetStatusAsync(serving?.Id);
         var summaries = (await _artifactRepository.GetQueryableAsync()).Where(a => a.TemplateName == ArtifactTemplateNames.Summaries);
+        var configuredModelId = GetConfiguredModelId();
+        var rebuilding = building is not null || (serving is not null && configuredModelId is not null && serving.ModelId != configuredModelId);
+        var progress = rebuilding ? await GetBuildProgressAsync(building) : default;
 
         return new IndexStatusSummaryDto
         {
@@ -102,7 +106,14 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             ServingModelId = serving?.ModelId,
             ServingDimensions = serving?.Dimensions,
             ServingSince = serving?.ServingSince,
-            ConfiguredModelId = GetConfiguredModelId(),
+            ConfiguredModelId = configuredModelId,
+            ServingModelAvailable = serving is not null && _embedder.IsConfigured && _embedder.CanEmbed(serving.ModelId),
+            BuildingModelId = building?.ModelId,
+            BuildingDimensions = building?.Dimensions,
+            BuildingSince = building?.CreationTime,
+            BuildingDocumentCount = progress.Done,
+            BuildingTotalCount = progress.Total,
+            BuildingFailedCount = progress.Failed,
             KeywordIndexAvailable = store.KeywordIndexAvailable,
             KeywordIndexPendingChanges = store.KeywordIndexPendingChanges,
             KeywordIndexPopulating = store.KeywordIndexPopulating,
@@ -222,6 +233,29 @@ public class IndexStatusAppService : VaultIndexAppService, IIndexStatusAppServic
             TenantId = CurrentTenant.Id,
             Force = true
         });
+    }
+
+    /// <summary>
+    /// How far the rebuild for a new model is: the documents with chunks, those already in the building generation, and
+    /// those not in it whose latest attempt to embed them with the new model failed. Before the first success creates
+    /// the generation, that is every document whose latest attempt failed: a model that refuses every call.
+    /// </summary>
+    protected virtual async Task<(int Done, int Total, int Failed)> GetBuildProgressAsync(IndexGeneration? building)
+    {
+        var buildingId = building?.Id;
+        var since = building?.CreationTime ?? DateTime.MinValue;
+        var documents = (await _documentRepository.GetQueryableAsync()).Where(d => d.ChunkCount > 0);
+        var runs = await _runRepository.GetQueryableAsync();
+
+        var total = await AsyncExecuter.CountAsync(documents);
+        var done = buildingId is null ? 0 : await AsyncExecuter.CountAsync(documents.Where(d => d.GenerationId == buildingId));
+        var failed = await AsyncExecuter.CountAsync(documents.Where(d =>
+            (buildingId == null || d.GenerationId != buildingId)
+            && runs.Where(r => r.DocumentId == d.Id && r.Trigger == IndexRunTrigger.ModelChange && r.StartedTime >= since)
+                .OrderByDescending(r => r.StartedTime)
+                .Select(r => (IndexRunStatus?)r.Status)
+                .FirstOrDefault() == IndexRunStatus.Failed));
+        return (done, total, failed);
     }
 
     /// <summary>

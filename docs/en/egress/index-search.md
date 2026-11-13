@@ -69,7 +69,7 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
 - `reranked` says whether the reranker ordered the hits: it is `false` without a rerank model, and when the rerank call failed and the fused order was kept. `rerankScore` and `score` only order the hits of one search.
 - The keyword leg lags writes by about five seconds; the vector leg sees a document as soon as it is indexed.
 - Without Full-Text Search on the database the keyword leg returns nothing and the host logs a warning. See [Connection Strings](../deployment/deployment.md#connection-strings).
-- Search is refused (`VaultIndex:EmbeddingModelChanged`) when the host's embedding model is not the one the index was built with: two models' vectors cannot be compared.
+- Search embeds the query with the model the index was built with, since two models' vectors cannot be compared. After the host's embedding model changed, that is the previous model until the index rebuilt for the new one takes over; a host that no longer has it refuses search (`VaultIndex:EmbeddingModelChanged`) until then. See [Changing the model](../configuration/ai-provider.md#changing-the-model).
 
 ## Outline
 

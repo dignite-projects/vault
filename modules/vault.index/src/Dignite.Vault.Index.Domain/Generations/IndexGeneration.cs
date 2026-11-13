@@ -8,9 +8,10 @@ using Volo.Abp.MultiTenancy;
 namespace Dignite.Vault.Index.Generations;
 
 /// <summary>
-/// Which embedding model produced a set of vectors. Search reads only the serving generation, and refuses when the
-/// host's configured model is not that generation's model, since vectors from two models are not comparable.
-/// Changing the model builds a new generation in the background and switches over when it is complete.
+/// Which embedding model produced a set of vectors. Search reads only the serving generation and embeds the query with
+/// that generation's model, and refuses when the host does not register it, since vectors from two models are not
+/// comparable. Changing the model builds a new generation in the background while the serving one keeps answering,
+/// and switches over when it is complete (<see cref="IndexGenerationManager"/>).
 /// <para>
 /// The vector column's dimension is part of the storage provider's table definition, so a model with a different
 /// <see cref="Dimensions"/> also needs a schema migration, not only a new generation.
@@ -53,6 +54,7 @@ public class IndexGeneration : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         ServingSince = now;
     }
 
+    /// <summary>Replaced by a newer generation, or abandoned before it served; its vectors are deleted.</summary>
     public virtual void Retire(DateTime now)
     {
         Status = IndexGenerationStatus.Retired;

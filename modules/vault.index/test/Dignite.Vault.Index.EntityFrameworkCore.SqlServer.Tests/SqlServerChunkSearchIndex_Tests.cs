@@ -158,6 +158,35 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
         (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().GetStatusAsync(null))).VectorCount.ShouldBe(0);
     }
 
+    [SqlServerFact]
+    public async Task Deleting_a_generation_removes_this_tenants_vectors_of_it_in_batches_and_nothing_else()
+    {
+        await ClearAsync();
+        var kept = await AddAsync(TypeA, OwnerX, "kept", [1, 0, 0, 0]);
+        await AddVectorAsync(kept, Generation2, [0, 1, 0, 0]);
+        var other = await AddAsync(TypeA, OwnerX, "other tenant", [1, 0, 0, 0], tenantId: OtherTenant);
+        using (GetRequiredService<ICurrentTenant>().Change(OtherTenant))
+        {
+            await AddVectorAsync(other, Generation2, [0, 1, 0, 0]);
+        }
+
+        // More vectors than one delete statement takes.
+        var documentId = Guid.NewGuid();
+        var many = Enumerable.Range(0, 4500)
+            .Select(_ => new ChunkVector(Guid.NewGuid(), documentId, TypeA, OwnerX, false, new float[] { 0, 1, 0, 0 }))
+            .ToList();
+        await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().ReplaceDocumentAsync(documentId, Generation2, many));
+
+        await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().DeleteGenerationAsync(Generation2));
+
+        (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkSearchIndex>().GetStatusAsync(Generation2))).VectorCount.ShouldBe(0);
+        (await VectorsAsync(Generation1, Everything)).ShouldBe([kept.ChunkId]);
+        using (GetRequiredService<ICurrentTenant>().Change(OtherTenant))
+        {
+            (await VectorsAsync(Generation2, Everything)).ShouldBe([other.ChunkId]);
+        }
+    }
+
     private Task SetDisabledAsync(ChunkVector chunk, bool isDisabled)
         => WithUnitOfWorkAsync(async () =>
         {

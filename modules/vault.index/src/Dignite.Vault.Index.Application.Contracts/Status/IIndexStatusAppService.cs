@@ -16,7 +16,10 @@ namespace Dignite.Vault.Index.Status;
 /// </summary>
 public interface IIndexStatusAppService : IApplicationService
 {
-    /// <summary>Counts for the tenant, the serving embedding generation, and the state of the keyword index.</summary>
+    /// <summary>
+    /// Counts for the tenant, the serving embedding generation and the one being built for a new model, and the state
+    /// of the keyword index.
+    /// </summary>
     Task<IndexStatusSummaryDto> GetSummaryAsync();
 
     /// <summary>The indexed documents within the caller's read scope, newest change first.</summary>
@@ -71,6 +74,33 @@ public class IndexStatusSummaryDto
 
     /// <summary>The host's embedding model; <c>null</c> when none is configured and ingestion is off.</summary>
     public string? ConfiguredModelId { get; set; }
+
+    /// <summary>
+    /// The host can embed queries with the serving model: it is the configured one, or registered as the previous one
+    /// while a new generation is built. When not, search is refused until the new generation serves.
+    /// </summary>
+    public bool ServingModelAvailable { get; set; }
+
+    /// <summary>The model a new generation is being built for, while the serving one keeps answering; <c>null</c> when none is.</summary>
+    public string? BuildingModelId { get; set; }
+
+    public int? BuildingDimensions { get; set; }
+
+    /// <summary>When the building generation was started.</summary>
+    public DateTime? BuildingSince { get; set; }
+
+    /// <summary>Documents with chunks that already have vectors in the building generation.</summary>
+    public int BuildingDocumentCount { get; set; }
+
+    /// <summary>Documents with chunks: the building generation takes over once it has vectors for all of them.</summary>
+    public int BuildingTotalCount { get; set; }
+
+    /// <summary>
+    /// After the configured model changed: documents not in the building generation whose last attempt to embed them
+    /// with the new model failed, also before any success has created that generation. Their runs say why; a transient
+    /// failure is retried.
+    /// </summary>
+    public int BuildingFailedCount { get; set; }
 
     public bool KeywordIndexAvailable { get; set; }
 

@@ -74,7 +74,11 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     /// </summary>
     public virtual string? ProfileStamp { get; protected set; }
 
-    /// <summary>The embedding generation the current vectors belong to.</summary>
+    /// <summary>
+    /// The newest embedding generation the current chunks have vectors in. While a new model's generation is built,
+    /// a document that already has vectors there points at it, and its vectors in the serving generation stay until the
+    /// switch; so the building generation is complete when every document with chunks points at it.
+    /// </summary>
     public virtual Guid? GenerationId { get; protected set; }
 
     public virtual int ChunkCount { get; protected set; }
@@ -194,6 +198,15 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
             IsArchived = false;
             IsWithheld = false;
         }
+    }
+
+    /// <summary>
+    /// The current chunks, unchanged, now also have vectors in <paramref name="generationId"/>: a newer generation
+    /// that was being built. Nothing else about the document changes.
+    /// </summary>
+    public virtual void SetGeneration(Guid generationId)
+    {
+        GenerationId = generationId;
     }
 
     /// <summary>

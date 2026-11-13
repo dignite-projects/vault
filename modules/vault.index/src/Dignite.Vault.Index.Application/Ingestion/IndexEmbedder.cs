@@ -17,7 +17,9 @@ public sealed record EmbeddingBatch(IReadOnlyList<ReadOnlyMemory<float>> Vectors
 /// <summary>
 /// Calls the host's embedding model, registered under <see cref="VaultIndexConsts.EmbeddingGeneratorKey"/>, in
 /// batches of <see cref="VaultIndexIngestionOptions.EmbeddingBatchSize"/>. The model id comes from the generator's own
-/// metadata, so the generation record cannot disagree with what actually produced the vectors.
+/// metadata, so the generation record cannot disagree with what actually produced the vectors. While the index is
+/// rebuilt for a new model, the host may also register the one the serving generation was built with, under
+/// <see cref="VaultIndexConsts.PreviousEmbeddingGeneratorKey"/>; a caller names the model it needs.
 /// </summary>
 public class IndexEmbedder : ITransientDependency
 {
@@ -49,9 +51,25 @@ public class IndexEmbedder : ITransientDependency
         return modelId;
     }
 
-    public virtual async Task<EmbeddingBatch> EmbedAsync(IReadOnlyList<string> inputs, CancellationToken cancellationToken = default)
+    /// <summary>Whether the host registers a generator for <paramref name="modelId"/>, as the configured or the previous model.</summary>
+    public virtual bool CanEmbed(string modelId) => FindGenerator(modelId) is not null;
+
+    /// <summary>Embeds with the configured model.</summary>
+    public virtual Task<EmbeddingBatch> EmbedAsync(IReadOnlyList<string> inputs, CancellationToken cancellationToken = default)
+        => EmbedAsync(GetGenerator(), inputs, cancellationToken);
+
+    /// <summary>Embeds with <paramref name="modelId"/>, the configured or the previous model.</summary>
+    public virtual Task<EmbeddingBatch> EmbedAsync(string modelId, IReadOnlyList<string> inputs, CancellationToken cancellationToken = default)
+        => EmbedAsync(
+            FindGenerator(modelId) ?? throw new BusinessException(VaultIndexErrorCodes.EmbeddingGeneratorMissing).WithData("ModelId", modelId),
+            inputs,
+            cancellationToken);
+
+    protected virtual async Task<EmbeddingBatch> EmbedAsync(
+        IEmbeddingGenerator<string, Embedding<float>> generator,
+        IReadOnlyList<string> inputs,
+        CancellationToken cancellationToken)
     {
-        var generator = GetGenerator();
         var vectors = new List<ReadOnlyMemory<float>>(inputs.Count);
         long tokens = 0;
         var tokensReported = false;
@@ -79,5 +97,21 @@ public class IndexEmbedder : ITransientDependency
     {
         return _serviceProvider.GetKeyedService<IEmbeddingGenerator<string, Embedding<float>>>(VaultIndexConsts.EmbeddingGeneratorKey)
                ?? throw new BusinessException(VaultIndexErrorCodes.EmbeddingGeneratorMissing);
+    }
+
+    /// <summary>The configured or the previous generator whose metadata names <paramref name="modelId"/>; the configured one first.</summary>
+    protected virtual IEmbeddingGenerator<string, Embedding<float>>? FindGenerator(string modelId)
+    {
+        foreach (var key in new[] { VaultIndexConsts.EmbeddingGeneratorKey, VaultIndexConsts.PreviousEmbeddingGeneratorKey })
+        {
+            var generator = _serviceProvider.GetKeyedService<IEmbeddingGenerator<string, Embedding<float>>>(key);
+            if (generator is not null
+                && string.Equals(generator.GetService<EmbeddingGeneratorMetadata>()?.DefaultModelId, modelId, StringComparison.Ordinal))
+            {
+                return generator;
+            }
+        }
+
+        return null;
     }
 }

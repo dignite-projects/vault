@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index embedding model switch** (shipped host and SPA). Changing `Vault:Index:EmbeddingModelId` no longer
+  fails every changed document with `VaultIndex:EmbeddingModelChanged`: Index builds a new generation of vectors in the
+  background from the chunks it holds (no pull from Extract, no re-chunking, no enrichment or summary calls), search
+  keeps reading the old generation, and switches once every document with chunks is in the new one; the old vectors
+  are then deleted. The new host keys `Vault:Index:PreviousEmbeddingModelId`, `PreviousEmbeddingEndpoint`,
+  `PreviousEmbeddingApiKey` and `PreviousEmbeddingDimensions` keep the old model registered (under
+  `VaultIndexConsts.PreviousEmbeddingGeneratorKey`), so search embeds queries with it and documents changed meanwhile
+  stay findable; without it search is refused with `VaultIndex:EmbeddingModelChanged` until the switch, which is now
+  the only place that code is raised. The rebuild starts with the first document synced after the change or the
+  first `--migrate-database`, which also resumes one that stopped; configuring the old model back abandons it. The
+  status summary adds `servingModelAvailable` and the `building*` progress fields, shown on the status page, and runs
+  add the trigger `ModelChange` (4). The vector dimension stays 1024. Index migration `ModelSwitch` (a unique building
+  generation per layer, and an index on `VaultIndexedDocuments (TenantId, GenerationId)`). See
+  [Changing the model](docs/en/configuration/ai-provider.md#changing-the-model).
 - **Vault Index summary operations** (shipped host and SPA). The index status page shows where each document's
   summaries stand (pending, current, out of date) with their compile time, LLM tokens and note, and counts the
   documents with summaries. **Recompile** (`POST /api/vault-index/status/documents/{id}/recompile`, permission

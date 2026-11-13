@@ -767,6 +767,11 @@ public class VaultExtractHostModule : AbpModule
     /// its own. <c>Vault:Index:EmbeddingDimensions</c> is sent only when set: OpenAI's text-embedding-3 models shorten
     /// their vectors to it, while a fixed-size model such as BAAI/bge-m3 rejects the parameter (HTTP 400 on
     /// SiliconFlow). Either way the vectors must match <see cref="Data.VaultIndexHostDbContext.VectorDimensions"/>.
+    /// <para>
+    /// While the index is rebuilt for a new model, the one it was built with can stay registered under
+    /// <see cref="VaultIndexConsts.PreviousEmbeddingGeneratorKey"/> from <c>Vault:Index:PreviousEmbedding*</c>, so search
+    /// keeps working until the new generation takes over. Its endpoint and key default to the current model's.
+    /// </para>
     /// </summary>
     private static void ConfigureVaultIndexAI(ServiceConfigurationContext context, IConfiguration configuration)
     {
@@ -783,19 +788,43 @@ public class VaultExtractHostModule : AbpModule
 
         var endpoint = configuration["Vault:Index:EmbeddingEndpoint"] is { Length: > 0 } ownEndpoint
             ? ownEndpoint
-            : configuration["Vault:Extract:Endpoint"];
+            : configuration["Vault:Extract:Endpoint"]!;
         var apiKey = configuration["Vault:Index:EmbeddingApiKey"] is { Length: > 0 } ownKey
             ? ownKey
-            : configuration["Vault:Extract:ApiKey"];
-        int? dimensions = int.TryParse(configuration["Vault:Index:EmbeddingDimensions"], out var parsed) ? parsed : null;
+            : configuration["Vault:Extract:ApiKey"]!;
+        AddVaultIndexEmbeddingGenerator(
+            context, VaultIndexConsts.EmbeddingGeneratorKey, modelId, endpoint, apiKey, configuration["Vault:Index:EmbeddingDimensions"]);
+
+        var previousModelId = configuration["Vault:Index:PreviousEmbeddingModelId"];
+        if (!string.IsNullOrWhiteSpace(previousModelId))
+        {
+            AddVaultIndexEmbeddingGenerator(
+                context,
+                VaultIndexConsts.PreviousEmbeddingGeneratorKey,
+                previousModelId,
+                configuration["Vault:Index:PreviousEmbeddingEndpoint"] is { Length: > 0 } previousEndpoint ? previousEndpoint : endpoint,
+                configuration["Vault:Index:PreviousEmbeddingApiKey"] is { Length: > 0 } previousKey ? previousKey : apiKey,
+                configuration["Vault:Index:PreviousEmbeddingDimensions"]);
+        }
+    }
+
+    private static void AddVaultIndexEmbeddingGenerator(
+        ServiceConfigurationContext context,
+        string key,
+        string modelId,
+        string endpoint,
+        string apiKey,
+        string? dimensionsSetting)
+    {
+        int? dimensions = int.TryParse(dimensionsSetting, out var parsed) ? parsed : null;
 
         // Short requests, but the same long-lived-process hazard as the chat clients: bound the pooled connection's
         // lifetime so a connection a NAT silently dropped is not reused forever.
         var client = new OpenAIClient(
-            new System.ClientModel.ApiKeyCredential(apiKey!),
+            new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
-                Endpoint = new Uri(endpoint!),
+                Endpoint = new Uri(endpoint),
                 Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(new HttpClient(new SocketsHttpHandler
                 {
                     PooledConnectionLifetime = TimeSpan.FromMinutes(5)
@@ -803,7 +832,7 @@ public class VaultExtractHostModule : AbpModule
             });
 
         context.Services.AddKeyedEmbeddingGenerator(
-                VaultIndexConsts.EmbeddingGeneratorKey,
+                key,
                 _ => client.GetEmbeddingClient(modelId).AsIEmbeddingGenerator(dimensions))
             .UseOpenTelemetry()
             .UseLogging();
