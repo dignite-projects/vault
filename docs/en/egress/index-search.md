@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Search and read the text of Dignite Vault documents through Vault Index: hybrid keyword and vector search, document outlines and pointer reads over REST and MCP, within each caller's read scope."
+    "Description": "Search and read the text of Dignite Vault documents through Vault Index: hybrid keyword and vector search, document outlines, type catalogs and pointer reads over REST and MCP, within each caller's read scope."
 }
 ```
 
@@ -11,7 +11,7 @@ Vault Index turns every document Extract releases into chunks with vectors and a
 
 > Vault Index is under development and ships only inside the host (its packages are not published yet). The contract on this page may still change before its first release.
 
-There are three operations, used in this order: **search** finds passages, **outline** shows a document's sections, **read** returns the text behind a pointer either of them returned. They are the same application service (`IIndexSearchAppService`) behind REST and MCP.
+There are four operations. **Search** finds passages, **catalog** lists what a document type holds, **outline** shows a document's sections, and **read** returns the text behind a pointer that search or outline returned. They are the same application service (`IIndexSearchAppService`) behind REST and MCP.
 
 ## Who Sees What
 
@@ -82,6 +82,17 @@ The document's heading tree in document order, at most 500 nodes (`truncated`, `
 
 When the document's type compiles summaries ([Index Profiles](../deployment/index-status.md#index-profiles)), each node also has a one-sentence `summary` of the section and its subsections, and `documentSummary` summarizes the whole document. An LLM writes them from the document's text after each sync, so they can lag a change by a few seconds to minutes, and they are `null` until then: the outline serves summaries only while they were built from exactly the chunks it shows. They help an agent pick the section to read; a detail it relies on should come from `read`. MCP wraps both in `<field>` tags, like titles.
 
+## Catalog
+
+| | |
+| --- | --- |
+| REST | `GET /api/vault-index/catalog?documentTypeCode=…` (`fieldFilters[i].…`, `skipCount`, `maxResultCount`) |
+| MCP | `vault_index_catalog` (`documentTypeCode`, `fieldFilters`, `skip`, `maxResults`) |
+
+The documents of one type that the caller can read, ordered by title, 20 per page by default and at most 50 (`totalCount`; MCP adds `truncated`). Each entry has the `documentId`, `title`, `lastIndexedTime` and, when the type compiles summaries, the `summary` of the whole document under the same conditions as the outline's `documentSummary`. `fieldFilters` narrow it as they narrow search. It carries no field values: Extract's [`vault_extract_search_documents`](mcp-server.md#search) lists a type's documents with their fields.
+
+The catalog is built when it is read, from the same scope as search. A caller who reads only their own uploads sees only those, and a document leaves it as soon as it is deleted, goes to the recycle bin or is withheld.
+
 ## Read
 
 | | |
@@ -95,4 +106,4 @@ A pointer stays valid until the document is indexed again (its text or chunking 
 
 ## MCP Specifics
 
-The three tools are on the host's shared `/mcp` endpoint, next to Extract's `vault_extract_*` tools, with the same authentication; see [MCP Server](mcp-server.md). Their descriptions are compile-time constants. Titles, heading paths and node titles come back wrapped in `<field>` tags and chunk text in `<document>` tags: document content is untrusted data, never instructions. The tools use the ambient tenant only; they take no `tenantId`.
+The four tools are on the host's shared `/mcp` endpoint, next to Extract's `vault_extract_*` tools, with the same authentication; see [MCP Server](mcp-server.md). Their descriptions are compile-time constants. Titles, heading paths, node titles and summaries come back wrapped in `<field>` tags and chunk text in `<document>` tags: document content is untrusted data, never instructions. The tools use the ambient tenant only; they take no `tenantId`.

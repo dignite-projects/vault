@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index type catalog** (shipped host). `GET /api/vault-index/catalog` and the MCP tool `vault_index_catalog`
+  list the documents of one type that the caller can read, ordered by title and paged (at most 50), each with its
+  document summary where the type compiles summaries; `fieldFilters` narrow it as they narrow search. It is built
+  when read, within the caller's read scope, so a caller who reads only their own uploads sees only those, and a
+  deleted or binned document leaves it at once. Field values stay with Extract's `vault_extract_search_documents`.
+  See [Index Search](docs/en/egress/index-search.md#catalog).
 - **Vault Index section and document summaries** (shipped host and SPA; off by default). An index profile can have an
   LLM summarize each document along its outline: one sentence per section, from its own text and its subsections'
   summaries, and a short summary of the whole document. The outline returns them (`documentSummary`, and `summary` on

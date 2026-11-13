@@ -61,6 +61,12 @@ public static class IndexSearchConsts
     /// <summary>The most outline nodes returned for one document; a deeper outline is cut and says so.</summary>
     public const int MaxOutlineNodes = 500;
 
+    /// <summary>Catalog entries per page when the caller does not say.</summary>
+    public const int DefaultCatalogPageSize = 20;
+
+    /// <summary>The most catalog entries one call returns: each carries a title and a summary of up to 1,200 characters.</summary>
+    public const int MaxCatalogPageSize = 50;
+
     /// <summary>
     /// The number of chunks exact vector search was sized for after the read-scope filter (storage PoC: about 90 to
     /// 175 ms at 49,000 rows, 0.2 s at 200,000). The status page warns past it; it is not enforced.

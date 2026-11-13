@@ -25,6 +25,13 @@ public interface IIndexSearchAppService : IApplicationService
     /// <summary>The heading tree of one document, each node with a pointer for <see cref="ReadAsync"/>.</summary>
     Task<DocumentOutlineDto> GetOutlineAsync(Guid documentId);
 
+    /// <summary>
+    /// The documents of one type the caller may read, by title, each with its document summary where the type compiles
+    /// summaries: what the type holds, a page at a time. Derived when read, within the caller's read scope like every
+    /// other call here, so a caller who reads only their own uploads sees only those.
+    /// </summary>
+    Task<IndexCatalogDto> GetCatalogAsync(GetIndexCatalogInput input);
+
     /// <summary>The text behind a chunk or outline-node pointer, capped and announced when cut.</summary>
     Task<IndexReadResultDto> ReadAsync(IndexReadInput input);
 }

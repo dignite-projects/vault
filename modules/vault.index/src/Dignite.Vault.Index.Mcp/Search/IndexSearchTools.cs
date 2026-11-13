@@ -143,6 +143,58 @@ public sealed class IndexSearchTools
         };
     }
 
+    [McpServerTool(Name = "vault_index_catalog", Title = "Document Catalog", ReadOnly = true)]
+    [Description("The documents of one type that the current principal may read, ordered by title: each with its id, "
+        + "title and, where the type compiles summaries, a short summary of the whole document written by a model from "
+        + "its text (null otherwise). Use it to see what a type holds, or to pick documents by what they are about, before "
+        + "searching or reading; pass a documentId to vault_index_outline for its sections. It carries no field values: "
+        + "use vault_extract_search_documents for amounts, dates and parties. fieldFilters narrow it as in "
+        + "vault_index_search. At most 50 per call: when truncated is true, call again with skip set to skip plus the "
+        + "number of items returned. "
+        + UntrustedText)]
+    public static async Task<IndexCatalogToolResult> CatalogAsync(
+        [Description("The document type code, as listed by vault_extract_list_document_types.")]
+        string documentTypeCode,
+        IIndexSearchAppService searchAppService,
+        [Description("Optional extracted-field conditions, all combined with AND, as in vault_index_search. At most 10.")]
+        // A concrete List<T>: see SearchAsync.
+        List<DocumentFieldFilter>? fieldFilters = null,
+        [Description("How many documents to skip, to read the next page. Defaults to 0.")]
+        int? skip = null,
+        [Description("How many documents to return, 1 to 50. Defaults to 20.")]
+        int? maxResults = null)
+    {
+        IndexCatalogDto catalog;
+        try
+        {
+            catalog = await searchAppService.GetCatalogAsync(new GetIndexCatalogInput
+            {
+                DocumentTypeCode = documentTypeCode,
+                FieldFilters = fieldFilters,
+                SkipCount = Math.Max(0, skip ?? 0),
+                MaxResultCount = maxResults is null ? null : Math.Clamp(maxResults.Value, 1, IndexSearchConsts.MaxCatalogPageSize)
+            });
+        }
+        catch (BusinessException ex) when (ex.Code == VaultIndexErrorCodes.FieldFilterTooBroad)
+        {
+            throw new McpException(FieldFilterTooBroadMessage);
+        }
+
+        var skipped = Math.Max(0, skip ?? 0);
+        return new IndexCatalogToolResult
+        {
+            DocumentTypeCode = catalog.DocumentTypeCode,
+            Items = catalog.Items.Select(i => new IndexCatalogToolItem
+            {
+                DocumentId = i.DocumentId,
+                Title = PromptBoundary.WrapField(i.Title),
+                Summary = PromptBoundary.WrapField(i.Summary)
+            }).ToList(),
+            TotalCount = catalog.TotalCount,
+            Truncated = skipped + catalog.Items.Count < catalog.TotalCount
+        };
+    }
+
     [McpServerTool(Name = "vault_index_read", Title = "Read Index", ReadOnly = true)]
     [Description("Read the text behind a pointer returned by vault_index_search (a chunk) or vault_index_outline (a "
         + "section with its subsections). Only those pointers are accepted. For a chunk, previousPointer and nextPointer "
@@ -248,6 +300,29 @@ public sealed record IndexOutlineToolNode
     public int Depth { get; init; }
 
     public int ChunkCount { get; init; }
+}
+
+public sealed record IndexCatalogToolResult
+{
+    public string? DocumentTypeCode { get; init; }
+
+    public required List<IndexCatalogToolItem> Items { get; init; }
+
+    public int TotalCount { get; init; }
+
+    /// <summary>More documents follow this page.</summary>
+    public bool Truncated { get; init; }
+}
+
+public sealed record IndexCatalogToolItem
+{
+    public Guid DocumentId { get; init; }
+
+    /// <summary>Wrapped with PromptBoundary.WrapField.</summary>
+    public string? Title { get; init; }
+
+    /// <summary>Wrapped with PromptBoundary.WrapField; <c>null</c> when the document has no up-to-date summary.</summary>
+    public string? Summary { get; init; }
 }
 
 public sealed record IndexReadToolResult

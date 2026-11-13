@@ -12297,6 +12297,29 @@
                   }
                 },
                 {
+                  "name": "GetCatalogAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Vault.Index.Search.GetIndexCatalogInput, Dignite.Vault.Index.Application.Contracts",
+                      "type": "Dignite.Vault.Index.Search.GetIndexCatalogInput",
+                      "typeSimple": "Dignite.Vault.Index.Search.GetIndexCatalogInput",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "Dignite.Vault.Index.Search.IndexCatalogDto",
+                    "typeSimple": "Dignite.Vault.Index.Search.IndexCatalogDto",
+                    "summary": null,
+                    "contentTypes": null,
+                    "isRemoteStream": false
+                  }
+                },
+                {
                   "name": "ReadAsync",
                   "parametersOnMethod": [
                     {
@@ -12462,6 +12485,106 @@
               "returnValue": {
                 "type": "Dignite.Vault.Index.Search.DocumentOutlineDto",
                 "typeSimple": "Dignite.Vault.Index.Search.DocumentOutlineDto",
+                "summary": null,
+                "contentTypes": [
+                  "text/plain",
+                  "application/json",
+                  "text/json"
+                ],
+                "isRemoteStream": false
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Vault.Index.Search.IIndexSearchAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "GetCatalogAsyncByInput": {
+              "uniqueName": "GetCatalogAsyncByInput",
+              "name": "GetCatalogAsync",
+              "httpMethod": "GET",
+              "url": "api/vault-index/catalog",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Vault.Index.Search.GetIndexCatalogInput, Dignite.Vault.Index.Application.Contracts",
+                  "type": "Dignite.Vault.Index.Search.GetIndexCatalogInput",
+                  "typeSimple": "Dignite.Vault.Index.Search.GetIndexCatalogInput",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "DocumentTypeCode",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "FieldFilters",
+                  "jsonName": null,
+                  "type": "System.Collections.Generic.List<Dignite.Vault.Extract.Documents.DocumentFieldFilter>",
+                  "typeSimple": "[Dignite.Vault.Extract.Documents.DocumentFieldFilter]",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "SkipCount",
+                  "jsonName": null,
+                  "type": "System.Int32",
+                  "typeSimple": "number",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "MaxResultCount",
+                  "jsonName": null,
+                  "type": "System.Int32?",
+                  "typeSimple": "number?",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "Dignite.Vault.Index.Search.IndexCatalogDto",
+                "typeSimple": "Dignite.Vault.Index.Search.IndexCatalogDto",
                 "summary": null,
                 "contentTypes": [
                   "text/plain",
@@ -19226,6 +19349,221 @@
           "maximum": null,
           "regex": null,
           "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Search.GetIndexCatalogInput": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "DocumentTypeCode",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": true,
+          "minLength": 0,
+          "maxLength": 128,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "FieldFilters",
+          "jsonName": null,
+          "type": "[Dignite.Vault.Extract.Documents.DocumentFieldFilter]",
+          "typeSimple": "[Dignite.Vault.Extract.Documents.DocumentFieldFilter]",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": 10,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "SkipCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "MaxResultCount",
+          "jsonName": null,
+          "type": "System.Int32?",
+          "typeSimple": "number?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": "1",
+          "maximum": "50",
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Search.IndexCatalogDto": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "DocumentTypeCode",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "Items",
+          "jsonName": null,
+          "type": "[Dignite.Vault.Index.Search.IndexCatalogItemDto]",
+          "typeSimple": "[Dignite.Vault.Index.Search.IndexCatalogItemDto]",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "TotalCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Vault.Index.Search.IndexCatalogItemDto": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "DocumentId",
+          "jsonName": null,
+          "type": "System.Guid",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "Title",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "Summary",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "LastIndexedTime",
+          "jsonName": null,
+          "type": "System.DateTime?",
+          "typeSimple": "string?",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
           "summary": null,
           "description": null,
           "displayName": null

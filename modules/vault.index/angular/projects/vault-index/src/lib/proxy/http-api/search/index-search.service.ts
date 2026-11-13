@@ -1,6 +1,6 @@
 import { RestService, Rest } from '@abp/ng.core';
 import { Injectable, inject } from '@angular/core';
-import type { DocumentOutlineDto, IndexReadInput, IndexReadResultDto, IndexSearchInput, IndexSearchResultDto } from '../../search/models';
+import type { DocumentOutlineDto, GetIndexCatalogInput, IndexCatalogDto, IndexReadInput, IndexReadResultDto, IndexSearchInput, IndexSearchResultDto } from '../../search/models';
 
 @Injectable({
   providedIn: 'root',
@@ -8,6 +8,17 @@ import type { DocumentOutlineDto, IndexReadInput, IndexReadResultDto, IndexSearc
 export class IndexSearchService {
   private restService = inject(RestService);
   apiName = 'Default';
+  
+
+  
+  getCatalog = (input: GetIndexCatalogInput, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, IndexCatalogDto>({
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      url: '/api/vault-index/catalog',
+      params: { documentTypeCode: input.documentTypeCode, fieldFilters: input.fieldFilters, skipCount: input.skipCount, maxResultCount: input.maxResultCount },
+    },
+      { apiName: this.apiName,...config });
   
 
   
