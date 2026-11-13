@@ -197,3 +197,27 @@ Version 3 of the set adds two documents whose article headings carry no caption,
 Titles alone fail where they say nothing ("第5条"), and where a table or list section is named for its form rather than its content ("単価一覧" for a delivery time). Compiling took about 3 model calls, 1,750 input and 460 output tokens per document. Summaries stay off by default, to be switched on per type where an agent navigates long or poorly titled documents.
 
 The set is small and synthetic: grow it with real queries before relying on small differences.
+
+### Cross-document questions (2026-11-13)
+
+Version 4 of the set adds 13 questions that only several documents answer: a listing with a condition, a comparison, a total, a timeline, a link between documents, a whole type (10 in Japanese, 2 in Chinese, 1 in English). Each names the facts its answer must contain. `Compare_agents` has a model with tool calls answer each twice, through the MCP tools as published:
+
+- with the tools before summaries existed: search, outline with titles, read;
+- with summaries compiled and the catalog added.
+
+The agent model is `VAULT_INDEX_EVAL_AGENT_MODEL`, and the chat model compiles the summaries.
+
+| Agent | Tools | Complete answers | Facts | Tool calls |
+| --- | --- | ---: | ---: | ---: |
+| `deepseek-ai/DeepSeek-V3` | search, outline, read | 22 / 26 | 56 / 66 | 3.0 |
+| `deepseek-ai/DeepSeek-V3` | + summaries, catalog | 20 / 26 | 56 / 66 | 3.5 |
+| `Qwen/Qwen3-30B-A3B-Instruct-2507` | search, outline, read | 12 / 26 | 36 / 66 | 2.2 |
+| `Qwen/Qwen3-30B-A3B-Instruct-2507` | + summaries, catalog | 14 / 26 | 42 / 66 | 3.5 |
+
+`agents-deepseek-v3-2026-11-13.md` and `agents-qwen3-2026-11-13.md` next to the set have every question and answer.
+
+- **A strong agent already gathers across documents.** DeepSeek-V3 answered most questions completely with about three tool calls. What it missed were reading errors: which party is the outsourcing side, the issuer of an invoice confused with its addressee.
+- **A weak agent fails differently.** The small model often answered without looking, or invented documents. Summaries and the catalog helped it a little.
+- **Summaries can mislead.** With summaries the strong agent named a wrong issuer for two invoices, where reading them got it right. The section summaries were correct. The document summaries of documents with a single top heading were built from that heading's one-sentence summary, and in one case from nothing but the title, and the compile model filled them with dates and payment methods the document does not state.
+
+So no server-side deep retrieval tier, type wiki or timeline is planned (see the design record).

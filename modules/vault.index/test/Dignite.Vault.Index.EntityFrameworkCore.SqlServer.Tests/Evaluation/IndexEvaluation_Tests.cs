@@ -13,6 +13,7 @@ using Dignite.Vault.Index.Compilation;
 using Dignite.Vault.Index.EntityFrameworkCore;
 using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Indexing;
+using Dignite.Vault.Index.Mcp.Search;
 using Dignite.Vault.Index.Ingestion;
 using Dignite.Vault.Index.Profiles;
 using Dignite.Vault.Index.Reranking;
@@ -71,6 +72,14 @@ public static class EvaluationModel
 
     /// <summary>Optional: Index's chat model (enrichment, summaries, and the navigating agent), on the embedding endpoint.</summary>
     public static string? ChatModelId => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_CHAT_MODEL");
+
+    /// <summary>
+    /// Optional: the model that plays the client agent in <c>Compare_agents</c>, on the embedding endpoint; the chat
+    /// model when unset. A deployment's MCP clients are usually stronger models than the one it compiles with.
+    /// </summary>
+    public static string? AgentModelId => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_AGENT_MODEL") ?? ChatModelId;
+
+    public const string AgentClientKey = "evaluation-agent";
 }
 
 /// <summary>
@@ -109,6 +118,9 @@ public class VaultIndexEvaluationTestModule : AbpModule
             var chat = new CountingChatClient(client.GetChatClient(EvaluationModel.ChatModelId).AsIChatClient());
             context.Services.AddSingleton(chat);
             context.Services.AddKeyedChatClient(VaultIndexConsts.ChatClientKey, _ => chat);
+            context.Services.AddKeyedChatClient(
+                EvaluationModel.AgentClientKey,
+                _ => new CountingChatClient(client.GetChatClient(EvaluationModel.AgentModelId).AsIChatClient()));
         }
 
         if (!string.IsNullOrWhiteSpace(EvaluationModel.RerankModelId))
@@ -569,6 +581,195 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
     private sealed class NavigationAnswer
     {
         public System.Text.Json.JsonElement? Path { get; set; }
+    }
+
+    private const string AgentInstructions =
+        "You answer questions about the documents of 株式会社ディグナイト, the company asking, using the tools: they "
+        + "search the documents' text, list the document types, show a document's sections and read text. Look up every "
+        + "document the question needs; when it asks about all documents of a kind, check each of them. Answer concisely "
+        + "in the language of the question, name the documents you used, and give amounts and dates as the documents "
+        + "write them.\n\n" + PromptBoundary.BoundaryRule;
+
+    /// <summary>Each question is asked this many times per toolset: an agent's path varies from run to run.</summary>
+    private const int AgentRepeats = 2;
+
+    /// <summary>
+    /// The P3 gate: whether questions only several documents answer need more than the tools Index already has. An
+    /// agent (the model in <c>VAULT_INDEX_EVAL_CHAT_MODEL</c> with tool calls) answers the set's cross questions twice:
+    /// with the toolset before P2 (search, outline with titles, read) while no summaries exist, then with P2's (the same
+    /// plus the catalog, and outlines with summaries) after compiling them. The tools are the MCP tools themselves, with
+    /// their descriptions and schemas. An answer is scored by the facts it contains. The report goes to
+    /// <c>VAULT_INDEX_EVAL_AGENT_REPORT</c> or <c>index-agents.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Compare_agents()
+    {
+        if (!GetRequiredService<DocumentSummaryCompilerProvider>().IsAvailable)
+        {
+            _output.WriteLine("No chat model (VAULT_INDEX_EVAL_CHAT_MODEL): nothing to compare.");
+            return;
+        }
+
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        Arrange(set);
+        await ClearAsync();
+        await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexProfile, Guid>>().InsertAsync(
+            new IndexProfile(Guid.NewGuid(), null, null, ChunkingStrategy.Heading, 400, 0, IndexEnrichment.None, IndexCompilation.Summaries)));
+        await IndexCorpusAsync(set);
+        await WaitForFullTextAsync();
+
+        var results = new List<AgentResult>();
+        foreach (var question in set.CrossQuestions)
+        {
+            for (var run = 0; run < AgentRepeats; run++)
+            {
+                results.Add(await AskAgentAsync(set, question, withCatalog: false));
+            }
+        }
+
+        var compileJob = GetRequiredService<IndexCompileJob>();
+        foreach (var document in set.Documents)
+        {
+            await compileJob.ExecuteAsync(new IndexCompileJobArgs { DocumentId = document.DocumentId });
+        }
+
+        foreach (var question in set.CrossQuestions)
+        {
+            for (var run = 0; run < AgentRepeats; run++)
+            {
+                results.Add(await AskAgentAsync(set, question, withCatalog: true));
+            }
+        }
+
+        var report = AgentReport(set, results);
+        _output.WriteLine(report);
+        var reportPath = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_AGENT_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-agents.md");
+        await File.WriteAllTextAsync(reportPath, report);
+    }
+
+    private async Task<AgentResult> AskAgentAsync(EvaluationSet set, EvaluationCrossQuestion question, bool withCatalog)
+    {
+        var search = GetRequiredService<IIndexSearchAppService>();
+        var tools = new List<AITool>
+        {
+            McpTool(nameof(IndexSearchTools.SearchAsync), search),
+            McpTool(nameof(IndexSearchTools.OutlineAsync), search),
+            McpTool(nameof(IndexSearchTools.ReadAsync), search),
+            AIFunctionFactory.Create(
+                () => set.Documents.Select(d => d.Type).Distinct().OrderBy(t => t, StringComparer.Ordinal).ToList(),
+                "vault_extract_list_document_types",
+                "The document type codes, to pass as documentTypeCode.")
+        };
+        if (withCatalog)
+        {
+            tools.Add(McpTool(nameof(IndexSearchTools.CatalogAsync), search));
+        }
+
+        var agent = new ChatClientBuilder(ServiceProvider.GetRequiredKeyedService<IChatClient>(EvaluationModel.AgentClientKey))
+            .UseFunctionInvocation(configure: f =>
+            {
+                f.MaximumIterationsPerRequest = 12;
+                f.IncludeDetailedErrors = true;
+            })
+            .Build();
+
+        ChatResponse response;
+        try
+        {
+            response = await agent.GetResponseAsync(
+                [new ChatMessage(ChatRole.System, AgentInstructions), new ChatMessage(ChatRole.User, question.Query)],
+                new ChatOptions { Tools = tools, MaxOutputTokens = 1_500 });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new AgentResult(question, withCatalog, "error: " + exception.Message, [], 0, 0, 0);
+        }
+
+        var calls = response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Select(c => c.Name).ToList();
+        var answer = string.IsNullOrWhiteSpace(response.Text)
+            ? $"(no text; finish {response.FinishReason?.Value ?? "none"}, {response.Messages.Count} messages, last {string.Join("+", response.Messages.LastOrDefault()?.Contents.Select(c => c.GetType().Name) ?? [])})"
+            : response.Text;
+        var normalized = NormalizeFact(answer);
+        var missed = question.Facts.Where(spellings => !spellings.Any(s => normalized.Contains(NormalizeFact(s), StringComparison.Ordinal))).ToList();
+        return new AgentResult(
+            question, withCatalog, answer, calls, question.Facts.Count - missed.Count,
+            response.Usage?.InputTokenCount ?? 0, response.Usage?.OutputTokenCount ?? 0)
+        {
+            Missed = missed.Select(m => m[0]).ToList()
+        };
+    }
+
+    /// <summary>An MCP tool as an AI function: its name, description and schema as the MCP server publishes them.</summary>
+    private static AIFunction McpTool(string methodName, IIndexSearchAppService search)
+    {
+        var method = typeof(IndexSearchTools).GetMethod(methodName)!;
+        var name = ((ModelContextProtocol.Server.McpServerToolAttribute)Attribute.GetCustomAttribute(
+            method, typeof(ModelContextProtocol.Server.McpServerToolAttribute))!).Name!;
+        return AIFunctionFactory.Create(method, target: null, new AIFunctionFactoryOptions
+        {
+            Name = name,
+            ConfigureParameterBinding = parameter => parameter.ParameterType == typeof(IIndexSearchAppService)
+                ? new AIFunctionFactoryOptions.ParameterBindingOptions { ExcludeFromSchema = true, BindParameter = (_, _) => search }
+                : default
+        });
+    }
+
+    private static string NormalizeFact(string text)
+        => new string(text.Normalize(System.Text.NormalizationForm.FormKC)
+            .Where(c => !char.IsWhiteSpace(c) && c != ',' && c != '，')
+            .ToArray()).ToLowerInvariant();
+
+    private static string AgentReport(EvaluationSet set, List<AgentResult> results)
+    {
+        var report = new System.Text.StringBuilder();
+        report.Append("# Vault Index cross-document questions\n\n");
+        report.Append($"- Evaluation set version {set.Version}: {set.Documents.Count} documents; {set.CrossQuestions.Count} questions only several documents answer, each asked {AgentRepeats} times per toolset\n");
+        report.Append($"- Agent: {EvaluationModel.AgentModelId} with tool calls (at most 12 rounds), the MCP tools as published; summaries compiled by {EvaluationModel.ChatModelId}. `before P2`: search, outline (titles), read, type list. `P2`: the same plus the catalog, after compiling section and document summaries (heading chunking at 400 tokens)\n");
+        report.Append("- An answer is scored by the facts it contains (any one spelling of each, after NFKC, without spaces or commas). `complete`: every fact. `calls`: tool calls per answer\n");
+        report.Append($"- Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC\n\n");
+
+        report.Append("| Toolset | Answers | Complete | Facts | Calls | Input tokens | Output tokens |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        foreach (var withCatalog in new[] { false, true })
+        {
+            var rows = results.Where(r => r.WithCatalog == withCatalog).ToList();
+            var facts = rows.Sum(r => r.Question.Facts.Count);
+            report.Append($"| {(withCatalog ? "P2" : "before P2")} | {rows.Count} | {rows.Count(r => r.FactsFound == r.Question.Facts.Count)} | {rows.Sum(r => r.FactsFound)} / {facts} | {rows.Average(r => r.Calls.Count):0.0} | {rows.Average(r => r.InputTokens):0} | {rows.Average(r => r.OutputTokens):0} |\n");
+        }
+
+        var p2 = results.Where(r => r.WithCatalog).SelectMany(r => r.Calls).GroupBy(c => c).OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Key} {g.Count()}");
+        report.Append("\nTool calls with the P2 toolset: ").Append(string.Join(", ", p2)).Append("\n\n");
+
+        report.Append("| # | Question | Before P2 (facts per run) | P2 (facts per run) |\n| ---: | --- | --- | --- |\n");
+        for (var i = 0; i < set.CrossQuestions.Count; i++)
+        {
+            var question = set.CrossQuestions[i];
+            string Cell(bool withCatalog) => string.Join(", ", results
+                .Where(r => r.Question == question && r.WithCatalog == withCatalog)
+                .Select(r => $"{r.FactsFound}/{question.Facts.Count} ({r.Calls.Count} calls)"));
+            report.Append($"| {i + 1} | {question.Query} | {Cell(false)} | {Cell(true)} |\n");
+        }
+
+        report.Append("\nMissed facts:\n\n");
+        foreach (var result in results.Where(r => r.Missed.Count > 0))
+        {
+            var answer = result.Answer.Replace("\n", " ");
+            report.Append($"- {(result.WithCatalog ? "P2" : "before P2")} · {result.Question.Query} · missed {string.Join(", ", result.Missed)} · answer: {answer[..Math.Min(240, answer.Length)]}\n");
+        }
+
+        return report.ToString();
+    }
+
+    private sealed record AgentResult(
+        EvaluationCrossQuestion Question,
+        bool WithCatalog,
+        string Answer,
+        List<string> Calls,
+        int FactsFound,
+        long InputTokens,
+        long OutputTokens)
+    {
+        public List<string> Missed { get; init; } = [];
     }
 
     private async Task IndexCorpusAsync(EvaluationSet set)
