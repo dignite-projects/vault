@@ -156,7 +156,11 @@
     "Profiles:Keywords": "關鍵詞",
     "Profiles:Questions": "可回答的問題",
     "Profiles:EnrichmentHint": "由 LLM 給每塊加關鍵詞(進關鍵詞索引)和它能回答的問題(進關鍵詞索引和嵌入)。約每 10 塊呼叫一次模型。",
-    "Profiles:EnrichmentUnavailable": "主機沒有設定增強模型(Vault:Index:EnrichmentModelId),所以不能開啟增強。",
-    "Profiles:EstimateEnrichment": "增強約呼叫模型 {0} 次。"
+    "Profiles:ChatModelUnavailable": "主機沒有設定 Index 的對話模型(Vault:Index:ChatModelId),所以不能開啟增強和摘要。",
+    "Profiles:EstimateEnrichment": "增強約呼叫模型 {0} 次。",
+    "Profiles:Compilation": "編譯",
+    "Profiles:Summaries": "節摘要與文件摘要",
+    "Profiles:SummariesHint": "每次同步後,由 LLM 給大綱的每一節寫一句話摘要,並寫一段文件摘要。大綱(REST 和 MCP)會帶上它們。每份文件呼叫模型幾次。",
+    "Profiles:EstimateSummaries": "將為 {0} 份文件編譯摘要。"
   }
 }

@@ -7,7 +7,9 @@ using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Extract.Documents.Integration;
+using Dignite.Vault.Index.Artifacts;
 using Dignite.Vault.Index.Chunks;
+using Dignite.Vault.Index.Compilation;
 using Dignite.Vault.Index.EntityFrameworkCore;
 using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Indexing;
@@ -67,8 +69,8 @@ public static class EvaluationModel
 
     public static string? RerankApiKey => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_RERANK_API_KEY");
 
-    /// <summary>Optional: a chat model for chunk enrichment, on the embedding endpoint.</summary>
-    public static string? EnrichmentModelId => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_ENRICHMENT_MODEL");
+    /// <summary>Optional: Index's chat model (enrichment, summaries, and the navigating agent), on the embedding endpoint.</summary>
+    public static string? ChatModelId => Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_CHAT_MODEL");
 }
 
 /// <summary>
@@ -102,11 +104,11 @@ public class VaultIndexEvaluationTestModule : AbpModule
             VaultIndexConsts.EmbeddingGeneratorKey,
             _ => new RetryingEmbeddingGenerator(client.GetEmbeddingClient(EvaluationModel.ModelId).AsIEmbeddingGenerator(EvaluationModel.Dimensions)));
 
-        if (!string.IsNullOrWhiteSpace(EvaluationModel.EnrichmentModelId))
+        if (!string.IsNullOrWhiteSpace(EvaluationModel.ChatModelId))
         {
-            context.Services.AddKeyedChatClient(
-                VaultIndexConsts.EnrichmentChatClientKey,
-                _ => client.GetChatClient(EvaluationModel.EnrichmentModelId).AsIChatClient());
+            var chat = new CountingChatClient(client.GetChatClient(EvaluationModel.ChatModelId).AsIChatClient());
+            context.Services.AddSingleton(chat);
+            context.Services.AddKeyedChatClient(VaultIndexConsts.ChatClientKey, _ => chat);
         }
 
         if (!string.IsNullOrWhiteSpace(EvaluationModel.RerankModelId))
@@ -279,7 +281,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
 
     /// <summary>
     /// Indexes the corpus once per enrichment (heading chunking at 400 tokens) with the model in
-    /// <c>VAULT_INDEX_EVAL_ENRICHMENT_MODEL</c>, and ranks every case with the fused legs and with search as configured.
+    /// <c>VAULT_INDEX_EVAL_CHAT_MODEL</c>, and ranks every case with the fused legs and with search as configured.
     /// Reports what enrichment cost per document. The report goes to <c>VAULT_INDEX_EVAL_ENRICHMENT_REPORT</c> or
     /// <c>index-enrichment.md</c>.
     /// </summary>
@@ -288,7 +290,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
     {
         if (!GetRequiredService<IndexEnricherProvider>().IsAvailable)
         {
-            _output.WriteLine("No enrichment model (VAULT_INDEX_EVAL_ENRICHMENT_MODEL): nothing to compare.");
+            _output.WriteLine("No enrichment model (VAULT_INDEX_EVAL_CHAT_MODEL): nothing to compare.");
             return;
         }
 
@@ -300,7 +302,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         var notes = new List<string>
         {
             $"Evaluation set version {set.Version}: {set.Documents.Count} documents, {cases.Count} cases",
-            $"Heading chunking at 400 tokens; enrichment model {EvaluationModel.EnrichmentModelId}, {IndexChunkEnricher.BatchSize} chunks per call. `fused` is RRF 1:1 of the two legs; `service` is IIndexSearchAppService as configured"
+            $"Heading chunking at 400 tokens; enrichment model {EvaluationModel.ChatModelId}, {IndexChunkEnricher.BatchSize} chunks per call. `fused` is RRF 1:1 of the two legs; `service` is IIndexSearchAppService as configured"
         };
 
         foreach (var (name, enrichment) in Enrichments)
@@ -344,6 +346,229 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         _output.WriteLine(report);
         var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_ENRICHMENT_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-enrichment.md");
         await File.WriteAllTextAsync(path, report);
+    }
+
+    /// <summary>The documents of version 3 whose article headings carry no caption.</summary>
+    private static readonly HashSet<string> UncaptionedDocuments = ["outsourcing-basic-terms", "safety-rules"];
+
+    private const string NavigatorInstructions =
+        "You find where a question is answered in a document. You are given the question and the document's outline: one "
+        + "line per section: its path (such as 1.2), its title and, when present, a summary of the section. Return the path "
+        + "of the one section most likely to contain the answer, exactly as it starts its line; prefer the most specific "
+        + "section.\n\n" + PromptBoundary.BoundaryRule;
+
+    /// <summary>
+    /// Outline navigation, the done mark of section summaries: compiles them for the corpus with the model in
+    /// <c>VAULT_INDEX_EVAL_CHAT_MODEL</c>, then has the same model pick the section that answers each written question
+    /// from the expected document's outline, once with titles only and once with titles and summaries. A pick is
+    /// precise when its heading path contains the expected heading, and covers it when it is that section, inside it
+    /// or above it. Reports what compiling cost per document. The report goes to
+    /// <c>VAULT_INDEX_EVAL_NAVIGATION_REPORT</c> or <c>index-navigation.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Compare_navigation()
+    {
+        if (!GetRequiredService<DocumentSummaryCompilerProvider>().IsAvailable)
+        {
+            _output.WriteLine("No chat model (VAULT_INDEX_EVAL_CHAT_MODEL): nothing to compare.");
+            return;
+        }
+
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        Arrange(set);
+        await ClearAsync();
+        await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<IndexProfile, Guid>>().InsertAsync(
+            new IndexProfile(Guid.NewGuid(), null, null, ChunkingStrategy.Heading, 400, 0, IndexEnrichment.None, IndexCompilation.Summaries)));
+        await IndexCorpusAsync(set);
+
+        var model = GetRequiredService<CountingChatClient>();
+        var compileJob = GetRequiredService<IndexCompileJob>();
+        foreach (var document in set.Documents)
+        {
+            await compileJob.ExecuteAsync(new IndexCompileJobArgs { DocumentId = document.DocumentId });
+        }
+
+        var compileCalls = model.Calls;
+        var artifacts = await WithUnitOfWorkAsync(() => GetRequiredService<IRepository<Artifact, Guid>>().GetListAsync());
+        var search = GetRequiredService<IIndexSearchAppService>();
+        var outlines = new Dictionary<string, DocumentOutlineDto>();
+        foreach (var document in set.Documents)
+        {
+            outlines[document.Id] = await WithUnitOfWorkAsync(() => search.GetOutlineAsync(document.DocumentId));
+        }
+
+        var cases = set.Cases().Where(c => c.Source != "field" && c.Heading is not null && outlines[c.Document].Nodes.Count > 0).ToList();
+        var results = new List<NavigationResult>();
+        foreach (var evaluationCase in cases)
+        {
+            var outline = outlines[evaluationCase.Document];
+            foreach (var withSummaries in new[] { false, true })
+            {
+                var path = await NavigateAsync(evaluationCase.Query, outline, withSummaries);
+                results.Add(ScoreNavigation(evaluationCase, outline, path, withSummaries));
+            }
+        }
+
+        var report = NavigationReport(set, cases.Count, results, artifacts, compileCalls, outlines);
+        _output.WriteLine(report);
+        var reportPath = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_NAVIGATION_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-navigation.md");
+        await File.WriteAllTextAsync(reportPath, report);
+    }
+
+    private async Task<string?> NavigateAsync(string question, DocumentOutlineDto outline, bool withSummaries)
+    {
+        var lines = new System.Text.StringBuilder();
+        foreach (var node in outline.Nodes)
+        {
+            lines.Append(new string(' ', 2 * (node.Depth - 1))).Append(node.Pointer[(node.Pointer.LastIndexOf('/') + 1)..]).Append(' ').Append(node.Title);
+            if (withSummaries && node.Summary is not null)
+            {
+                lines.Append(" — ").Append(node.Summary);
+            }
+
+            lines.Append('\n');
+        }
+
+        var user = "Question:\n" + PromptBoundary.WrapField(question) + "\nOutline:\n" + PromptBoundary.WrapDocument(lines.ToString().TrimEnd());
+        if (withSummaries && outline.DocumentSummary is not null)
+        {
+            user = "Document summary:\n" + PromptBoundary.WrapField(outline.DocumentSummary) + "\n" + user;
+        }
+
+        // An answer that cannot be read is asked for again, as the summary compiler does, so both outlines are judged on
+        // what the navigator chose rather than on the model's occasional whitespace runaway in JSON schema mode.
+        ChatResponse response = default!;
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            response = await ServiceProvider.GetRequiredKeyedService<IChatClient>(VaultIndexConsts.ChatClientKey).GetResponseAsync(
+                [new ChatMessage(ChatRole.System, NavigatorInstructions), new ChatMessage(ChatRole.User, user)],
+                new ChatOptions
+                {
+                    ResponseFormat = ChatResponseFormat.ForJsonSchema(AIJsonUtilities.CreateJsonSchema(typeof(NavigationAnswer)), "section_pick"),
+                    MaxOutputTokens = 100
+                });
+            if (response.Text.Contains("\"path\"", StringComparison.Ordinal))
+            {
+                break;
+            }
+        }
+
+        try
+        {
+            // A model may write the path as a JSON number (1.2) or echo the title after it: take the first token either way.
+            var path = Ai.LlmJson.Read<NavigationAnswer>(response.Text)?.Path;
+            var text = path is not { } element ? null
+                : element.ValueKind == System.Text.Json.JsonValueKind.String ? element.GetString() : element.GetRawText();
+            return text is null
+                ? "no path: " + response.Text[..Math.Min(60, response.Text.Length)]
+                : text.Trim().Split(' ', 2)[0].TrimEnd('.');
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return "unreadable: " + response.Text[..Math.Min(60, response.Text.Length)];
+        }
+    }
+
+    private static NavigationResult ScoreNavigation(EvaluationCase evaluationCase, DocumentOutlineDto outline, string? path, bool withSummaries)
+    {
+        var paths = HeadingPaths(outline);
+        var picked = outline.Nodes.FirstOrDefault(n => n.Pointer.EndsWith("/" + path, StringComparison.Ordinal));
+        var expected = outline.Nodes.Where(n => paths[n.Pointer].Contains(evaluationCase.Heading!, StringComparison.Ordinal)).Select(Position).ToList();
+        var position = picked is null ? null : Position(picked);
+        var precise = picked is not null && paths[picked.Pointer].Contains(evaluationCase.Heading!, StringComparison.Ordinal);
+        var covers = position is not null && expected.Any(e => e.StartsWith(position + ".", StringComparison.Ordinal) || e == position || position.StartsWith(e + ".", StringComparison.Ordinal));
+        return new NavigationResult(evaluationCase, withSummaries, precise, covers, picked?.ChunkCount ?? 0, path, picked?.Title);
+    }
+
+    private static string Position(OutlineNodeDto node) => node.Pointer[(node.Pointer.LastIndexOf('/') + 1)..];
+
+    /// <summary>Each node's titles from the root down, joined, as the chunks' heading paths name them.</summary>
+    private static Dictionary<string, string> HeadingPaths(DocumentOutlineDto outline)
+    {
+        var stack = new List<string>();
+        var paths = new Dictionary<string, string>();
+        foreach (var node in outline.Nodes)
+        {
+            stack.RemoveRange(node.Depth - 1, stack.Count - (node.Depth - 1));
+            stack.Add(node.Title);
+            paths[node.Pointer] = string.Join(" > ", stack);
+        }
+
+        return paths;
+    }
+
+    private static string NavigationReport(
+        EvaluationSet set,
+        int caseCount,
+        List<NavigationResult> results,
+        List<Artifact> artifacts,
+        int compileCalls,
+        Dictionary<string, DocumentOutlineDto> outlines)
+    {
+        var report = new System.Text.StringBuilder();
+        report.Append("# Vault Index outline navigation\n\n");
+        report.Append($"- Evaluation set version {set.Version}: {set.Documents.Count} documents; {caseCount} written questions whose answer is under a heading\n");
+        report.Append($"- Heading chunking at 400 tokens; chat model {EvaluationModel.ChatModelId} compiles the summaries and navigates\n");
+        report.Append("- The navigator gets the question and the expected document's outline and picks one section. `precise`: the pick's heading path contains the expected heading. `covers`: the pick is that section, inside it or above it. `chunks`: the chunks a read of the pick returns, on average\n");
+        report.Append($"- Compiling: {artifacts.Count} documents, {compileCalls} model calls, per document {artifacts.Average(a => a.InputTokenCount ?? 0):0} input and {artifacts.Average(a => a.OutputTokenCount ?? 0):0} output tokens; {artifacts.Count(a => a.Note is not null)} with a note\n");
+        report.Append($"- Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC\n\n");
+
+        report.Append("| Questions | Outline | Cases | Precise | Covers | Chunks |\n| --- | --- | ---: | ---: | ---: | ---: |\n");
+        var groups = new (string Name, Func<NavigationResult, bool> Filter)[]
+        {
+            ("all", _ => true),
+            ("captioned headings", r => !UncaptionedDocuments.Contains(r.Case.Document)),
+            ("uncaptioned headings (v3)", r => UncaptionedDocuments.Contains(r.Case.Document)),
+            ("Japanese", r => r.Case.Language == "ja"),
+            ("Chinese and English", r => r.Case.Language != "ja")
+        };
+        foreach (var (name, filter) in groups)
+        {
+            foreach (var withSummaries in new[] { false, true })
+            {
+                var rows = results.Where(r => r.WithSummaries == withSummaries && filter(r)).ToList();
+                if (rows.Count == 0)
+                {
+                    continue;
+                }
+
+                report.Append($"| {name} | {(withSummaries ? "titles + summaries" : "titles")} | {rows.Count} | {rows.Average(r => r.Precise ? 1.0 : 0):P0} | {rows.Average(r => r.Covers ? 1.0 : 0):P0} | {rows.Average(r => r.ChunkCount):0.0} |\n");
+            }
+        }
+
+        var unresolved = results.Count(r => r.PickedTitle is null);
+        report.Append($"\n{unresolved} of {results.Count} answers named no section of the outline.\n");
+        foreach (var withSummaries in new[] { false, true })
+        {
+            var missed = results.Where(r => r.WithSummaries == withSummaries && !r.Precise)
+                .Select(r => $"`{r.Case.Document}` {r.Case.Heading}: {r.Case.Query} → `{r.Answer}` {r.PickedTitle}")
+                .ToList();
+            if (missed.Count > 0)
+            {
+                report.Append(withSummaries ? "\nMissed with summaries:\n\n" : "\nMissed with titles only:\n\n")
+                    .Append(string.Join("\n", missed.Select(m => "- " + m))).Append('\n');
+            }
+        }
+
+        var sample = outlines.GetValueOrDefault("outsourcing-basic-terms");
+        if (sample is not null)
+        {
+            report.Append("\nSample (`outsourcing-basic-terms`):\n\n- Document: ").Append(sample.DocumentSummary).Append('\n');
+            foreach (var node in sample.Nodes.Take(6))
+            {
+                report.Append("- ").Append(Position(node)).Append(' ').Append(node.Title).Append(": ").Append(node.Summary).Append('\n');
+            }
+        }
+
+        return report.ToString();
+    }
+
+    private sealed record NavigationResult(
+        EvaluationCase Case, bool WithSummaries, bool Precise, bool Covers, int ChunkCount, string? Answer, string? PickedTitle);
+
+    private sealed class NavigationAnswer
+    {
+        public System.Text.Json.JsonElement? Path { get; set; }
     }
 
     private async Task IndexCorpusAsync(EvaluationSet set)
@@ -500,7 +725,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         await using var connection = new SqlConnection(SqlServerTestDatabase.Evaluation.ConnectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(
-            "DELETE FROM VaultIndexChunkVectors; DELETE FROM VaultIndexChunks; DELETE FROM VaultIndexRuns; DELETE FROM VaultIndexedDocuments; DELETE FROM VaultIndexGenerations; DELETE FROM VaultIndexProfiles;",
+            "DELETE FROM VaultIndexChunkVectors; DELETE FROM VaultIndexChunks; DELETE FROM VaultIndexRuns; DELETE FROM VaultIndexArtifacts; DELETE FROM VaultIndexedDocuments; DELETE FROM VaultIndexGenerations; DELETE FROM VaultIndexProfiles;",
             connection);
         await command.ExecuteNonQueryAsync();
     }
@@ -546,6 +771,34 @@ public class EvaluationChunker : IndexChunker
     }
 
     public override string Prepare(string markdown) => _switch.Enabled ? base.Prepare(markdown) : markdown;
+}
+
+/// <summary>Counts the chat calls, and retries one a few times with a growing pause, as the embedding wrapper does.</summary>
+public sealed class CountingChatClient(IChatClient inner) : DelegatingChatClient(inner)
+{
+    private int _calls;
+
+    public int Calls => _calls;
+
+    public override async Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        System.Threading.CancellationToken cancellationToken = default)
+    {
+        System.Threading.Interlocked.Increment(ref _calls);
+        var list = messages.ToList();
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await base.GetResponseAsync(list, options, cancellationToken);
+            }
+            catch (ClientResultException) when (attempt < 5)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
+            }
+        }
+    }
 }
 
 /// <summary>Retries an embedding call a few times with a growing pause: the evaluation's calls are many and bursty.</summary>

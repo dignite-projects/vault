@@ -4,6 +4,7 @@ export interface DocumentOutlineDto {
   documentId?: string;
   documentTitle?: string | null;
   documentTypeCode?: string | null;
+  documentSummary?: string | null;
   nodes?: OutlineNodeDto[];
   truncated?: boolean;
   totalNodeCount?: number;
@@ -104,6 +105,7 @@ export interface IndexSearchTestResultDto {
 export interface OutlineNodeDto {
   pointer?: string;
   title?: string;
+  summary?: string | null;
   depth?: number;
   level?: number;
   chunkCount?: number;

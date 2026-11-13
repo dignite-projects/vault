@@ -1,5 +1,6 @@
 import type { ChunkingStrategy } from '../indexing/chunking-strategy.enum';
 import type { IndexEnrichment } from '../indexing/index-enrichment.enum';
+import type { IndexCompilation } from '../indexing/index-compilation.enum';
 import type { ListResultDto } from '@abp/ng.core';
 
 export interface IndexProfileDto {
@@ -11,6 +12,7 @@ export interface IndexProfileDto {
   maxTokensPerChunk?: number;
   overlapTokens?: number;
   enrichment?: IndexEnrichment;
+  compilation?: IndexCompilation;
   indexedDocumentCount?: number;
 }
 
@@ -20,10 +22,11 @@ export interface IndexProfileInput {
   maxTokensPerChunk?: number;
   overlapTokens?: number;
   enrichment?: IndexEnrichment;
+  compilation?: IndexCompilation;
 }
 
 export interface IndexProfileListDto extends ListResultDto<IndexProfileDto> {
-  enrichmentAvailable?: boolean;
+  chatModelAvailable?: boolean;
 }
 
 export interface IndexRebuildEstimateDto {
@@ -32,4 +35,5 @@ export interface IndexRebuildEstimateDto {
   embeddingTokenCount?: number;
   documentsWithoutTokenCount?: number;
   enrichmentCallCount?: number;
+  summaryDocumentCount?: number;
 }

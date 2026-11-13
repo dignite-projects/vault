@@ -31,6 +31,12 @@ public class IndexProfile : AuditedAggregateRoot<Guid>, IMultiTenant
     /// <summary>What an LLM adds to each chunk; nothing by default.</summary>
     public virtual IndexEnrichment Enrichment { get; protected set; }
 
+    /// <summary>
+    /// What an LLM compiles from each document; nothing by default. Not part of the chunking settings: changing it
+    /// re-chunks nothing, it only compiles or drops the artifacts.
+    /// </summary>
+    public virtual IndexCompilation Compilation { get; protected set; }
+
     public virtual int Version { get; protected set; }
 
     protected IndexProfile()
@@ -44,13 +50,15 @@ public class IndexProfile : AuditedAggregateRoot<Guid>, IMultiTenant
         ChunkingStrategy chunkingStrategy,
         int maxTokensPerChunk,
         int overlapTokens,
-        IndexEnrichment enrichment = IndexEnrichment.None)
+        IndexEnrichment enrichment = IndexEnrichment.None,
+        IndexCompilation compilation = IndexCompilation.None)
         : base(id)
     {
         TenantId = tenantId;
         DocumentTypeId = documentTypeId;
         ApplyChunking(chunkingStrategy, maxTokensPerChunk, overlapTokens);
         Enrichment = enrichment;
+        Compilation = compilation;
         Version = 1;
     }
 
@@ -75,6 +83,18 @@ public class IndexProfile : AuditedAggregateRoot<Guid>, IMultiTenant
         }
 
         Enrichment = enrichment;
+        Version++;
+    }
+
+    /// <summary>Changes what an LLM compiles from each document, and moves <see cref="Version"/> when it actually changed.</summary>
+    public virtual void SetCompilation(IndexCompilation compilation)
+    {
+        if (compilation == Compilation)
+        {
+            return;
+        }
+
+        Compilation = compilation;
         Version++;
     }
 

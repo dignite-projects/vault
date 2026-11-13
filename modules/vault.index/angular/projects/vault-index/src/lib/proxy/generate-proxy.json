@@ -12090,6 +12090,21 @@
                   "summary": null,
                   "description": null,
                   "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "Compilation",
+                  "jsonName": null,
+                  "type": "Dignite.Vault.Index.Indexing.IndexCompilation",
+                  "typeSimple": "enum",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
                 }
               ],
               "returnValue": {
@@ -18556,6 +18571,24 @@
       "description": null,
       "displayName": null
     },
+    "Dignite.Vault.Index.Indexing.IndexCompilation": {
+      "baseType": "System.Enum",
+      "isEnum": true,
+      "enumNames": [
+        "None",
+        "Summaries"
+      ],
+      "enumValues": [
+        0,
+        1
+      ],
+      "genericArguments": null,
+      "properties": null,
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
     "Dignite.Vault.Index.Indexing.IndexedDocumentStatus": {
       "baseType": "System.Enum",
       "isEnum": true,
@@ -18778,6 +18811,22 @@
           "displayName": null
         },
         {
+          "name": "Compilation",
+          "jsonName": null,
+          "type": "Dignite.Vault.Index.Indexing.IndexCompilation",
+          "typeSimple": "enum",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
           "name": "IndexedDocumentCount",
           "jsonName": null,
           "type": "System.Int32",
@@ -18885,6 +18934,22 @@
           "summary": null,
           "description": null,
           "displayName": null
+        },
+        {
+          "name": "Compilation",
+          "jsonName": null,
+          "type": "Dignite.Vault.Index.Indexing.IndexCompilation",
+          "typeSimple": "enum",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
         }
       ],
       "summary": null,
@@ -18900,7 +18965,7 @@
       "genericArguments": null,
       "properties": [
         {
-          "name": "EnrichmentAvailable",
+          "name": "ChatModelAvailable",
           "jsonName": null,
           "type": "System.Boolean",
           "typeSimple": "boolean",
@@ -19007,6 +19072,22 @@
           "summary": null,
           "description": null,
           "displayName": null
+        },
+        {
+          "name": "SummaryDocumentCount",
+          "jsonName": null,
+          "type": "System.Int32",
+          "typeSimple": "number",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
         }
       ],
       "summary": null,
@@ -19055,6 +19136,22 @@
         },
         {
           "name": "DocumentTypeCode",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "DocumentSummary",
           "jsonName": null,
           "type": "System.String",
           "typeSimple": "string",
@@ -20350,6 +20447,22 @@
           "maximum": null,
           "regex": null,
           "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "Summary",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
           "summary": null,
           "description": null,
           "displayName": null

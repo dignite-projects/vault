@@ -26,7 +26,7 @@ export class IndexProfileService {
       method: 'GET',
       headers: { Accept: 'application/json' },
       url: '/api/vault-index/profiles/rebuild-estimate',
-      params: { documentTypeId: input.documentTypeId, chunkingStrategy: input.chunkingStrategy, maxTokensPerChunk: input.maxTokensPerChunk, overlapTokens: input.overlapTokens, enrichment: input.enrichment },
+      params: { documentTypeId: input.documentTypeId, chunkingStrategy: input.chunkingStrategy, maxTokensPerChunk: input.maxTokensPerChunk, overlapTokens: input.overlapTokens, enrichment: input.enrichment, compilation: input.compilation },
     },
       { apiName: this.apiName,...config });
   

@@ -27,6 +27,7 @@ public class IndexProfileResolver : DomainService
 
         return profile is null
             ? ResolvedIndexProfile.BuiltIn
-            : new ResolvedIndexProfile(profile.ChunkingStrategy, profile.MaxTokensPerChunk, profile.OverlapTokens, profile.Enrichment);
+            : new ResolvedIndexProfile(
+                profile.ChunkingStrategy, profile.MaxTokensPerChunk, profile.OverlapTokens, profile.Enrichment, profile.Compilation);
     }
 }

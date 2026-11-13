@@ -57,6 +57,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("ExtraProperties");
 
+                    b.Property<long?>("InputTokenCount")
+                        .HasColumnType("bigint");
+
                     b.Property<bool>("IsStale")
                         .HasColumnType("bit");
 
@@ -66,6 +69,13 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.Property<int>("Level")
                         .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<long?>("OutputTokenCount")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("SourceHash")
                         .IsRequired()
@@ -84,7 +94,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "DocumentId", "TemplateName");
+                    b.HasIndex("DocumentId", "TemplateName")
+                        .IsUnique()
+                        .HasFilter("[DocumentId] IS NOT NULL");
 
                     b.HasIndex("TenantId", "DocumentTypeId", "TemplateName");
 
@@ -197,6 +209,10 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
 
                     b.Property<bool>("IsWithheld")
                         .HasColumnType("bit");
+
+                    b.Property<string>("Language")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
 
                     b.Property<DateTime?>("LastEventTime")
                         .HasColumnType("datetime2");
@@ -343,6 +359,9 @@ namespace Dignite.Vault.Extract.Host.Migrations.VaultIndex
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("ChunkingStrategy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Compilation")
                         .HasColumnType("int");
 
                     b.Property<string>("ConcurrencyStamp")

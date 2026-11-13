@@ -21,4 +21,10 @@ public static class IndexingConsts
 
     /// <summary>The document title Index keeps for citations; a longer one is cut.</summary>
     public const int MaxTitleLength = 256;
+
+    /// <summary>A BCP 47 tag as Extract stores it; a longer one is not kept.</summary>
+    public const int MaxLanguageLength = 16;
+
+    /// <summary>What a compilation says about itself (sections it could not summarize, levels it left out); cut beyond.</summary>
+    public const int MaxArtifactNoteLength = 1024;
 }

@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\".",
+  "version": 3,
+  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\". Version 3 (2026-11-13) adds two documents whose article headings carry no caption (\"第5条\" only), as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters. They are what outline navigation with section summaries is measured on.",
   "documents": [
     { "id": "lease-shibakoen", "type": "lease", "title": "建物賃貸借契約書(芝公園レジデンス 702)", "fields": { "物件": "芝公園レジデンス", "当事者": "山田太郎", "金額": "185,000 円" } },
     { "id": "lease-umeda", "type": "lease", "title": "事務所賃貸借契約書(梅田センタービル)", "fields": { "物件": "梅田センタービル", "当事者": "株式会社青空商事", "金額": "420,000 円" } },
@@ -22,7 +22,9 @@
     { "id": "quote-office-move", "type": "quote", "title": "御見積書 Q-2026-077(本社移転)", "fields": { "番号": "Q-2026-077", "当事者": "日本ムーブ株式会社", "金額": "1,650,000 円" } },
     { "id": "price-list-stationery", "type": "price-list", "title": "文具単価表(2026年度下期)", "fields": {}},
     { "id": "sales-report-q3", "type": "report", "title": "2026年度 第3四半期 営業報告", "fields": {}},
-    { "id": "expense-claim-1103", "type": "expense-claim", "title": "経費精算書(鈴木一郎 2026年11月3日)", "fields": {}}
+    { "id": "expense-claim-1103", "type": "expense-claim", "title": "経費精算書(鈴木一郎 2026年11月3日)", "fields": {}},
+    { "id": "outsourcing-basic-terms", "type": "service-contract", "title": "業務委託基本契約書(ミナト精機)", "fields": { "業務": "システム開発業務", "当事者": "株式会社ミナト精機", "金額": "個別契約で定める額" } },
+    { "id": "safety-rules", "type": "regulation", "title": "安全衛生管理規程", "fields": { "名称": "安全衛生管理規程" } }
   ],
   "fieldTemplates": {
     "lease": [ "{物件}の賃貸借契約書", "{当事者}との賃貸借契約", "月額賃料 {金額} の契約" ],
@@ -103,6 +105,21 @@
     { "query": "福岡支店の欠員はいつ採用する", "document": "sales-report-q3", "heading": "課題", "language": "ja", "source": "question" },
     { "query": "大阪出張の宿泊費はいくら", "document": "expense-claim-1103", "heading": "明細", "language": "ja", "source": "table" },
     { "query": "顧客との会食にいくら使った", "document": "expense-claim-1103", "heading": "明細", "language": "ja", "source": "table" },
-    { "query": "How much was the Shinkansen round trip to Osaka?", "document": "expense-claim-1103", "heading": "明細", "language": "en", "source": "table" }
+    { "query": "How much was the Shinkansen round trip to Osaka?", "document": "expense-claim-1103", "heading": "明細", "language": "en", "source": "table" },
+    { "query": "再委託するには何が必要か", "document": "outsourcing-basic-terms", "heading": "第5条", "language": "ja" },
+    { "query": "成果物の著作権はいつ甲に移るか", "document": "outsourcing-basic-terms", "heading": "第8条", "language": "ja" },
+    { "query": "検査の期限を過ぎて甲が何も言わなかったらどうなる", "document": "outsourcing-basic-terms", "heading": "第3条", "language": "ja" },
+    { "query": "損害賠償の上限はいくら", "document": "outsourcing-basic-terms", "heading": "第10条", "language": "ja" },
+    { "query": "基本契約はいつまで有効で、自動更新されるか", "document": "outsourcing-basic-terms", "heading": "第13条", "language": "ja" },
+    { "query": "個人情報が漏れたときに乙がすべきこと", "document": "outsourcing-basic-terms", "heading": "第7条", "language": "ja" },
+    { "query": "个别合同什么时候成立", "document": "outsourcing-basic-terms", "heading": "第2条", "language": "zh" },
+    { "query": "Which court handles disputes under the master agreement?", "document": "outsourcing-basic-terms", "heading": "第15条", "language": "en" },
+    { "query": "高所作業で必要な安全対策は", "document": "safety-rules", "heading": "第6条", "language": "ja" },
+    { "query": "深夜業の従業員の健康診断の頻度は", "document": "safety-rules", "heading": "第8条", "language": "ja" },
+    { "query": "ストレスチェックの結果は会社に伝わるか", "document": "safety-rules", "heading": "第10条", "language": "ja" },
+    { "query": "安全衛生委員会はどのくらいの頻度で開かれるか", "document": "safety-rules", "heading": "第4条", "language": "ja" },
+    { "query": "仕事中にけがをしたら誰に報告する", "document": "safety-rules", "heading": "第7条", "language": "ja" },
+    { "query": "长时间加班的员工可以申请什么", "document": "safety-rules", "heading": "第9条", "language": "zh" },
+    { "query": "Where may employees smoke?", "document": "safety-rules", "heading": "第11条", "language": "en" }
   ]
 }

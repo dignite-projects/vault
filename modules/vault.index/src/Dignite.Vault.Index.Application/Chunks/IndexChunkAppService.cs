@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Dignite.Vault.Index.Compilation;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Dignite.Vault.Index.Search;
 using Volo.Abp;
+using Volo.Abp.BackgroundJobs;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
 
@@ -16,7 +18,8 @@ namespace Dignite.Vault.Index.Chunks;
 /// The chunk view. It shows chunk text, so a document is listed only when the caller's read scope reaches it, the rule
 /// search uses; a document in the recycle bin or withheld is still listed, as on the status page. Disabling is Index's
 /// own overlay: the mark goes on the chunk and on its vectors in the same transaction, and
-/// <see cref="Ingestion.IndexDocumentJob"/> carries it to the rebuilt chunk with the same text.
+/// <see cref="Ingestion.IndexDocumentJob"/> carries it to the rebuilt chunk with the same text. A changed mark changes
+/// what the document's summaries are built from, so it queues their compilation.
 /// </summary>
 public class IndexChunkAppService : VaultIndexAppService, IIndexChunkAppService
 {
@@ -24,17 +27,23 @@ public class IndexChunkAppService : VaultIndexAppService, IIndexChunkAppService
     private readonly IRepository<IndexedDocument, Guid> _documentRepository;
     private readonly IChunkSearchIndex _searchIndex;
     private readonly IndexReadScopeResolver _scopeResolver;
+    private readonly DocumentSummaryCompilerProvider _compilerProvider;
+    private readonly IBackgroundJobManager _backgroundJobManager;
 
     public IndexChunkAppService(
         IChunkRepository chunkRepository,
         IRepository<IndexedDocument, Guid> documentRepository,
         IChunkSearchIndex searchIndex,
-        IndexReadScopeResolver scopeResolver)
+        IndexReadScopeResolver scopeResolver,
+        DocumentSummaryCompilerProvider compilerProvider,
+        IBackgroundJobManager backgroundJobManager)
     {
         _chunkRepository = chunkRepository;
         _documentRepository = documentRepository;
         _searchIndex = searchIndex;
         _scopeResolver = scopeResolver;
+        _compilerProvider = compilerProvider;
+        _backgroundJobManager = backgroundJobManager;
     }
 
     public virtual async Task<IndexChunkListDto> GetListAsync(GetIndexChunkListInput input)
@@ -104,5 +113,13 @@ public class IndexChunkAppService : VaultIndexAppService, IIndexChunkAppService
         chunk.SetDisabled(isDisabled);
         await _chunkRepository.UpdateAsync(chunk);
         await _searchIndex.SetChunkDisabledAsync(chunk.Id, isDisabled);
+
+        if (_compilerProvider.IsAvailable)
+        {
+            // The job compiles only when the document's profile asks for summaries.
+            await _backgroundJobManager.EnqueueAsync(
+                new IndexCompileJobArgs { DocumentId = chunk.DocumentId, TenantId = CurrentTenant.Id },
+                BackgroundJobPriority.Low);
+        }
     }
 }

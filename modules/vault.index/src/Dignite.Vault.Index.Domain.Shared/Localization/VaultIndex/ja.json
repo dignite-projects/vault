@@ -156,7 +156,11 @@
     "Profiles:Keywords": "キーワード",
     "Profiles:Questions": "回答できる質問",
     "Profiles:EnrichmentHint": "LLM が各チャンクにキーワード(キーワード索引用)と、そのチャンクで答えられる質問(キーワード索引と埋め込み用)を付けます。10 チャンクごとに約 1 回モデルを呼び出します。",
-    "Profiles:EnrichmentUnavailable": "ホストに拡張用モデル(Vault:Index:EnrichmentModelId)が設定されていないため、拡張は有効にできません。",
-    "Profiles:EstimateEnrichment": "拡張では約 {0} 回モデルを呼び出します。"
+    "Profiles:ChatModelUnavailable": "ホストに Index のチャットモデル(Vault:Index:ChatModelId)が設定されていないため、拡張と要約は有効にできません。",
+    "Profiles:EstimateEnrichment": "拡張では約 {0} 回モデルを呼び出します。",
+    "Profiles:Compilation": "コンパイル",
+    "Profiles:Summaries": "節と文書の要約",
+    "Profiles:SummariesHint": "同期のたびに、LLM がアウトラインの各節を 1 文で要約し、文書全体の短い要約を書きます。アウトライン(REST と MCP)に表示されます。1 文書あたり数回モデルを呼び出します。",
+    "Profiles:EstimateSummaries": "{0} 件の文書で要約をコンパイルします。"
   }
 }

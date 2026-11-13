@@ -17,13 +17,15 @@ import {
   estimateText,
   formError,
   formFor,
+  hasSummaries,
   resetInput,
+  summaryText,
   toInput,
 } from './index-profiles.view';
 
 /**
- * The index profile page: how each document type is chunked, with the rebuild a change would cause shown before it
- * is saved. Saving or resetting only queues work; the affected documents are re-chunked and re-embedded in the
+ * The index profile page: how each document type is chunked, enriched and compiled, with the rebuild a change would
+ * cause shown before it is saved. Saving or resetting only queues work; the affected documents are re-chunked and re-embedded in the
  * background at low priority. The route requires the profiles permission; the server checks it on every call.
  */
 @Component({
@@ -42,9 +44,10 @@ export class IndexProfilesComponent implements OnInit {
   readonly minTokens = MIN_CHUNK_TOKENS;
   readonly maxTokens = MAX_CHUNK_TOKENS;
   readonly enrichmentKeys = enrichmentKeys;
+  readonly hasSummaries = hasSummaries;
 
   rows = signal<IndexProfileDto[]>([]);
-  enrichmentAvailable = signal(false);
+  chatModelAvailable = signal(false);
   loading = signal(true);
   editing = signal<IndexProfileDto | null>(null);
   form = signal<ProfileForm | null>(null);
@@ -64,6 +67,10 @@ export class IndexProfilesComponent implements OnInit {
   readonly enrichmentMessage = computed(() => {
     const estimate = this.estimate();
     return estimate ? enrichmentCallText(estimate) : null;
+  });
+  readonly summaryMessage = computed(() => {
+    const estimate = this.estimate();
+    return estimate ? summaryText(estimate) : null;
   });
 
   private backdropPressed = false;
@@ -182,7 +189,7 @@ export class IndexProfilesComponent implements OnInit {
       .subscribe({
         next: result => {
           this.rows.set(result.items ?? []);
-          this.enrichmentAvailable.set(result.enrichmentAvailable ?? false);
+          this.chatModelAvailable.set(result.chatModelAvailable ?? false);
           this.loading.set(false);
         },
         error: () => this.loading.set(false),

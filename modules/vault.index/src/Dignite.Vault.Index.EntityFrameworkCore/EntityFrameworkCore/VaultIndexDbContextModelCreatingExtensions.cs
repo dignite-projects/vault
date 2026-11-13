@@ -45,6 +45,7 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.ContentHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
             b.Property(x => x.ProfileStamp).HasMaxLength(IndexingConsts.MaxProfileStampLength);
             b.Property(x => x.Title).HasMaxLength(IndexingConsts.MaxTitleLength);
+            b.Property(x => x.Language).HasMaxLength(IndexingConsts.MaxLanguageLength);
             b.Ignore(x => x.IsHidden);
 
             b.HasIndex(x => new { x.TenantId, x.DocumentTypeId });
@@ -77,8 +78,12 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.TemplateName).IsRequired().HasMaxLength(IndexingConsts.MaxTemplateNameLength);
             b.Property(x => x.Content).IsRequired();
             b.Property(x => x.SourceHash).IsRequired().HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
+            b.Property(x => x.Note).HasMaxLength(IndexingConsts.MaxArtifactNoteLength);
 
-            b.HasIndex(x => new { x.TenantId, x.DocumentId, x.TemplateName });
+            // One artifact per document and template, so two compile jobs racing on a document cannot both insert. The
+            // document id is unique across tenants, so TenantId stays off the index, and EF's IS NOT NULL filter on
+            // DocumentId leaves type-level artifacts out of it.
+            b.HasIndex(x => new { x.DocumentId, x.TemplateName }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.DocumentTypeId, x.TemplateName });
         });
 

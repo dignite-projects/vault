@@ -126,7 +126,7 @@ public class Enrichment_Tests : VaultIndexTestBase<VaultIndexEnrichmentTestModul
         await IndexAsync();
         var profiles = GetRequiredService<IIndexProfileAppService>();
 
-        (await profiles.GetListAsync()).EnrichmentAvailable.ShouldBeTrue();
+        (await profiles.GetListAsync()).ChatModelAvailable.ShouldBeTrue();
         var estimate = await profiles.GetRebuildEstimateAsync(new IndexProfileInput { DocumentTypeId = LeaseType, Enrichment = IndexEnrichment.Keywords });
 
         estimate.DocumentCount.ShouldBe(1);
@@ -177,6 +177,6 @@ public class VaultIndexEnrichmentTestModule : AbpModule
     {
         var model = new ScriptedEnrichmentChatClient();
         context.Services.AddSingleton(model);
-        context.Services.AddKeyedSingleton<IChatClient>(VaultIndexConsts.EnrichmentChatClientKey, model);
+        context.Services.AddKeyedSingleton<IChatClient>(VaultIndexConsts.ChatClientKey, model);
     }
 }

@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
+using Dignite.Vault.Index.Ai;
 using Dignite.Vault.Index.Indexing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DataIngestion;
@@ -59,24 +59,6 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
     private const string ContentInstruction =
         " Return only what the passage supports; for a passage with no content, return empty lists.";
 
-    /// <summary>
-    /// The language to write in, named from this fixed table by the document's language tag (from Extract), so the
-    /// instructions stay constants. Without a known tag the model is asked for the passage's language, which a
-    /// model may misread: kanji-heavy Japanese has come back as Chinese questions.
-    /// </summary>
-    private static readonly IReadOnlyDictionary<string, string> LanguageNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-    {
-        ["ja"] = "Japanese",
-        ["zh"] = "Chinese",
-        ["zh-Hans"] = "Simplified Chinese",
-        ["zh-CN"] = "Simplified Chinese",
-        ["zh-Hant"] = "Traditional Chinese",
-        ["zh-TW"] = "Traditional Chinese",
-        ["en"] = "English",
-        ["ko"] = "Korean"
-    };
-
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
 
     private readonly IChatClient _chatClient;
@@ -90,26 +72,7 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
         _chatClient = chatClient;
         _enrichment = enrichment;
         _logger = logger;
-        _languageInstruction = LanguageName(language) is { } name
-            ? ". Write them in " + name + ", the language of the document, whatever script a passage seems to use."
-            : ". Write them in the language of the passage.";
-    }
-
-    private static string? LanguageName(string? tag)
-    {
-        if (string.IsNullOrWhiteSpace(tag))
-        {
-            return null;
-        }
-
-        var trimmed = tag.Trim();
-        if (LanguageNames.TryGetValue(trimmed, out var name))
-        {
-            return name;
-        }
-
-        var dash = trimmed.IndexOf('-');
-        return dash > 0 && LanguageNames.TryGetValue(trimmed[..dash], out name) ? name : null;
+        _languageInstruction = "." + PromptLanguage.Instruction(language, "them");
     }
 
     public long InputTokenCount { get; private set; }
@@ -169,7 +132,7 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
             InputTokenCount += response.Usage?.InputTokenCount ?? 0;
             OutputTokenCount += response.Usage?.OutputTokenCount ?? 0;
 
-            var answer = Read(response.Text);
+            var answer = LlmJson.Read<EnrichmentAnswer>(response.Text);
             var enriched = 0;
             foreach (var item in answer?.Chunks ?? [])
             {
@@ -229,19 +192,6 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
             new(ChatRole.System, Instructions + string.Join("; and ", asks) + _languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule),
             new(ChatRole.User, user.ToString())
         ];
-    }
-
-    private static EnrichmentAnswer? Read(string text)
-    {
-        var json = text.Trim();
-        if (json.StartsWith("```", StringComparison.Ordinal))
-        {
-            var start = json.IndexOf('{');
-            var end = json.LastIndexOf('}');
-            json = start >= 0 && end > start ? json[start..(end + 1)] : json;
-        }
-
-        return JsonSerializer.Deserialize<EnrichmentAnswer>(json, JsonOptions);
     }
 
     /// <summary>One line each, trimmed, without duplicates, within the count and length caps.</summary>
