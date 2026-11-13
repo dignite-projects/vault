@@ -106,6 +106,28 @@ public class Summaries_Tests : VaultIndexTestBase<VaultIndexSummaryTestModule>
     }
 
     [Fact]
+    public async Task Summaries_of_an_older_template_are_not_served()
+    {
+        await SetProfileAsync(IndexCompilation.Summaries);
+        await IndexAsync(Lease);
+        await CompileAsync();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var artifacts = GetRequiredService<IRepository<Artifact, Guid>>();
+            var artifact = await artifacts.SingleAsync(a => a.DocumentId == LeaseDoc);
+            var old = DocumentSummaries.FromJson(artifact.Content)!;
+            old.Version = DocumentSummaries.CurrentVersion - 1;
+            artifact.Recompile(old.ToJson(), artifact.SourceHash, null, null, null);
+            await artifacts.UpdateAsync(artifact);
+        });
+
+        var outline = await OutlineAsync();
+        outline.DocumentSummary.ShouldBeNull();
+        outline.Nodes.ShouldAllBe(n => n.Summary == null);
+    }
+
+    [Fact]
     public async Task An_unchanged_document_is_not_compiled_again()
     {
         await SetProfileAsync(IndexCompilation.Summaries);

@@ -73,7 +73,7 @@ Tables written as HTML, as Azure Document Intelligence writes every table (merge
 
 **Enrichment** has an LLM add to each chunk a few keywords, which go into the keyword index, and the questions it answers, which go into the keyword index and into what is embedded. Neither appears in what search returns. It is off by default: it costs a model call per 10 chunks, and with a rerank model it changed nothing on the evaluation set (below). It needs the [Index chat model](../configuration/ai-provider.md#index-chat-model-vaultindex); without one the switches are disabled, and a profile saved with enrichment rebuilds nothing until a model is added.
 
-**Section and document summaries** have an LLM write one sentence for each section of the [outline](../egress/index-search.md#outline) and a short summary of the whole document. They are built bottom-up: each section from its own text and its subsections' summaries, the document from the text before its first heading and its top sections' summaries. A section too long for one call is summarized in parts first. Above 300 sections, the deepest levels are summarized only within their parents. They are compiled by their own job after each sync, so the chunks serve first, and are stored as an artifact of the document. The outline shows them only while they match the document's chunks: a re-chunk, a disabled chunk or a language change hides them until the next compilation. Turning them on and saving compiles them for the type's documents in the background. Turning them off removes them as the rebuild reaches each document. They need the same chat model as enrichment.
+**Section and document summaries** have an LLM write one sentence for each section of the [outline](../egress/index-search.md#outline) and a short summary of the whole document. They are built bottom-up: each section from its own text and its subsections' summaries, the document from the text before its first heading and its top sections' summaries (or, when everything sits under one top heading, from that heading's text and its subsections' summaries). A summary that states a number its text does not is not kept, and nothing is sent with only a heading or a title to go on. A section too long for one call is summarized in parts first. Above 300 sections, the deepest levels are summarized only within their parents. They are compiled by their own job after each sync, so the chunks serve first, and are stored as an artifact of the document. The outline shows them only while they match the document's chunks: a re-chunk, a disabled chunk or a language change hides them until the next compilation. Turning them on and saving compiles them for the type's documents in the background. Turning them off removes them as the rebuild reaches each document. They need the same chat model as enrichment.
 
 Editing a row shows, before anything is saved, what the change would rebuild: the indexed documents whose chunks it changes, their chunks today, and the embedding tokens their last successful indexing took, which is about what re-embedding them costs; with enrichment on, also the model calls it would make; with summaries on, the documents whose summaries would be compiled and about the model calls that takes (one per eight chunks and two more per document, within one call of what the evaluation set took). Saving queues the rebuild in the background at low priority: the affected documents are re-chunked and re-embedded one by one, through the same queue and retry cap as an event, and a document whose settings did not change is skipped. **Use default** removes a type's own profile, with the same estimate first.
 
@@ -218,6 +218,30 @@ The agent model is `VAULT_INDEX_EVAL_AGENT_MODEL`, and the chat model compiles t
 
 - **A strong agent already gathers across documents.** DeepSeek-V3 answered most questions completely with about three tool calls. What it missed were reading errors: which party is the outsourcing side, the issuer of an invoice confused with its addressee.
 - **A weak agent fails differently.** The small model often answered without looking, or invented documents. Summaries and the catalog helped it a little.
-- **Summaries can mislead.** With summaries the strong agent named a wrong issuer for two invoices, where reading them got it right. The section summaries were correct. The document summaries of documents with a single top heading were built from that heading's one-sentence summary, and in one case from nothing but the title, and the compile model filled them with dates and payment methods the document does not state.
+- **Summaries can mislead.** With summaries the strong agent named a wrong issuer for two invoices, where reading them got it right. The section summaries were correct, but the document summaries of documents with a single top heading were expanded from that heading's one-sentence summary, once from the title alone, and stated dates and payment methods the document does not have. That is fixed (below).
 
 So no server-side deep retrieval tier, type wiki or timeline is planned (see the design record).
+
+### Summary faithfulness (2026-11-13)
+
+What changed in compiling (template version 2):
+
+- A document summary is written from the text and subsections' summaries under the document's only top heading, not from that heading's one sentence.
+- No item is sent with only a heading or a title.
+- A summary stating a number its text does not state is not kept. The check reads the values whatever their spelling: separators, full-width digits, 万 units, kanji numerals, afternoon hours. The document summary is asked for once more first.
+- The prompt asks never to say what the text leaves out.
+
+The outline and the catalog serve only version 2. `Compare_navigation` now also counts what can be checked without a judge, against each whole document (`summaries-v1-2026-11-13.md` and `summaries-v2-2026-11-13.md` next to the set print every document summary):
+
+| | Version 1 | Version 2 |
+| --- | ---: | ---: |
+| Document summaries stating a number the document does not | 1 of 23 | 0 of 23 |
+| Document summaries saying what the text lacks | 2 | 0 |
+| Section summaries written | 156 of 156 | 153 of 156 |
+| Navigation with summaries, precise | 98% | 92% |
+| Compile tokens per document, input / output | 1,752 / 475 | 1,958 / 545 |
+
+- **The document summaries now carry the facts.** Version 1 said of the cloud invoice that its amounts and payment terms "are not stated". Version 2 names the issuer, the amounts and the card payment date.
+- **Navigation stays within run-to-run variance.** Five runs ranged from 92% to 99% with summaries and from 77% to 81% with titles only.
+- **Agent results stay within variance too.** With DeepSeek-V3 as the agent (`agents-deepseek-v3-summaries-v2-2026-11-13.md`), the summaries and catalog toolset completed 19 of 26 answers. The payment-dates question was answered in 2 calls each time, where the titles-only toolset took 5 and 10.
+- **The remaining misses are readings.** The agent takes an invoice's addressee (御中) for its issuer.

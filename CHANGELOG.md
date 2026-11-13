@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   summaries, and a short summary of the whole document. The outline returns them (`documentSummary`, and `summary` on
   each node, over REST and `vault_index_outline`, where they are wrapped as untrusted text) only while they were built
   from exactly the chunks it shows; they are compiled by a low-priority job after each sync and are stored as an
-  artifact of the document. Needs Index's chat model; the rebuild estimate counts the documents to compile. Index
+  artifact of the document. A summary that states a number its text does not is not kept, and a document whose text
+  sits under one top heading is summarized from that heading's text and subsections, not from its one sentence. Needs Index's chat model; the rebuild estimate counts the documents to compile. Index
   migration `Summaries` (`Compilation` on `VaultIndexProfiles`, `Language` on `VaultIndexedDocuments`, token counts and
   a note on `VaultIndexArtifacts`, and one artifact per document and template). On the evaluation set an LLM picking
   the answering section from the outline was right 99% of the time with summaries and 76% with titles alone (93%

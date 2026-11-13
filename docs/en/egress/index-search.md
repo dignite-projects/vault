@@ -80,7 +80,7 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
 
 The document's heading tree in document order, at most 500 nodes (`truncated`, `totalNodeCount`). Each node has a `pointer` (`node:{documentId}/{path}`, the 1-based position in the tree, such as `1.2`), its `title`, `depth`, Markdown `level` and `chunkCount`. A document without headings has no nodes; read its chunks from search hits.
 
-When the document's type compiles summaries ([Index Profiles](../deployment/index-status.md#index-profiles)), each node also has a one-sentence `summary` of the section and its subsections, and `documentSummary` summarizes the whole document. An LLM writes them from the document's text after each sync, so they can lag a change by a few seconds to minutes, and they are `null` until then: the outline serves summaries only while they were built from exactly the chunks it shows. They help an agent pick the section to read; a detail it relies on should come from `read`. MCP wraps both in `<field>` tags, like titles.
+When the document's type compiles summaries ([Index Profiles](../deployment/index-status.md#index-profiles)), each node also has a one-sentence `summary` of the section and its subsections, and `documentSummary` summarizes the whole document. An LLM writes them from the document's text after each sync, so they can lag a change by a few seconds to minutes, and they are `null` until then: the outline serves summaries only while they were built from exactly the chunks it shows. A summary is kept only if every number it states is in its text, so a section can lack one. They help an agent pick the section to read; a detail it relies on should come from `read`. MCP wraps both in `<field>` tags, like titles.
 
 ## Catalog
 

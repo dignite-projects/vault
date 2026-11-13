@@ -218,6 +218,64 @@ public class DocumentSummaryCompiler_Tests
         result.Summaries.Document.ShouldBe("the whole document");
     }
 
+    /// <summary># R with its own text, then ## X and ## Y: everything under one top heading, nothing before it.</summary>
+    private static readonly List<CompileChunk> SingleRoot =
+    [
+        new(0, "# R", "intro of R"),
+        new(1, "# R ## X", "X text"),
+        new(2, "# R ## Y", "Y text")
+    ];
+
+    [Fact]
+    public async Task A_document_under_one_heading_is_summarized_from_its_text_and_subsections_not_from_one_sentence()
+    {
+        var model = new ScriptedSummaryChatClient { FailOnCalls = [2] };
+
+        var result = await Compiler(model).CompileAsync("Contract", SingleRoot);
+
+        // X and Y, then R (which fails), then the document, which does not need R's sentence.
+        model.Calls.Count.ShouldBe(3);
+        model.Calls[2].User.ShouldContain(PromptBoundary.WrapDocument("intro of R"));
+        model.Calls[2].User.ShouldContain(PromptBoundary.WrapDocument("X: about R > X\nY: about R > Y"));
+        model.Calls[2].User.ShouldNotContain("R: ");
+        result.Summaries.Document.ShouldBe("the whole document");
+    }
+
+    [Fact]
+    public async Task Nothing_is_sent_with_only_a_heading_or_a_title_to_go_on()
+    {
+        var model = new ScriptedSummaryChatClient { FailOnCalls = [1] };
+        List<CompileChunk> chunks = [new(0, "# R ## X", "X text"), new(1, "# R ## Y", "Y text")];
+
+        var result = await Compiler(model).CompileAsync("Contract", chunks);
+
+        // The leaves failed; R has no text of its own, and the document would have only its title.
+        model.Calls.Count.ShouldBe(1);
+        result.Summaries.Document.ShouldBeNull();
+        result.Note.ShouldBe("3 of 3 sections and parts could not be summarized. The document summary could not be written.");
+    }
+
+    [Fact]
+    public async Task A_summary_stating_a_number_its_text_does_not_is_left_out()
+    {
+        var model = new ScriptedSummaryChatClient
+        {
+            Section = (headings, _) => JsonSerializer.Serialize(new {
+                summaries = headings.Select((h, i) => new { index = i, summary = h == "A > A1" ? "A1 is due on 2026-09-01" : "about " + h })
+            }),
+            Document = call => call == 3 ? "Paid 59,000 yen in 2026." : "the whole document"
+        };
+
+        var result = await Compiler(model).CompileAsync("Contract", Contract);
+
+        result.Summaries.Sections.ContainsKey("1.1").ShouldBeFalse();
+        result.Summaries.Sections["1.2"].ShouldBe("about A > A2");
+        // The document's first answer invents an amount; the second is kept.
+        model.Calls.Count.ShouldBe(4);
+        result.Summaries.Document.ShouldBe("the whole document");
+        result.Note.ShouldBe("1 summaries were left out: they stated numbers their text does not.");
+    }
+
     [Fact]
     public void The_source_hash_follows_language_positions_headings_and_texts()
     {
@@ -255,6 +313,9 @@ public sealed class ScriptedSummaryChatClient : IChatClient
     /// <summary>Overrides the answer to a section call: the items' headings (null for a part) and the call number.</summary>
     public Func<List<string?>, int, string>? Section { get; set; }
 
+    /// <summary>Overrides the answer to a document call: the call number in, the summary out.</summary>
+    public Func<int, string>? Document { get; set; }
+
     /// <summary>Runs once inside the next call, where a compilation spends its time: the place a concurrent event lands.</summary>
     public Func<Task>? DuringCall { get; set; }
 
@@ -280,7 +341,7 @@ public sealed class ScriptedSummaryChatClient : IChatClient
         }
         else if (Calls[^1].System.StartsWith("You summarize a business document.", StringComparison.Ordinal))
         {
-            text = JsonSerializer.Serialize(new { summary = "the whole document" });
+            text = JsonSerializer.Serialize(new { summary = Document?.Invoke(Calls.Count) ?? "the whole document" });
         }
         else
         {
