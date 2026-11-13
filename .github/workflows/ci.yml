@@ -1,14 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - '.github/*.png'
-      - '.github/ISSUE_TEMPLATE/**'
-      - 'docs/**'
-      - '.claude/**'
+  # A pull request is checked on its merge result, so a merge into main does not repeat the run. workflow_dispatch
+  # runs it on any branch by hand.
+  workflow_dispatch:
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -118,9 +113,21 @@ jobs:
       - name: Run HttpApi tests
         run: dotnet test modules/vault.extract/test/Dignite.Vault.Extract.HttpApi.Tests/Dignite.Vault.Extract.HttpApi.Tests.csproj --no-build --configuration Release --verbosity normal
 
+      # The image build only matters when what it copies or restores changes: a Dockerfile, the project graph, the
+      # package set. Code changes are built and tested above. A pull request runs on the merge result, so main is not
+      # built again after a merge; run the workflow by hand when a full pass on main is needed.
+      - name: Detect image inputs
+        id: images
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+          if git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -qE '(^|/)Dockerfile$|\.csproj$|(^|/)Directory\.Build\.props$|^Directory\.Packages\.props$|^common\.props$|^NuGet\.Config$|\.slnx$|^\.github/workflows/ci\.yml$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build Docker image
         run: docker build -f Dockerfile -t vault-extract-api:${{ github.sha }} --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN .
-        if: github.event_name == 'push'
+        if: steps.images.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
           DOCKER_BUILDKIT: 1
           GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
@@ -205,7 +212,19 @@ jobs:
       # Verifies the frontend .local image still builds (COPY paths do not regress). The ng build host
       # step above has already produced dist/host/browser; this step only packages and does not push.
       # Build context = angular/.
+      # The image build only matters when what it copies or restores changes: a Dockerfile, the project graph, the
+      # package set. Code changes are built and tested above. A pull request runs on the merge result, so main is not
+      # built again after a merge; run the workflow by hand when a full pass on main is needed.
+      - name: Detect image inputs
+        id: images
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+          if git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -qE '^angular/(Dockerfile\.local|nginx\.conf|angular\.json|package\.json)$|^package(-lock)?\.json$|^\.github/workflows/ci\.yml$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build Angular Docker image
         run: docker build -f Dockerfile.local -t vault-extract-web:${{ github.sha }} .
         working-directory: angular
-        if: github.event_name == 'push'
+        if: steps.images.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
