@@ -82,6 +82,18 @@
     "IndexStatus:Total": "共 {0} 份",
     "IndexStatus:InRetrieval": "不在检索中",
     "VaultIndex:FieldFilterTooBroad": "字段条件匹配的文档超过 {Max} 份,请再加条件缩小范围。",
+    "VaultIndex:ChatModelUnavailable": "宿主没有配置 Vault Index 的对话模型(Vault:Index:ChatModelId),无法编译摘要。",
+    "VaultIndex:SummariesOff": "这份文档的类型没有开启摘要编译。请先在索引配置里开启。",
+    "Enum:IndexArtifactState.0": "无",
+    "Enum:IndexArtifactState.1": "待编译",
+    "Enum:IndexArtifactState.2": "最新",
+    "Enum:IndexArtifactState.3": "已过期",
+    "IndexStatus:Summaries": "摘要",
+    "IndexStatus:SummaryNotes": "其中 {0} 份有备注",
+    "IndexStatus:Recompile": "重编",
+    "IndexStatus:RecompileConfirm": "即使摘要是最新的,也按当前分块重新编译这份文档的摘要?这会调用模型。",
+    "IndexStatus:RecompileQueued": "已排入编译。",
+    "IndexStatus:SummariesCompiled": "编译于 {0};LLM token {1} / {2}",
     "SearchTest:Query": "查询",
     "SearchTest:DocumentTypeCode": "文档类型编码",
     "SearchTest:AllTypes": "全部可读类型",
@@ -161,6 +173,6 @@
     "Profiles:Compilation": "编译",
     "Profiles:Summaries": "节摘要与文档摘要",
     "Profiles:SummariesHint": "每次同步后,由 LLM 给大纲的每一节写一句话摘要,并写一段文档摘要。大纲(REST 和 MCP)会带上它们。每份文档调用模型几次。",
-    "Profiles:EstimateSummaries": "将为 {0} 份文档编译摘要。"
+    "Profiles:EstimateSummaries": "将为 {0} 份文档编译摘要,约调用模型 {1} 次。"
   }
 }

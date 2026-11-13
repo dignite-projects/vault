@@ -36,4 +36,5 @@ export interface IndexRebuildEstimateDto {
   documentsWithoutTokenCount?: number;
   enrichmentCallCount?: number;
   summaryDocumentCount?: number;
+  summaryCallCount?: number;
 }

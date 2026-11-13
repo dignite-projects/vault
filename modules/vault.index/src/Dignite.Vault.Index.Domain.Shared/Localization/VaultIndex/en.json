@@ -82,6 +82,18 @@
     "IndexStatus:Total": "{0} documents",
     "IndexStatus:InRetrieval": "Out of retrieval",
     "VaultIndex:FieldFilterTooBroad": "The field conditions match more than {Max} documents. Add a condition to narrow them.",
+    "VaultIndex:ChatModelUnavailable": "No chat model is configured for Vault Index (Vault:Index:ChatModelId), so summaries cannot be compiled.",
+    "VaultIndex:SummariesOff": "This document's type does not compile summaries. Switch them on in its index profile first.",
+    "Enum:IndexArtifactState.0": "None",
+    "Enum:IndexArtifactState.1": "Pending",
+    "Enum:IndexArtifactState.2": "Current",
+    "Enum:IndexArtifactState.3": "Out of date",
+    "IndexStatus:Summaries": "Summaries",
+    "IndexStatus:SummaryNotes": "{0} with a note",
+    "IndexStatus:Recompile": "Recompile",
+    "IndexStatus:RecompileConfirm": "Compile this document's summaries again from its chunks, even if they are current? This calls the model.",
+    "IndexStatus:RecompileQueued": "Queued for compiling.",
+    "IndexStatus:SummariesCompiled": "Compiled {0}; {1} / {2} LLM tokens",
     "SearchTest:Query": "Query",
     "SearchTest:DocumentTypeCode": "Document type code",
     "SearchTest:AllTypes": "All readable types",
@@ -161,6 +173,6 @@
     "Profiles:Compilation": "Compilation",
     "Profiles:Summaries": "Section and document summaries",
     "Profiles:SummariesHint": "An LLM writes one sentence for each section of the outline and a short summary of the document, after each sync. The outline (REST and MCP) shows them. A few model calls per document.",
-    "Profiles:EstimateSummaries": "Summaries are compiled for {0} documents."
+    "Profiles:EstimateSummaries": "Summaries are compiled for {0} documents, about {1} model calls."
   }
 }

@@ -25,3 +25,4 @@ export * from './lib/proxy/indexing/index-run-trigger.enum';
 export * from './lib/proxy/indexing/chunking-strategy.enum';
 export * from './lib/proxy/indexing/index-enrichment.enum';
 export * from './lib/proxy/indexing/index-compilation.enum';
+export * from './lib/proxy/indexing/index-artifact-state.enum';

@@ -1,6 +1,7 @@
 import { IndexedDocumentStatus } from '../proxy/indexing/indexed-document-status.enum';
 import { IndexRunStatus } from '../proxy/indexing/index-run-status.enum';
-import type { IndexStatusSummaryDto } from '../proxy/status/models';
+import { IndexArtifactState } from '../proxy/indexing/index-artifact-state.enum';
+import type { IndexStatusSummaryDto, IndexedDocumentStatusDto } from '../proxy/status/models';
 
 /** A warning the summary raises, as a localization key and its arguments. */
 export interface SummaryWarning {
@@ -44,6 +45,22 @@ export function documentStatusBadge(status: IndexedDocumentStatus | undefined): 
     default:
       return 'bg-secondary';
   }
+}
+
+export function summariesBadge(state: IndexArtifactState | undefined): string {
+  switch (state) {
+    case IndexArtifactState.Current:
+      return 'bg-success';
+    case IndexArtifactState.Outdated:
+      return 'bg-warning text-dark';
+    default:
+      return 'bg-secondary';
+  }
+}
+
+/** A recompile is offered where summaries exist or are due, and a model can compile them. */
+export function canRecompile(document: IndexedDocumentStatusDto, chatModelAvailable: boolean): boolean {
+  return chatModelAvailable && (document.summariesState ?? IndexArtifactState.None) !== IndexArtifactState.None;
 }
 
 export function runStatusBadge(status: IndexRunStatus | undefined): string {

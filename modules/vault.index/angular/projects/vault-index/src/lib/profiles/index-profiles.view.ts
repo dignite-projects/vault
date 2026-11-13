@@ -91,7 +91,12 @@ export function enrichmentCallText(estimate: IndexRebuildEstimateDto): { key: st
 /** The documents whose summaries saving would compile, as a localization key and its argument; <c>null</c> when none. */
 export function summaryText(estimate: IndexRebuildEstimateDto): { key: string; args: string[] } | null {
   const documents = estimate.summaryDocumentCount ?? 0;
-  return documents > 0 ? { key: 'VaultIndex::Profiles:EstimateSummaries', args: [documents.toLocaleString()] } : null;
+  return documents > 0
+    ? {
+        key: 'VaultIndex::Profiles:EstimateSummaries',
+        args: [documents.toLocaleString(), (estimate.summaryCallCount ?? 0).toLocaleString()],
+      }
+    : null;
 }
 
 export function hasSummaries(row: IndexProfileDto): boolean {

@@ -9,9 +9,10 @@ using Volo.Abp.Application.Services;
 namespace Dignite.Vault.Index.Status;
 
 /// <summary>
-/// The index status page: what is in the index, what failed and why, and a rebuild for one document. Needs
-/// <c>VaultIndex.Status</c>; the document list and runs are limited to the caller's Extract read scope, because they show
-/// titles. Rebuilding needs <c>VaultIndex.Status.Rebuild</c>.
+/// The index status page: what is in the index, what failed and why, where each document's summaries stand, and a
+/// rebuild or a recompile for one document. Needs <c>VaultIndex.Status</c>; the document list and runs are limited to
+/// the caller's Extract read scope, because they show titles. Rebuilding and recompiling need
+/// <c>VaultIndex.Status.Rebuild</c>.
 /// </summary>
 public interface IIndexStatusAppService : IApplicationService
 {
@@ -26,6 +27,12 @@ public interface IIndexStatusAppService : IApplicationService
 
     /// <summary>Queues the document to be indexed again from its current Extract text, even if nothing changed.</summary>
     Task RebuildAsync(Guid documentId);
+
+    /// <summary>
+    /// Queues the document's summaries to be compiled again from its chunks, even if they are current. Refused when
+    /// the host has no chat model or the document's type does not compile summaries.
+    /// </summary>
+    Task RecompileAsync(Guid documentId);
 }
 
 public class IndexStatusSummaryDto
@@ -71,6 +78,15 @@ public class IndexStatusSummaryDto
     public long? KeywordIndexPendingChanges { get; set; }
 
     public bool? KeywordIndexPopulating { get; set; }
+
+    /// <summary>The host has Index's chat model, which compiles summaries.</summary>
+    public bool ChatModelAvailable { get; set; }
+
+    /// <summary>Documents with compiled summaries, current or not.</summary>
+    public int SummaryDocumentCount { get; set; }
+
+    /// <summary>Of those, the ones whose last compilation left something out (see <see cref="IndexedDocumentStatusDto.SummariesNote"/>).</summary>
+    public int SummaryNoteCount { get; set; }
 }
 
 public class GetIndexedDocumentListInput : PagedAndSortedResultRequestDto
@@ -108,6 +124,19 @@ public class IndexedDocumentStatusDto
 
     /// <summary>The error of the latest run, when it failed.</summary>
     public string? LastError { get; set; }
+
+    /// <summary>Where the document's section and document summaries stand.</summary>
+    public IndexArtifactState SummariesState { get; set; }
+
+    /// <summary>When the summaries were last compiled.</summary>
+    public DateTime? SummariesCompiledTime { get; set; }
+
+    public long? SummariesInputTokenCount { get; set; }
+
+    public long? SummariesOutputTokenCount { get; set; }
+
+    /// <summary>What the last compilation left out or could not do, such as sections the model did not summarize.</summary>
+    public string? SummariesNote { get; set; }
 }
 
 public class IndexRunDto

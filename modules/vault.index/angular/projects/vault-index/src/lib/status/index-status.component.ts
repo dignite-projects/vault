@@ -10,14 +10,15 @@ import { IndexStatusService } from '../proxy/http-api/status/index-status.servic
 import { IndexedDocumentStatus, indexedDocumentStatusOptions } from '../proxy/indexing/indexed-document-status.enum';
 import type { IndexRunDto, IndexStatusSummaryDto, IndexedDocumentStatusDto } from '../proxy/status/models';
 import { INDEX_PERMISSIONS } from '../tokens';
-import { documentStatusBadge, runStatusBadge, summaryWarnings } from './index-status.view';
+import { IndexArtifactState } from '../proxy/indexing/index-artifact-state.enum';
+import { canRecompile, documentStatusBadge, runStatusBadge, summariesBadge, summaryWarnings } from './index-status.view';
 
 const PAGE_SIZE = 20;
 
 /**
- * The index status page: what is in the index and why something is not, and a rebuild for one document. The
- * server limits the document list to the caller's read scope and decides every permission; the page only hides
- * the rebuild button from a caller without it.
+ * The index status page: what is in the index and why something is not, where each document's summaries stand, and a
+ * rebuild or a recompile for one document. The server limits the document list to the caller's read scope and decides
+ * every permission; the page only hides the buttons from a caller without it.
  */
 @Component({
   selector: 'lib-index-status',
@@ -35,6 +36,8 @@ export class IndexStatusComponent implements OnInit {
   readonly statusOptions = indexedDocumentStatusOptions;
   readonly documentStatusBadge = documentStatusBadge;
   readonly runStatusBadge = runStatusBadge;
+  readonly summariesBadge = summariesBadge;
+  readonly noSummaries = IndexArtifactState.None;
 
   summary = signal<IndexStatusSummaryDto | null>(null);
   documents = signal<IndexedDocumentStatusDto[]>([]);
@@ -51,6 +54,7 @@ export class IndexStatusComponent implements OnInit {
     const summary = this.summary();
     return summary ? summaryWarnings(summary) : [];
   });
+  readonly chatModelAvailable = computed(() => this.summary()?.chatModelAvailable ?? false);
   readonly hasPrevious = computed(() => this.skip() > 0);
   readonly hasNext = computed(() => this.skip() + PAGE_SIZE < this.totalCount());
 
@@ -107,6 +111,24 @@ export class IndexStatusComponent implements OnInit {
       )
       .subscribe(() => {
         this.toaster.success('VaultIndex::IndexStatus:RebuildQueued');
+        this.refresh();
+      });
+  }
+
+  canRecompile(document: IndexedDocumentStatusDto): boolean {
+    return this.canRebuild && canRecompile(document, this.chatModelAvailable());
+  }
+
+  recompile(document: IndexedDocumentStatusDto): void {
+    this.confirmation
+      .warn('VaultIndex::IndexStatus:RecompileConfirm', 'VaultIndex::IndexStatus:Recompile')
+      .pipe(
+        filter(status => status === Confirmation.Status.confirm),
+        switchMap(() => this.service.recompile(document.documentId!)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(() => {
+        this.toaster.success('VaultIndex::IndexStatus:RecompileQueued');
         this.refresh();
       });
   }

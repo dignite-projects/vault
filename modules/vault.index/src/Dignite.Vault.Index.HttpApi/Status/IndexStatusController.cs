@@ -36,6 +36,12 @@ public class IndexStatusController : VaultIndexController, IIndexStatusAppServic
         return _statusAppService.GetRunsAsync(documentId);
     }
 
+    [HttpPost("documents/{documentId}/recompile")]
+    public virtual Task RecompileAsync(Guid documentId)
+    {
+        return _statusAppService.RecompileAsync(documentId);
+    }
+
     [HttpPost("documents/{documentId}/rebuild")]
     public virtual Task RebuildAsync(Guid documentId)
     {

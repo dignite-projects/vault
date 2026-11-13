@@ -82,6 +82,18 @@
     "IndexStatus:Total": "共 {0} 份",
     "IndexStatus:InRetrieval": "不在檢索中",
     "VaultIndex:FieldFilterTooBroad": "欄位條件符合的文件超過 {Max} 份,請再加條件縮小範圍。",
+    "VaultIndex:ChatModelUnavailable": "主機沒有設定 Vault Index 的對話模型(Vault:Index:ChatModelId),無法編譯摘要。",
+    "VaultIndex:SummariesOff": "這份文件的類型沒有開啟摘要編譯。請先在索引設定裡開啟。",
+    "Enum:IndexArtifactState.0": "無",
+    "Enum:IndexArtifactState.1": "待編譯",
+    "Enum:IndexArtifactState.2": "最新",
+    "Enum:IndexArtifactState.3": "已過期",
+    "IndexStatus:Summaries": "摘要",
+    "IndexStatus:SummaryNotes": "其中 {0} 份有備註",
+    "IndexStatus:Recompile": "重編",
+    "IndexStatus:RecompileConfirm": "即使摘要是最新的,也依目前分塊重新編譯這份文件的摘要?這會呼叫模型。",
+    "IndexStatus:RecompileQueued": "已排入編譯。",
+    "IndexStatus:SummariesCompiled": "編譯於 {0};LLM token {1} / {2}",
     "SearchTest:Query": "查詢",
     "SearchTest:DocumentTypeCode": "文件類型編碼",
     "SearchTest:AllTypes": "全部可讀類型",
@@ -161,6 +173,6 @@
     "Profiles:Compilation": "編譯",
     "Profiles:Summaries": "節摘要與文件摘要",
     "Profiles:SummariesHint": "每次同步後,由 LLM 給大綱的每一節寫一句話摘要,並寫一段文件摘要。大綱(REST 和 MCP)會帶上它們。每份文件呼叫模型幾次。",
-    "Profiles:EstimateSummaries": "將為 {0} 份文件編譯摘要。"
+    "Profiles:EstimateSummaries": "將為 {0} 份文件編譯摘要,約呼叫模型 {1} 次。"
   }
 }
