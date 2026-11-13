@@ -245,3 +245,22 @@ The outline and the catalog serve only version 2. `Compare_navigation` now also 
 - **Navigation stays within run-to-run variance.** Five runs ranged from 92% to 99% with summaries and from 77% to 81% with titles only.
 - **Agent results stay within variance too.** With DeepSeek-V3 as the agent (`agents-deepseek-v3-summaries-v2-2026-11-13.md`), the summaries and catalog toolset completed 19 of 26 answers. The payment-dates question was answered in 2 calls each time, where the titles-only toolset took 5 and 10.
 - **The remaining misses are readings.** The agent takes an invoice's addressee (御中) for its issuer.
+
+### Embedding models (2026-11-13)
+
+`Measure_retrieval_on_the_evaluation_set` was run once per embedding model on version 4 of the set (127 cases), each at 1024 dimensions, the shipped storage. The models returning more were shortened through `dimensions`. The rerank model `BAAI/bge-reranker-v2-m3` was configured throughout (`embeddings-2026-11-13.md` next to the set has the four reports). MRR@10:
+
+| Ranking | bge-m3 | Qwen3-Embedding-0.6B | Qwen3-Embedding-4B | Qwen3-Embedding-8B |
+| --- | ---: | ---: | ---: | ---: |
+| Passage, search with rerank | 0.959 | 0.965 | 0.965 | 0.965 |
+| Document, search with rerank | 0.980 | 0.984 | 0.984 | 0.984 |
+| Passage, fused legs | 0.838 | 0.832 | 0.854 | 0.862 |
+| Chinese and English questions, fused legs | 0.727 | 0.721 | 0.814 | 0.860 |
+| Questions a table answers, fused legs | 0.833 | 0.801 | 0.917 | 0.875 |
+| Japanese questions, vector leg | 0.938 | 0.904 | 0.934 | 0.910 |
+
+- **With the reranker the models are within one case of each other.**
+- **Without it, Qwen3-Embedding-4B and 8B help** questions asked in another language and questions a table answers.
+- **On Japanese questions bge-m3 is as good as any.**
+
+The recommendation is in [AI Provider](../configuration/ai-provider.md#embedding-model-index).
