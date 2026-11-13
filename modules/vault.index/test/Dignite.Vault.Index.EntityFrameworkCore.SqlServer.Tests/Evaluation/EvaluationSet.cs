@@ -26,6 +26,9 @@ public sealed class EvaluationSet
 
     public List<EvaluationQuestion> Questions { get; init; } = new();
 
+    /// <summary>Questions only several documents answer, for the agent comparison (version 4).</summary>
+    public List<EvaluationCrossQuestion> CrossQuestions { get; init; } = new();
+
     public static EvaluationSet Load(string directory)
     {
         var json = File.ReadAllText(Path.Combine(directory, "evaluation-set.json"));
@@ -91,6 +94,22 @@ public sealed class EvaluationQuestion
 
     /// <summary><c>table</c> for a question whose answer is in a table; a written question otherwise.</summary>
     public string? Source { get; init; }
+}
+
+/// <summary>
+/// A question several documents answer. Each fact is a list of spellings, any one of which the answer must contain
+/// after normalization (NFKC, no whitespace or commas, lower case).
+/// </summary>
+public sealed class EvaluationCrossQuestion
+{
+    public string Query { get; init; } = default!;
+
+    public string Language { get; init; } = "ja";
+
+    public List<List<string>> Facts { get; init; } = new();
+
+    /// <summary>The documents the answer draws on, for reading the report; not scored.</summary>
+    public List<string> Documents { get; init; } = new();
 }
 
 /// <param name="Heading">Part of the expected chunk's heading path; <c>null</c> when any chunk of the document will do.</param>

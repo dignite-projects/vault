@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\". Version 3 (2026-11-13) adds two documents whose article headings carry no caption (\"第5条\" only), as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters. They are what outline navigation with section summaries is measured on.",
+  "version": 4,
+  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\". Version 3 (2026-11-13) adds two documents whose article headings carry no caption (\"第5条\" only), as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters. They are what outline navigation with section summaries is measured on. Version 4 (2026-11-13) adds crossQuestions: questions only several documents answer (a listing with a condition, a comparison, a total, a timeline, a link between documents, a whole type), each with the facts its answer must contain, any one spelling of each fact sufficing. Every company named in the corpus is fictional; the company asking is 株式会社ディグナイト.",
   "documents": [
     { "id": "lease-shibakoen", "type": "lease", "title": "建物賃貸借契約書(芝公園レジデンス 702)", "fields": { "物件": "芝公園レジデンス", "当事者": "山田太郎", "金額": "185,000 円" } },
     { "id": "lease-umeda", "type": "lease", "title": "事務所賃貸借契約書(梅田センタービル)", "fields": { "物件": "梅田センタービル", "当事者": "株式会社青空商事", "金額": "420,000 円" } },
@@ -121,5 +121,20 @@
     { "query": "仕事中にけがをしたら誰に報告する", "document": "safety-rules", "heading": "第7条", "language": "ja" },
     { "query": "长时间加班的员工可以申请什么", "document": "safety-rules", "heading": "第9条", "language": "zh" },
     { "query": "Where may employees smoke?", "document": "safety-rules", "heading": "第11条", "language": "en" }
+  ],
+  "crossQuestions": [
+    { "query": "賃貸借契約のうち、犬や猫などのペットの飼育を禁止しているのはどれですか", "language": "ja", "facts": [["薬院"]], "documents": ["lease-fukuoka", "lease-shibakoen", "lease-umeda", "lease-sapporo"] },
+    { "query": "4 件の賃貸借契約のうち、月額賃料が最も高い物件と最も安い物件はどれで、それぞれいくらですか", "language": "ja", "facts": [["梅田"], ["420000", "42万"], ["薬院"], ["76000", "7万6"]], "documents": ["lease-fukuoka", "lease-shibakoen", "lease-umeda", "lease-sapporo"] },
+    { "query": "株式会社ディグナイトが賃借人になっている賃貸借契約はどれで、月額賃料はいくらですか", "language": "ja", "facts": [["札幌"], ["98000", "9万8"]], "documents": ["lease-fukuoka", "lease-shibakoen", "lease-umeda", "lease-sapporo"] },
+    { "query": "賃借人から中途解約するとき、予告期間が最も長い契約はどれで、何か月前までに予告が必要ですか", "language": "ja", "facts": [["梅田"], ["6か月", "六か月", "6ヶ月", "六ヶ月", "6カ月", "6箇月"]], "documents": ["lease-umeda", "lease-sapporo"] },
+    { "query": "2026年11月に支払う(口座振替・カード決済・振込期限が11月の)請求書を、日付と金額と一緒に挙げてください", "language": "ja", "facts": [["58960"], ["1234640"], ["33000"]], "documents": ["invoice-0451", "invoice-cloud", "invoice-0987", "invoice-1112"] },
+    { "query": "再委託や転貸に相手方の書面による承諾が必要と定めている契約をすべて挙げてください", "language": "ja", "facts": [["SALES-ONE", "システム保守"], ["ミナト精機", "業務委託基本契約"], ["薬院", "福岡", "住宅賃貸借"]], "documents": ["outsourcing-system", "outsourcing-basic-terms", "lease-fukuoka"] },
+    { "query": "損害賠償に上限を設けている契約はどれで、上限はそれぞれどう決まりますか", "language": "ja", "facts": [["12か月", "十二か月", "12ヶ月", "十二ヶ月", "12カ月", "1年間"], ["個別契約"]], "documents": ["outsourcing-system", "outsourcing-basic-terms"] },
+    { "query": "11月の会議で決まった事項のうち、2027年に実施または適用されるものを挙げてください", "language": "ja", "facts": [["虎ノ門", "本社移転"], ["パスワード"], ["採用"]], "documents": ["minutes-1101", "minutes-1105"] },
+    { "query": "本社移転の見積りの合計金額と、本社移転の時期を承認した会議の日付を教えてください", "language": "ja", "facts": [["1650000", "165万"], ["11月1日", "11/1", "2026-11-01"]], "documents": ["quote-office-move", "minutes-1101"] },
+    { "query": "請求書は何通あり、それぞれの発行元と合計金額はいくらですか", "language": "ja", "facts": [["東都電力"], ["みどり印刷"], ["ノーススター"], ["211200"]], "documents": ["invoice-0451", "invoice-0987", "invoice-1112", "invoice-cloud"] },
+    { "query": "我们公司作为委托方签订了哪些业务委托合同?每月委托费是多少?", "language": "zh", "facts": [["クリーンワークス", "清掃", "清扫"], ["120000", "12万"]], "documents": ["outsourcing-cleaning", "outsourcing-system", "outsourcing-basic-terms"] },
+    { "query": "哪些会议已经安排了12月的下一次会议?分别是哪一天?", "language": "zh", "facts": [["12月6日", "12/6"], ["12月3日", "12/3"]], "documents": ["minutes-1101", "minutes-1105"] },
+    { "query": "Which agreements renew automatically unless a party objects, and how far before expiry must the objection be made for each?", "language": "en", "facts": [["札幌", "Sapporo"], ["芝公園", "Shibakoen", "Shiba"], ["ミナト", "Minato", "master", "基本契約"]], "documents": ["lease-sapporo", "lease-shibakoen", "outsourcing-basic-terms"] }
   ]
 }
