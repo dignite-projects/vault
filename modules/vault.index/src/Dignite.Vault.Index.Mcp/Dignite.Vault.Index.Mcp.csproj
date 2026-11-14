@@ -3,7 +3,7 @@
   <Import Project="..\..\..\..\common.props" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>Dignite.Vault.Index</RootNamespace>
     <Description>MCP exit of Dignite Vault Index: the vault_index_search, vault_index_outline and vault_index_read tools, contributed to the application's shared MCP server (Dignite.Abp.AspNetCore.Mcp).</Description>

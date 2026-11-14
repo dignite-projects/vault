@@ -13,11 +13,11 @@ This guide runs the Vault Extract repository on a developer machine: the .NET ho
 
 | Requirement | Version | Notes |
 | --- | --- | --- |
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet) | 10.0 (`global.json` pins `10.0.100`, rolling forward to the latest feature band) | |
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet) | 11.0 (`global.json` pins `11.0.100`, rolling forward to the latest feature band) | |
 | [Node.js](https://nodejs.org) | `^22.22.3` or `^24.15.0` | Required by Angular 22 |
 | SQL Server | 2025 | LocalDB, Express and Developer all work; the committed `appsettings.json` points at `(LocalDb)\MSSQLLocalDB`. Vault Index's tables need 2025 for their `vector` column; with an older SQL Server for Extract, point the `VaultIndex` connection string at a 2025 database ([Deployment](../deployment/deployment.md#connection-strings)) |
 | An LLM provider | Any OpenAI-compatible endpoint | Mandatory; see [Backend Configuration](#backend-configuration). A local Ollama works |
-| [ABP CLI](https://abp.io/docs/latest/cli) | Matching ABP 10.7 | `dotnet tool install -g Volo.Abp.Studio.Cli`; used for `abp install-libs` and proxy generation |
+| [ABP CLI](https://abp.io/docs/latest/cli) | Matching ABP 11.0 | `dotnet tool install -g Volo.Abp.Studio.Cli`; used for `abp install-libs` and proxy generation |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop) | Any recent | Optional: the PaddleOCR sidecar and the local OpenTelemetry dashboard |
 
 ## Backend Configuration

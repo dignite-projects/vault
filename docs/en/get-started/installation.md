@@ -15,9 +15,9 @@ Dignite Vault Extract is distributed as an ABP application module: a set of NuGe
 
 | Requirement | Version |
 | --- | --- |
-| ABP Framework | 10.7.1 or later (every package depends on `Volo.Abp.* >= 10.7.1`) |
-| .NET | 10.0 |
-| Angular (for the UI) | 22, with `@abp/ng.*` `~10.7.1` |
+| ABP Framework | 11.0 (every package depends on `Volo.Abp.* >= 11.0.0-rc.2` until ABP 11.0 is released) |
+| .NET | 11.0 |
+| Angular (for the UI) | 22, with `@abp/ng.*` `~10.7.1` (the Angular packages move to ABP 11 with the next release of `@dignite/ng.flex-fields`) |
 | Database | A relational database through EF Core. The shipped host uses SQL Server; the schema is provider-agnostic ([Database Portability](../deployment/deployment.md#database-portability)) |
 | LLM provider | Mandatory. Any provider with a `Microsoft.Extensions.AI` `IChatClient`; see [AI Provider](../configuration/ai-provider.md) |
 

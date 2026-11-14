@@ -3,7 +3,7 @@
   <Import Project="..\..\..\..\common.props" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>Dignite.Vault.Extract.Abstractions</RootNamespace>
     <Description>Extension contracts for Dignite Vault Extract: multi-stage integration event ETOs (DocumentUploaded, DocumentTextExtracted, DocumentClassified, DocumentReady). The text-extraction contracts (ITextExtractor and its result) live in Dignite.Vault.Parse.Abstractions. Depends only on ABP base packages, so hosts and downstream consumers can reference it without pulling in the rest of the channel.</Description>

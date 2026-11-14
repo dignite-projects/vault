@@ -3,7 +3,7 @@
   <Import Project="..\..\..\..\common.props" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>Dignite.Vault.Index</RootNamespace>
     <Description>Reranker for Dignite Vault Index over the Cohere / Jina rerank HTTP API (POST /rerank: model, query, documents; results with index and relevance_score), as SiliconFlow, Jina, Cohere and vLLM serve it.</Description>
