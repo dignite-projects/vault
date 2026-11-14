@@ -52,7 +52,44 @@ Supply credentials in `src/Dignite.Vault.Extract.Host/appsettings.secrets.json` 
 | `ReasoningEffort` | With a reasoning model | `None`, `Low`, `Medium`, `High` or `ExtraHigh`, sent as `reasoning_effort` on every call of every client. A reasoning model spends its reasoning tokens out of the same output cap that field extraction and Vision-LLM OCR size for their visible output, so `None` keeps those caps meaning what they say. Unset sends nothing: leave it out for a provider without reasoning, which may reject the parameter. The committed `appsettings.json` does not set it, so a provider switch does not inherit it |
 | `UseLegacyMaxTokens` | On SiliconFlow | `true` sends the output cap as the legacy `max_tokens` instead of `max_completion_tokens`. SiliconFlow ignores `max_completion_tokens` and falls back to its own cap of about 4,096 tokens, which cuts long field extractions and transcriptions short. Default `false`; leave it off for OpenAI and Azure OpenAI, whose reasoning models refuse `max_tokens` |
 
-The shipped host builds a single `OpenAIClient` for all keyed clients. Its HTTP connections are recycled every five minutes (`PooledConnectionLifetime`) and its network timeout is raised to 300 seconds, because field extraction sends the complete document and can legitimately run long.
+The shipped host builds a single `OpenAIClient` for all keyed chat clients, on one named `HttpClient` (`Vault.Llm`) with the resilience pipeline described in [Retries, timeouts and throttling](#retries-timeouts-and-throttling).
+
+## Retries, timeouts and throttling
+
+Every model call of the shipped host (the chat clients, the embedding models and the reranker) goes through [`Microsoft.Extensions.Http.Resilience`](https://learn.microsoft.com/dotnet/core/resilience/http-resilience)'s standard pipeline, one per provider client. It is the only place that retries or times out: the OpenAI SDK's own retries are off and `HttpClient.Timeout` is off, so two layers never multiply the attempts. The pipeline, outermost first:
+
+1. a concurrency limiter,
+2. a total timeout over all attempts,
+3. retries of throttling (429), timeouts (408) and server errors (5xx), honouring `Retry-After`,
+4. a circuit breaker that stops calling a provider that keeps failing,
+5. a timeout per attempt.
+
+Every chat client shares `Vault.Llm`, so when the provider throttles, the retries and the circuit breaker hold back classification, field extraction, OCR and Index's chat calls together. A 4xx other than 408 and 429 is not retried here, and the pipeline job ends on it as before.
+
+| Client | Per attempt | Total | Retries | Circuit breaker sampling | Concurrency |
+| --- | --- | --- | --- | --- | --- |
+| `Vault:Resilience:Llm` (chat) | 5 min | 15 min | 5, from 5 s doubling to at most 2 min | 10 min, at least 10 calls | 16 at a time, 256 queued |
+| `Vault:Resilience:Embedding` | 60 s | 5 min | 5, from 5 s doubling to at most 2 min | 2 min, at least 10 calls | unlimited |
+| `Vault:Resilience:Rerank` | 6 s | 13 s | 1, after 0.5 s | 30 s | unlimited |
+
+The retries span about two and a half minutes because a provider that limits tokens per minute (SiliconFlow does) refills over a one-minute window: retries that give up inside the first window fail a document the next window would have accepted. A broken circuit stays open for 30 seconds; calls in that time fail at once and the background job retries the stage later. A search waits for the reranker, so its pipeline stays inside the reranker's own 15-second bound, and search answers with the fused order when the reranker fails or times out.
+
+Each section takes `HttpStandardResilienceOptions`' own property names and overrides the defaults above, for example:
+
+```json
+"Vault": {
+  "Resilience": {
+    "Llm": {
+      "RateLimiter": { "DefaultRateLimiterOptions": { "PermitLimit": 4 } },
+      "AttemptTimeout": { "Timeout": "00:10:00" },
+      "TotalRequestTimeout": { "Timeout": "00:30:00" },
+      "CircuitBreaker": { "SamplingDuration": "00:20:00" }
+    }
+  }
+}
+```
+
+The options are validated when the client is first used: the total timeout must be at least the attempt timeout, and the circuit breaker's sampling duration at least twice the attempt timeout. The connections of every provider client are recycled every five minutes (`PooledConnectionLifetime`): a long-lived process otherwise keeps reusing a pooled connection that a NAT or proxy dropped silently, and every request on it hangs until the timeout.
 
 ## Embedding model (`Index`)
 
@@ -135,7 +172,7 @@ Search can reorder its leading candidates with a rerank model, a cross-encoder t
 | `RerankEndpoint` | No | API base URL; `/rerank` is appended. Defaults to `Vault:Extract:Endpoint` |
 | `RerankApiKey` | No | Key for that provider. Defaults to `Vault:Extract:ApiKey` |
 
-The host calls the rerank API that Cohere introduced and Jina, SiliconFlow and vLLM serve in the same shape (`POST /rerank` with `model`, `query` and `documents`, answered by `results` of `index` and `relevance_score`). OpenAI has no rerank API, so the committed `appsettings.json` leaves it off. A call takes about half a second for 30 candidates on SiliconFlow and times out after 15 seconds. When it fails, search logs a warning and returns the fused order with `reranked: false` rather than failing.
+The host calls the rerank API that Cohere introduced and Jina, SiliconFlow and vLLM serve in the same shape (`POST /rerank` with `model`, `query` and `documents`, answered by `results` of `index` and `relevance_score`). OpenAI has no rerank API, so the committed `appsettings.json` leaves it off. A call takes about half a second for 30 candidates on SiliconFlow; its timeouts and retry are in [Retries, timeouts and throttling](#retries-timeouts-and-throttling). When it fails or times out, search logs a warning and returns the fused order with `reranked: false` rather than failing.
 
 `Vault:IndexSearch` tunes the ranking:
 

@@ -18,6 +18,7 @@ using Dignite.Vault.Parse.ElBrunoMarkItDown;
 using Dignite.Vault.Parse.OpenXml;
 using Dignite.Vault.Parse.Pdf;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.EntityFrameworkCore;
 using OpenAI;
 using OpenTelemetry.Metrics;
@@ -637,52 +638,29 @@ public class VaultExtractHostModule : AbpModule
                 "local Ollama /v1 endpoint and use any non-empty token as the key. See docs/en/configuration/ai-provider.md.");
         }
 
-        // Raised past the OpenAI SDK's default 100s NetworkTimeout (sized for interactive chat) because
-        // FieldExtractionWorkflow deliberately feeds the complete, untruncated Markdown + full field schema (a
-        // type-bound field can sit anywhere in the document, so truncation would silently miss it) — a workload
-        // that can legitimately run long. This alone is only a backstop, though: it does not explain what was
-        // actually observed in practice — every attempt hanging for the *entire* timeout (100s, then 300s after
-        // raising it) with zero bytes read back (TaskCanceledException wrapping a SocketException / "Unable to
-        // read data from the transport connection"), 4 SDK-internal retries each time, then ABP re-queuing the
-        // whole cycle — while the identical request replayed standalone against the same endpoint returns in
-        // 10-30s. That signature — deterministic silent hangs from a long-lived process, fine from a fresh
-        // connection — is a stale pooled HTTP connection: `HttpClient`'s default `SocketsHttpHandler` pools
-        // connections for the process lifetime, so once a NAT/proxy on the path to the provider silently drops
-        // an idle one (no FIN/RST), every future request that reuses it writes into a black hole until the
-        // client-side timeout fires. Bounding `PooledConnectionLifetime` forces periodic reconnection so a dead
-        // connection is never reused for more than a few minutes. NetworkTimeout stays raised as defense in
-        // depth for the field-extraction workload itself. SlugSuggestionAppService's interactive 10s SLA is
-        // enforced independently via its own linked CancellationTokenSource (InteractiveLlmCall), so neither
-        // change affects it.
-        HttpMessageHandler httpHandler = new SocketsHttpHandler
-        {
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-        };
-
-        // Provider quirk, opt-in: a gateway that ignores max_completion_tokens (SiliconFlow) needs the cap sent as
-        // max_tokens. Never on genuine OpenAI, whose reasoning models refuse max_tokens with a 400.
-        if (configuration.GetValue("Vault:Extract:UseLegacyMaxTokens", defaultValue: false))
-        {
-            httpHandler = new MaxCompletionTokensToMaxTokensHandler(httpHandler);
-        }
-
-        var httpClient = new HttpClient(httpHandler)
-        {
-            // HttpClient.Timeout defaults to 100s and fires from inside HttpClientPipelineTransport before the
-            // pipeline-level NetworkTimeout below ever gets a chance to apply, silently overriding it back down
-            // to 100s (surfaced as "canceled due to the configured HttpClient.Timeout of 100 seconds elapsing",
-            // not the NetworkTimeout wording). NetworkTimeout is the single intended timeout authority here, so
-            // this must be disabled.
-            Timeout = Timeout.InfiniteTimeSpan
-        };
-        var openAIClient = new OpenAIClient(
-            new System.ClientModel.ApiKeyCredential(apiKey),
-            new OpenAIClientOptions
+        // Every chat client below talks to one provider through one named HttpClient, so its retries, circuit breaker and
+        // concurrency limit are shared: a provider that throttles cools down for all of them at once.
+        AddProviderHttpClient(
+            context,
+            LlmHttpClientName,
+            configuration.GetSection("Vault:Resilience:Llm"),
+            options =>
             {
-                Endpoint = new Uri(endpoint),
-                Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(httpClient),
-                NetworkTimeout = TimeSpan.FromSeconds(300)
-            });
+                // Field extraction sends a whole document with its full field schema; one answer can take minutes.
+                options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(15);
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+                options.RateLimiter.DefaultRateLimiterOptions.PermitLimit = 16;
+                options.RateLimiter.DefaultRateLimiterOptions.QueueLimit = 256;
+            },
+            // Provider quirk, opt-in: a gateway that ignores max_completion_tokens (SiliconFlow) needs the cap sent as
+            // max_tokens. Never on genuine OpenAI, whose reasoning models refuse max_tokens with a 400.
+            configuration.GetValue("Vault:Extract:UseLegacyMaxTokens", defaultValue: false)
+                ? () => new MaxCompletionTokensToMaxTokensHandler()
+                : null);
+        context.Services.AddKeyedSingleton(
+            LlmHttpClientName,
+            (serviceProvider, _) => CreateOpenAIClient(serviceProvider, LlmHttpClientName, endpoint, apiKey));
 
         // A reasoning model spends reasoning tokens out of the same output cap the callers size for their visible
         // output (field extraction's schema estimate, Vision OCR's MaxOutputTokens), so a deployment on one sets
@@ -710,7 +688,7 @@ public class VaultExtractHostModule : AbpModule
             ?? chatModelId;
         Decorate(context.Services.AddKeyedChatClient(
             VaultExtractConsts.TitleGeneratorChatClientKey,
-            _ => openAIClient.GetChatClient(titleGeneratorModelId).AsIChatClient()));
+            serviceProvider => serviceProvider.GetRequiredKeyedService<OpenAIClient>(LlmHttpClientName).GetChatClient(titleGeneratorModelId).AsIChatClient()));
 
         // Structured-output chat client: shared by classification (GetResponseAsync<T>) plus
         // direct JSON-schema callers such as field extraction. All are tool-free and
@@ -724,7 +702,7 @@ public class VaultExtractHostModule : AbpModule
             ?? chatModelId;
         Decorate(context.Services.AddKeyedChatClient(
             VaultExtractConsts.StructuredChatClientKey,
-            _ => openAIClient.GetChatClient(structuredModelId).AsIChatClient()));
+            serviceProvider => serviceProvider.GetRequiredKeyedService<OpenAIClient>(LlmHttpClientName).GetChatClient(structuredModelId).AsIChatClient()));
 
         // Vision OCR chat client: consumed by VisionLlmOcrProvider via
         // [FromKeyedServices(VisionLlmOcrConsts.VisionChatClientKey)] to transcribe photos / thermal
@@ -744,7 +722,7 @@ public class VaultExtractHostModule : AbpModule
         }
         Decorate(context.Services.AddKeyedChatClient(
             VisionLlmOcrConsts.VisionChatClientKey,
-            _ => openAIClient.GetChatClient(visionOcrModelId).AsIChatClient()));
+            serviceProvider => serviceProvider.GetRequiredKeyedService<OpenAIClient>(LlmHttpClientName).GetChatClient(visionOcrModelId).AsIChatClient()));
 
         // Vault Index's chat model: chunk enrichment (keywords, answerable questions) and section and document
         // summaries, consumed through VaultIndexConsts.ChatClientKey when an index profile switches them on. Optional,
@@ -756,7 +734,7 @@ public class VaultExtractHostModule : AbpModule
         {
             Decorate(context.Services.AddKeyedChatClient(
                 VaultIndexConsts.ChatClientKey,
-                _ => openAIClient.GetChatClient(indexChatModelId).AsIChatClient()));
+                serviceProvider => serviceProvider.GetRequiredKeyedService<OpenAIClient>(LlmHttpClientName).GetChatClient(indexChatModelId).AsIChatClient()));
         }
     }
 
@@ -818,22 +796,25 @@ public class VaultExtractHostModule : AbpModule
     {
         int? dimensions = int.TryParse(dimensionsSetting, out var parsed) ? parsed : null;
 
-        // Short requests, but the same long-lived-process hazard as the chat clients: bound the pooled connection's
-        // lifetime so a connection a NAT silently dropped is not reused forever.
-        var client = new OpenAIClient(
-            new System.ClientModel.ApiKeyCredential(apiKey),
-            new OpenAIClientOptions
+        // Short requests, but the same throttling as the chat models: a TPM-limited provider refuses bursts during
+        // ingestion, and the retries have to outlast its one-minute window.
+        var httpClientName = "Vault." + key;
+        AddProviderHttpClient(
+            context,
+            httpClientName,
+            context.Services.GetConfiguration().GetSection("Vault:Resilience:Embedding"),
+            options =>
             {
-                Endpoint = new Uri(endpoint),
-                Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(new HttpClient(new SocketsHttpHandler
-                {
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-                }))
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(60);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(2);
             });
 
         context.Services.AddKeyedEmbeddingGenerator(
                 key,
-                _ => client.GetEmbeddingClient(modelId).AsIEmbeddingGenerator(dimensions))
+                serviceProvider => CreateOpenAIClient(serviceProvider, httpClientName, endpoint, apiKey)
+                    .GetEmbeddingClient(modelId)
+                    .AsIEmbeddingGenerator(dimensions))
             .UseOpenTelemetry()
             .UseLogging();
     }
@@ -851,7 +832,7 @@ public class VaultExtractHostModule : AbpModule
             return;
         }
 
-        context.Services.AddVaultIndexHttpReranker(options =>
+        var reranker = context.Services.AddVaultIndexHttpReranker(options =>
         {
             options.ModelId = modelId;
             options.Endpoint = configuration["Vault:Index:RerankEndpoint"] is { Length: > 0 } ownEndpoint
@@ -861,7 +842,96 @@ public class VaultExtractHostModule : AbpModule
                 ? ownKey
                 : configuration["Vault:Extract:ApiKey"]!;
         });
+
+        // A search waits for the reranker and falls back to the fused order when it fails, so one quick retry at most,
+        // all inside HttpRerankerOptions.Timeout (15 s).
+        OverrideFrom(
+            reranker.AddStandardResilienceHandler()
+                .Configure(options =>
+                {
+                    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(6);
+                    options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(13);
+                    options.Retry.MaxRetryAttempts = 1;
+                    options.Retry.Delay = TimeSpan.FromMilliseconds(500);
+                    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
+                }),
+            configuration.GetSection("Vault:Resilience:Rerank"));
     }
+
+    /// <summary>
+    /// Applies a configuration section over the code defaults. A missing section keeps the defaults: the library's own
+    /// <c>Configure(section)</c> refuses a section that does not exist.
+    /// </summary>
+    private static void OverrideFrom(IHttpStandardResiliencePipelineBuilder pipeline, IConfigurationSection section)
+    {
+        if (section.Exists())
+        {
+            pipeline.Configure(section);
+        }
+    }
+
+    /// <summary>The named HttpClient behind every chat client of the configured provider.</summary>
+    private const string LlmHttpClientName = "Vault.Llm";
+
+    /// <summary>
+    /// A named HttpClient for one model provider with <c>Microsoft.Extensions.Http.Resilience</c>'s standard pipeline:
+    /// a concurrency limiter, a total timeout, retries that honour <c>Retry-After</c>, a circuit breaker and a timeout per
+    /// attempt. The pipeline is the only timeout and retry authority: <c>HttpClient.Timeout</c> is off here and the OpenAI
+    /// SDK's own retries are off in <see cref="CreateOpenAIClient"/>, since two retry layers multiply the attempts.
+    /// <para>
+    /// The defaults retry five times from 5 s, doubling with jitter up to 2 min: a TPM-limited provider refills over a
+    /// one-minute window, so the retries span about two and a half windows instead of giving up inside the first (the
+    /// same reasoning as RAGFlow's embedder). <paramref name="defaults"/> sets the per-provider timeouts, and the
+    /// configuration <paramref name="section"/>, in <c>HttpStandardResilienceOptions</c>' own names, overrides both.
+    /// </para>
+    /// <para>
+    /// The OpenAI SDK keeps the client for the life of the process, so the handler is never rotated and the primary
+    /// handler bounds <c>PooledConnectionLifetime</c>: a NAT or proxy that silently drops an idle pooled connection would
+    /// otherwise make every later request on it hang until the timeout, which is what happened before this was bounded.
+    /// </para>
+    /// </summary>
+    private static void AddProviderHttpClient(
+        ServiceConfigurationContext context,
+        string name,
+        IConfigurationSection section,
+        Action<HttpStandardResilienceOptions> defaults,
+        Func<DelegatingHandler>? requestRewriter = null)
+    {
+        var builder = context.Services
+            .AddHttpClient(name, client => client.Timeout = Timeout.InfiniteTimeSpan)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+        if (requestRewriter is not null)
+        {
+            // Outside the resilience handler, so a request is rewritten once however often it is retried.
+            builder.AddHttpMessageHandler(requestRewriter);
+        }
+
+        OverrideFrom(
+            builder.AddStandardResilienceHandler()
+                .Configure(options =>
+                {
+                    options.Retry.MaxRetryAttempts = 5;
+                    options.Retry.Delay = TimeSpan.FromSeconds(5);
+                    options.Retry.MaxDelay = TimeSpan.FromMinutes(2);
+                    options.CircuitBreaker.MinimumThroughput = 10;
+                    options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
+                    defaults(options);
+                }),
+            section);
+    }
+
+    private static OpenAIClient CreateOpenAIClient(IServiceProvider serviceProvider, string httpClientName, string endpoint, string apiKey)
+        => new(
+            new System.ClientModel.ApiKeyCredential(apiKey),
+            new OpenAIClientOptions
+            {
+                Endpoint = new Uri(endpoint),
+                Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(
+                    serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(httpClientName)),
+                RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(maxRetries: 0),
+                NetworkTimeout = Timeout.InfiniteTimeSpan
+            });
 
     private static ReasoningEffort? ReadReasoningEffort(IConfiguration configuration)
     {
@@ -904,7 +974,7 @@ public class VaultExtractHostModule : AbpModule
     /// <c>max_completion_tokens</c>, and their reasoning models refuse <c>max_tokens</c> with a 400.
     /// </para>
     /// </summary>
-    private sealed class MaxCompletionTokensToMaxTokensHandler(HttpMessageHandler innerHandler) : DelegatingHandler(innerHandler)
+    private sealed class MaxCompletionTokensToMaxTokensHandler : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

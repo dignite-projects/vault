@@ -145,6 +145,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Model calls retry, time out and throttle in one place** (shipped host). Every chat client, embedding model and the
+  reranker run on `Microsoft.Extensions.Http.Resilience`'s standard pipeline, one per provider client: a concurrency
+  limit, a total and a per-attempt timeout, retries that honour `Retry-After` (five, from 5 s up to 2 min, so a
+  tokens-per-minute limit gets past its window), and a circuit breaker. The OpenAI SDK no longer retries on its own and
+  `HttpClient.Timeout` is off. The new sections `Vault:Resilience:Llm`, `Vault:Resilience:Embedding` and
+  `Vault:Resilience:Rerank` override the defaults with `HttpStandardResilienceOptions`' names. `AddVaultIndexHttpReranker`
+  now returns the reranker's `IHttpClientBuilder`, so a host adds its own pipeline to it. See
+  [Retries, timeouts and throttling](docs/en/configuration/ai-provider.md#retries-timeouts-and-throttling).
 - **BREAKING: every package targets .NET 11 and ABP 11.** All projects move to `net11.0`, ABP 11.0
   (`11.0.0-rc.2` until 11.0 is released), EF Core 11, `Microsoft.Extensions.AI` 11.0 and
   `Microsoft.Extensions.DataIngestion` 11.0 previews. A consumer host must target .NET 11 as well. EF Core 11 emits SQL
@@ -231,6 +239,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider, but both packages are published, so their tests now gate a release.
 
 ### Fixed
+
+- **A reranker that timed out failed the search** instead of falling back to the fused order. `HttpClient.Timeout`
+  surfaces as a `TaskCanceledException`, which the fallback treated as the caller cancelling. Only the caller's own
+  cancellation ends a search now.
 
 - **Field extraction no longer fails because it asks the model for more output than the model allows.** The workflow
   estimates the worst-case output of the field schema and sent that estimate as the call's max tokens, uncapped. The

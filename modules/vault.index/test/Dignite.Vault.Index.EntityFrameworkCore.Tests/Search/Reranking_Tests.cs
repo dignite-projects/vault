@@ -86,6 +86,20 @@ public class Reranking_Tests : VaultIndexTestBase<VaultIndexRerankTestModule>
     }
 
     [Fact]
+    public async Task A_reranker_that_times_out_leaves_the_fused_order()
+    {
+        // HttpClient.Timeout surfaces as a TaskCanceledException although nobody cancelled the search.
+        await IndexAsync();
+        _reranker.FailWith = new TaskCanceledException(
+            "The request was canceled due to the configured HttpClient.Timeout of 15 seconds elapsing.", new TimeoutException());
+
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        result.Reranked.ShouldBeFalse();
+        result.Hits[0].HeadingPath.ShouldBe("# 賃貸借契約書 ## 第2条（賃料）");
+    }
+
+    [Fact]
     public async Task Each_candidate_sent_to_the_reranker_is_capped()
     {
         await IndexAsync(markdown: "# 長文\n\n" + string.Join(' ', Enumerable.Repeat("賃料の支払について定める。", 900)), maxTokens: 6000);

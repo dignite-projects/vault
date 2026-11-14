@@ -14,7 +14,10 @@ namespace Dignite.Vault.Index.Reranking
         /// <summary>The rerank model, such as <c>BAAI/bge-reranker-v2-m3</c>.</summary>
         public string ModelId { get; set; } = default!;
 
-        /// <summary>How long one call may take. A search waits for it, so keep it short.</summary>
+        /// <summary>
+        /// The outer bound on one rerank, retries included (<c>HttpClient.Timeout</c>). A search waits for it, so keep it
+        /// short. A host that adds a resilience pipeline to the returned client keeps that pipeline's total timeout below it.
+        /// </summary>
         public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(15);
     }
 }
@@ -26,9 +29,10 @@ namespace Microsoft.Extensions.DependencyInjection
         /// <summary>
         /// Registers <see cref="HttpReranker"/> as Vault Index's <see cref="IReranker"/>, on a pooled
         /// <see cref="System.Net.Http.HttpClient"/> from <c>IHttpClientFactory</c>. A host calls it only when it configures a rerank
-        /// model; without a registration, search skips reranking.
+        /// model; without a registration, search skips reranking. Returns the client's builder so the host can add its
+        /// HTTP middleware (retries, circuit breaker); the module adds none.
         /// </summary>
-        public static IServiceCollection AddVaultIndexHttpReranker(this IServiceCollection services, Action<HttpRerankerOptions> configure)
+        public static IHttpClientBuilder AddVaultIndexHttpReranker(this IServiceCollection services, Action<HttpRerankerOptions> configure)
         {
             var options = new HttpRerankerOptions();
             configure(options);
@@ -39,8 +43,7 @@ namespace Microsoft.Extensions.DependencyInjection
 
             services.Configure(configure);
             services.RemoveAll<IReranker>();
-            services.AddHttpClient<IReranker, HttpReranker>(client => client.Timeout = options.Timeout);
-            return services;
+            return services.AddHttpClient<IReranker, HttpReranker>(client => client.Timeout = options.Timeout);
         }
     }
 }
