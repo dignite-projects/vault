@@ -7,7 +7,7 @@
 
 # Local Development
 
-This guide runs the Vault Extract repository on a developer machine: the .NET host, the Angular operator UI, and the optional Docker sidecars. To add the modules to an application of your own instead, see [Installation](installation.md).
+This guide runs the Vault Extract repository on a developer machine: the .NET host, the Angular operator UI and their database, either all together through the Aspire AppHost or one by one. To add the modules to an application of your own instead, see [Installation](installation.md).
 
 ## Prerequisites
 
@@ -15,14 +15,14 @@ This guide runs the Vault Extract repository on a developer machine: the .NET ho
 | --- | --- | --- |
 | [.NET SDK](https://dotnet.microsoft.com/download/dotnet) | 11.0 (`global.json` pins `11.0.100`, rolling forward to the latest feature band) | |
 | [Node.js](https://nodejs.org) | `^22.22.3` or `^24.15.0` | Required by Angular 22 |
-| SQL Server | 2025 | LocalDB, Express and Developer all work; the committed `appsettings.json` points at `(LocalDb)\MSSQLLocalDB`. Vault Index's tables need 2025 for their `vector` column; with an older SQL Server for Extract, point the `VaultIndex` connection string at a 2025 database ([Deployment](../deployment/deployment.md#connection-strings)) |
+| SQL Server | 2025 | The AppHost runs one in a container. Running the host alone, LocalDB, Express and Developer all work; the committed `appsettings.json` points at `(LocalDb)\MSSQLLocalDB`. Vault Index's tables need 2025 for their `vector` column, and its keyword search needs full-text search, which LocalDB lacks; with an older SQL Server for Extract, point the `VaultIndex` connection string at a 2025 database ([Deployment](../deployment/deployment.md#connection-strings)) |
 | An LLM provider | Any OpenAI-compatible endpoint | Mandatory; see [Backend Configuration](#backend-configuration). A local Ollama works |
 | [ABP CLI](https://abp.io/docs/latest/cli) | Matching ABP 11.0 | `dotnet tool install -g Volo.Abp.Studio.Cli`; used for `abp install-libs` and proxy generation |
-| [Docker Desktop](https://www.docker.com/products/docker-desktop) | Any recent | Optional: the PaddleOCR sidecar and the local OpenTelemetry dashboard |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop) | Any recent | For the AppHost's SQL Server container, and the optional PaddleOCR sidecar |
 
 ## Backend Configuration
 
-Create `src/Dignite.Vault.Extract.Host/appsettings.secrets.json`. The host loads it last (ABP's `AddAppSettingsSecretsJson()`), the file is git-ignored, and `dotnet publish` leaves it out. Keep real credentials there or in environment variables, never in the committed `appsettings.json` or `appsettings.Development.json`.
+Create `src/Dignite.Vault.Extract.Host/appsettings.secrets.json`. The host loads it after `appsettings.json` and `appsettings.{Environment}.json` (ABP's `AddAppSettingsSecretsJson()`), and environment variables and command-line arguments override it; the file is git-ignored, and `dotnet publish` leaves it out. Keep real credentials there or in environment variables, never in the committed `appsettings.json` or `appsettings.Development.json`.
 
 An LLM provider is **required**. The host fails at startup while `Vault:Extract` is unconfigured, because classification and field extraction have no non-LLM fallback (the committed `appsettings.json` ships a `"YOUR_API_KEY"` placeholder, which the startup check rejects). A minimal configuration:
 
@@ -55,7 +55,27 @@ An LLM provider is **required**. The host fails at startup while `Vault:Extract`
 
 > **OpenIddict certificates.** In Development mode temporary signing and encryption certificates are generated automatically; no `.pfx` file is needed.
 
-## Running the Backend
+## Running Everything with the Aspire AppHost
+
+`src/Dignite.Vault.AppHost` starts the whole development environment with one command:
+
+```bash
+npm install
+cd src/Dignite.Vault.Extract.Host && abp install-libs && cd ../..
+dotnet run --project src/Dignite.Vault.AppHost
+```
+
+- **SQL Server 2025 with full-text search**, built from `etc/docker/sqlserver-fts` (the official image has no full-text search; the first run builds it, which takes a few minutes). The container is persistent and keeps its data in the `dignite-vault-sql` volume, with the databases `VaultExtract` and `VaultIndex`.
+- **`migrator`**, the host run with `--migrate-database`, which migrates and seeds both databases and exits.
+- **`host`**, once the migration has finished, on `https://localhost:44348`.
+- **`angular`**, the SPA's `npm start`, on `http://localhost:4200`. The AppHost does not run `npm install`: install once at the repository root, as above.
+- **The Aspire dashboard** on `https://localhost:17188` (the console prints the login link), with every resource's console output and the host's traces and metrics.
+
+The SQL Server container outlives the AppHost so the next start skips its initialization; stop it with `docker stop` on the `sql-…` container, and delete the `dignite-vault-sql` volume to start from empty databases.
+
+The AppHost hands the host its connection strings as environment variables, which override `appsettings.secrets.json`, so the host uses the container's databases whatever the secrets file says. The LLM settings still come from `appsettings.secrets.json` ([Backend Configuration](#backend-configuration)). To work against another database instead, run the host on its own as below.
+
+## Running the Host Alone
 
 Install the client-side libraries once after cloning, and again when they change:
 
@@ -105,21 +125,15 @@ Default credentials, seeded by `--migrate-database`:
 
 ## Optional Sidecars (Docker)
 
-`docker-compose.yml` defines two sidecars, neither needed by the default configuration:
-
-| Service | Port | Purpose | Profile |
-| --- | --- | --- | --- |
-| **PaddleOCR** | 8866 | Local OCR sidecar (PP-StructureV3, CPU). Needed only when you switch the host to the [PaddleOCR](../text-extraction/ocr-paddleocr.md) provider | default |
-| **aspire-dashboard** | 18888 (UI), 4317 (OTLP gRPC) | Local OpenTelemetry backend at `http://localhost:18888` | `observability` |
+`docker-compose.yml` defines the PaddleOCR sidecar (port 8866: PP-StructureV3 on CPU), needed only when you switch the host to the [PaddleOCR](../text-extraction/ocr-paddleocr.md) provider:
 
 ```bash
-docker compose up -d paddleocr
-docker compose --profile observability up -d aspire-dashboard
+docker compose --profile paddleocr up -d paddleocr
 ```
 
-PaddleOCR answers `{"status":"success"}` on `http://localhost:8866/ping` once ready; its first start downloads about 600 MB of model weights. The committed `appsettings.Development.json` already turns the OpenTelemetry export on (`OpenTelemetry:Enabled`), pointed at this dashboard; see [Observability](../deployment/observability.md). Stop the sidecars with `docker compose down`.
+It answers `{"status":"success"}` on `http://localhost:8866/ping` once ready; its first start downloads about 600 MB of model weights. Stop it with `docker compose down`.
 
-> If your machine can run a SQL Server container, the deployment layout in `etc/docker/docker-compose.yml` starts SQL Server, the API and the SPA together. For day-to-day iteration, `dotnet run` against a local SQL Server is faster.
+The OpenTelemetry dashboard comes with the AppHost. Running the host alone, point `OpenTelemetry:Otlp:Endpoint` at any OTLP backend; see [Observability](../deployment/observability.md).
 
 ## Regenerating the HTTP Client Proxies
 

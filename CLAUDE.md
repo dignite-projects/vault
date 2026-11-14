@@ -10,6 +10,7 @@ This file describes the current design and the rules whose violation breaks some
 - `modules/vault.parse/`: the text-extraction library (OCR and Markdown providers behind `ITextExtractor`)
 - `modules/vault.index/`: Vault Index, the retrieval module (P0 in progress), and its Angular library in `angular/` (`@dignite/ng.vault-index`, the index status page). Its design record is the Claude Doc "Vault Index 架构方案"; it has its own `VaultIndex` connection string and its migrations live in the host under `Migrations/VaultIndex/`
 - `src/Dignite.Vault.Extract.Host/`: the host application
+- `src/Dignite.Vault.AppHost/`: the Aspire AppHost for local development (SQL Server 2025 with full-text search, migrations, host, SPA, dashboard)
 - `angular/`: the host SPA
 - `docs/`: operations, configuration and API documentation
 

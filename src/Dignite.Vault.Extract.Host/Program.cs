@@ -18,7 +18,13 @@ public class Program
         try
         {
             var builder = WebApplication.CreateBuilder(args);
-            builder.Host.AddAppSettingsSecretsJson()
+            builder.Host.AddAppSettingsSecretsJson();
+            // appsettings.secrets.json is added after the environment and the command line, so it would override both.
+            // Add them again: environment and command line win over every file, which is what a container, a deployment
+            // or the Aspire AppHost (src/Dignite.Vault.AppHost, whose connection strings arrive as environment variables)
+            // expects. Running the host on its own still reads the secrets file for whatever the environment leaves unset.
+            builder.Configuration.AddEnvironmentVariables().AddCommandLine(args);
+            builder.Host
                 .UseAutofac()
                 .UseSerilog((context, services, loggerConfiguration) =>
                 {

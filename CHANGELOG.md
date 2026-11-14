@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Aspire AppHost for local development** (`src/Dignite.Vault.AppHost`). `dotnet run --project src/Dignite.Vault.AppHost`
+  builds SQL Server 2025 with full-text search (`etc/docker/sqlserver-fts`), creates the `VaultExtract` and `VaultIndex`
+  databases in a persistent container, runs `--migrate-database`, then starts the host and the SPA, with the Aspire
+  dashboard showing every resource's console output and the host's traces and metrics. See
+  [Local Development](docs/en/get-started/local-development.md#running-everything-with-the-aspire-apphost).
 - **Vault Index embedding model switch** (shipped host and SPA). Changing `Vault:Index:EmbeddingModelId` no longer
   fails every changed document with `VaultIndex:EmbeddingModelChanged`: Index builds a new generation of vectors in the
   background from the chunks it holds (no pull from Extract, no re-chunking, no enrichment or summary calls), search
@@ -145,6 +150,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Environment variables and command-line arguments override `appsettings.secrets.json`** (shipped host). ABP adds
+  the secrets file after them, so it used to win; the host now adds them again after it. The secrets file still
+  supplies whatever the environment leaves unset.
+- **The host's OpenTelemetry export honours the standard `OTEL_EXPORTER_OTLP_*` variables**: when
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the exporter reads the endpoint, protocol and headers from them and
+  `OpenTelemetry:Otlp` is not applied, and `OTEL_SERVICE_NAME` names the service.
+- **Removed: the containerized stack in `etc/docker/`** (`docker-compose.yml`, `run-docker.ps1`, `stop-docker.ps1`,
+  `dynamic-env.json`) and the `aspire-dashboard` service of the root `docker-compose.yml`. Its Azure SQL Edge database
+  cannot hold Vault Index's vector column; the AppHost replaces both. The images and `etc/build` stay.
 - **Model calls retry, time out and throttle in one place** (shipped host). Every chat client, embedding model and the
   reranker run on `Microsoft.Extensions.Http.Resilience`'s standard pipeline, one per provider client: a concurrency
   limit, a total and a per-attempt timeout, retries that honour `Retry-After` (five, from 5 s up to 2 min, so a
@@ -240,6 +254,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`dotnet run --migrate-database` inside the repository migrated nothing** (shipped host) since the monorepo
+  relayout. The migration service still carried the application template's "create the initial migration" step: it
+  looked for `Migrations` under the solution's `src/`, found none (they are in the host project), asked the ABP CLI to
+  scaffold one, and returned before migrating while still printing `Migration completed.` Outside the repository
+  (a container) the step was skipped, so deployments were not affected. The step is removed; the command migrates and
+  seeds.
 - **A reranker that timed out failed the search** instead of falling back to the fused order. `HttpClient.Timeout`
   surfaces as a `TaskCanceledException`, which the fallback treated as the caller cancelling. Only the caller's own
   cancellation ends a search now.

@@ -18,6 +18,16 @@ The base appsettings LocalDB target (`(LocalDb)\MSSQLLocalDB`) is used only when
 
 ---
 
+## Alternative — the Aspire AppHost (self-contained local environment)
+
+`dotnet run --project src/Dignite.Vault.AppHost` starts SQL Server 2025 with full-text search in a persistent container
+(databases `VaultExtract` and `VaultIndex`), runs `--migrate-database`, then the host (`https://localhost:44348`) and the
+SPA (`http://localhost:4200`); the dashboard is `https://localhost:17188` (login link in the console). Its connection
+strings arrive as environment variables and override `appsettings.secrets.json`, so it never touches the remote dev
+database; the LLM settings still come from the secrets file. With the preview tools, add a temporary `.claude/launch.json`
+entry (`dotnet run --project src/Dignite.Vault.AppHost`, port 17188) and revert it afterwards. `npm install` stays at the
+repository root; the AppHost does not install. Use Steps 1–3 below instead when you need the remote dev database's data.
+
 ## Step 1 — Verify SQL Server reachability
 
 Resolve the active SQL `host:port` **from the gitignored secrets file at runtime** — no literal target is committed to this skill:

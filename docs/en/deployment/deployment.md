@@ -134,7 +134,7 @@ Switching means changing the provider module in `VaultExtractHostModule`'s `[Dep
 
 ## AI Provider
 
-The keyed `IChatClient` registrations and model selection are described in [AI Provider](../configuration/ai-provider.md). Provider credentials are host configuration only: they never reach the Application or Domain layer, and end customers never configure them. The host registers no `IEmbeddingGenerator`; vectorization is the downstream RAG platform's job.
+The keyed `IChatClient` registrations and model selection are described in [AI Provider](../configuration/ai-provider.md). Provider credentials are host configuration only: they never reach the Application or Domain layer, and end customers never configure them. Vault Index's embedding and rerank models are registered by the host too; see [Embedding model](../configuration/ai-provider.md#embedding-model-index).
 
 ## Distributed Event Bus
 
@@ -142,28 +142,9 @@ The host configures ABP's transactional outbox and inbox on its `DbContext`, but
 
 ## Docker
 
-The Compose layout in `etc/docker/docker-compose.yml` defines:
+The repository builds two images: the host (`Dockerfile`, published by CI) and the SPA (`angular/Dockerfile.local`, an nginx image of the prebuilt bundle). `etc/build/build-images-locally.ps1` builds both locally. Run the host image once with `--migrate-database` against the databases before starting it.
 
-- `vault-extract-web`: the Angular SPA
-- `vault-extract-api`: the ASP.NET Core host, with the `vault-extract_appdata` volume for original files
-- `db-migrator`: the host image run once with `--migrate-database`
-- `sql-server`: SQL Server (Azure SQL Edge image)
-
-```bash
-# Build images locally
-cd etc/build
-./build-images-locally.ps1
-
-# Start the stack
-cd etc/docker
-./run-docker.ps1
-
-# Stop containers
-cd etc/docker
-./stop-docker.ps1
-```
-
-For day-to-day development without image builds, see [Local Development](../get-started/local-development.md): it runs the host with `dotnet run` and starts only the sidecars from `docker-compose.yml`.
+The database is yours to provide: SQL Server 2025 or Azure SQL, with full-text search installed for `VaultIndex`. To host the engine in a container, `etc/docker/sqlserver-fts/Dockerfile` adds full-text search to the official SQL Server 2025 image; it is the image the Aspire AppHost runs. The whole stack on one machine, for development, is the [Aspire AppHost](../get-started/local-development.md#running-everything-with-the-aspire-apphost).
 
 ## Reverse Proxy
 
