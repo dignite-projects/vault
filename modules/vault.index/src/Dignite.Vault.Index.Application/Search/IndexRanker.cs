@@ -79,7 +79,9 @@ public class IndexRanker : ITransientDependency
         {
             result = await reranker.RerankAsync(TextTruncator.AtCharBoundary(query, IndexSearchConsts.MaxQueryLength), documents, cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        // Only the caller's own cancellation ends the search. A timeout is an OperationCanceledException too
+        // (HttpClient.Timeout), or a TimeoutRejectedException from a resilience pipeline: both are a failed reranker.
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             Logger.LogWarning(exception, "Reranking with {Model} failed; search returns the fused order.", reranker.ModelId);
             return null;

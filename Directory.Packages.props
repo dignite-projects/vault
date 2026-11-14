@@ -141,6 +141,8 @@
         <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="11.0.0" />
         <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
         <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0" />
+        <!-- The host's model clients (chat, embedding, rerank) run on its standard resilience pipeline. -->
+        <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="11.0.0" />
         <PackageVersion Include="ElBruno.MarkItDotNet" Version="0.6.0" />
         <PackageVersion Include="ElBruno.MarkItDotNet.Excel" Version="0.6.0" />
         <!-- Charset detection for legacy-encoded CSV/TSV/TXT uploads (#493). Tri-licensed MPL-1.1 /
