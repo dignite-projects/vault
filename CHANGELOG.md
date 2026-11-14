@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Parse's document tree** (`Dignite.Vault.Parse.Abstractions`, `Dignite.Vault.Parse`). The first step of moving
+  Parse onto `Microsoft.Extensions.DocumentExtraction`: `ExtractionDocumentMarkdown` renders the Markdown Vault stores from
+  a `Microsoft.Extensions.Documents.ExtractionDocument`, `MarkdownDocumentReader` reads Markdown into one, and
+  `ParseElementRoles` / `ParseContentProperties` / `ParseDocumentMetadata` name the conventions (list items, code,
+  quotes, page headers and footers, provider, language, completeness). A table that spans rows or columns renders as an
+  HTML table. Nothing calls them yet; every digital document of the parse evaluation corpus reads and renders back to
+  the same scores.
 - **Vault Index reuses its model results** (module). A chunk's enrichment and a section's or the document's summary
   are kept for a day in the host's distributed cache (ABP `IDistributedCache`, per tenant), keyed by the model, the
   instructions and the exact text read, so a document re-indexed after a small edit, re-synced after its job failed part

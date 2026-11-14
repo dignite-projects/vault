@@ -4,5 +4,8 @@
         <!-- Read by common.props, which only falls back to the Extract values when these are unset. -->
         <Product>Dignite Vault Parse</Product>
         <PackageTags>abp;parse;document-processing;ocr;markdown;markitdown</PackageTags>
+        <!-- Parse is built on Microsoft.Extensions.DocumentExtraction and its document tree, both experimental in
+             dotnet/extensions 11 (EXTEXP0019, MEDE0001). Using them is the decision, not an accident. -->
+        <NoWarn>$(NoWarn);EXTEXP0019;MEDE0001</NoWarn>
     </PropertyGroup>
 </Project>

@@ -100,6 +100,8 @@
         <!-- Vault Index ingestion. Pre-release until Microsoft ships a stable Microsoft.Extensions.DataIngestion. -->
         <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="11.0.0-preview.1.26560.3" />
         <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="11.0.0-preview.1.26560.3" />
+        <!-- Vault Parse's document tree: sections, roles, tables with spans, pages and regions. Experimental. -->
+        <PackageVersion Include="Microsoft.Extensions.Documents.Abstractions" Version="11.0.0-preview.1.26560.3" />
         <PackageVersion Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="1.0.1" />
         <!-- Evaluation suites (Vault Parse's corpus evaluation): custom evaluators and on-disk result storage. -->
         <PackageVersion Include="Microsoft.Extensions.AI.Evaluation" Version="11.0.0" />

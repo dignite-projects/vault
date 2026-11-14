@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Core" />
+    <PackageReference Include="Microsoft.Extensions.Documents.Abstractions" />
   </ItemGroup>
 
 </Project>
