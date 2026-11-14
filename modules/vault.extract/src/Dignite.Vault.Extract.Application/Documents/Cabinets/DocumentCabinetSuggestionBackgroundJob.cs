@@ -36,7 +36,6 @@ namespace Dignite.Vault.Extract.Documents.Cabinets;
 /// exception itself is swallowed, leaving the document uncategorized.
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.DocumentCabinetSuggestion")]
 public class DocumentCabinetSuggestionBackgroundJob
     : AsyncBackgroundJob<DocumentCabinetSuggestionJobArgs>, ITransientDependency
 {
@@ -50,6 +49,7 @@ public class DocumentCabinetSuggestionBackgroundJob
     // ExecuteAsync. The default worker source is the host shutdown token, so slow external work such
     // as LLM calls can cancel promptly during shutdown, matching DocumentParseBackgroundJob.
     private readonly ICancellationTokenProvider _cancellationTokenProvider;
+    private readonly DocumentWriteLock _documentWriteLock;
 
     public DocumentCabinetSuggestionBackgroundJob(
         IDocumentRepository documentRepository,
@@ -58,7 +58,8 @@ public class DocumentCabinetSuggestionBackgroundJob
         IUnitOfWorkManager unitOfWorkManager,
         ICurrentTenant currentTenant,
         IOptions<VaultExtractBehaviorOptions> options,
-        ICancellationTokenProvider cancellationTokenProvider)
+        ICancellationTokenProvider cancellationTokenProvider,
+        DocumentWriteLock documentWriteLock)
     {
         _documentRepository = documentRepository;
         _cabinetRepository = cabinetRepository;
@@ -67,6 +68,7 @@ public class DocumentCabinetSuggestionBackgroundJob
         _currentTenant = currentTenant;
         _options = options.Value;
         _cancellationTokenProvider = cancellationTokenProvider;
+        _documentWriteLock = documentWriteLock;
     }
 
     public override async Task ExecuteAsync(DocumentCabinetSuggestionJobArgs args)
@@ -174,6 +176,7 @@ public class DocumentCabinetSuggestionBackgroundJob
             return;
         }
 
+        await using var documentLock = await _documentWriteLock.AcquireAsync(documentId);
         using var uow = _unitOfWorkManager.Begin(requiresNew: true);
 
         var document = await _documentRepository.GetAsync(documentId, includeDetails: false);
@@ -211,6 +214,7 @@ public class DocumentCabinetSuggestionBackgroundJob
         IReadOnlyList<Cabinet> Candidates);
 }
 
+[BackgroundJobName("VaultExtract.DocumentCabinetSuggestion")]
 public class DocumentCabinetSuggestionJobArgs
 {
     public Guid DocumentId { get; set; }

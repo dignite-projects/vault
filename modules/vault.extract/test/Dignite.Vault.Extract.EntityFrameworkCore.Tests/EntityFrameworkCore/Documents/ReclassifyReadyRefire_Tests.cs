@@ -112,7 +112,7 @@ public class ReclassifyReadyRefire_Tests : VaultExtractTestBase<ReclassifyReadyR
             var doc = await _documentRepository.GetAsync(documentId);
             var run = await _pipelineRunAccessor.BeginOrStartAsync(
                 doc, jobArgs.PipelineRunId, VaultExtractPipelines.FieldExtraction);
-            await _pipelineRunManager.CompleteAsync(doc, run);
+            await _pipelineRunManager.CompleteAsync(doc, run.ShouldNotBeNull());
             await _documentRepository.UpdateAsync(doc, autoSave: true);
         });
 

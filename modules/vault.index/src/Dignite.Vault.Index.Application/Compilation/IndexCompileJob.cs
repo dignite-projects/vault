@@ -26,8 +26,8 @@ namespace Dignite.Vault.Index.Compilation;
 /// job for a document already compiled costs a read. It reads only Index's own rows, never Extract.
 /// <para>
 /// Like the index job, no transaction is held across model calls: read, compile, then write in one short unit of
-/// work. A document re-chunked while it compiled gets summaries whose source hash no longer matches, which the outline
-/// does not serve, and the sync that re-chunked it has queued the next compilation. When every model call fails the
+/// work. The summaries of a document re-chunked while it compiled are not written: the sync that re-chunked it queued
+/// the compilation of the new chunks, which may finish first, as compilations run in parallel. When every model call fails the
 /// job throws, so ABP retries it later; a partial result is kept, with a note.
 /// </para>
 /// </summary>
@@ -164,6 +164,18 @@ public class IndexCompileJob : AsyncBackgroundJob<IndexCompileJobArgs>, ITransie
             return;
         }
 
+        // Re-chunked while this job compiled. The compilation the re-chunking sync queued reads the new chunks, and may
+        // already have written its summaries, since compilations run in parallel; these would replace them with
+        // summaries the outline does not serve.
+        if (await CurrentSourceHashAsync(documentId, row.Language) != sourceHash)
+        {
+            await uow.CompleteAsync();
+            Logger.LogInformation(
+                "Document {DocumentId} was re-chunked while its summaries compiled; the compilation of the new chunks writes them.",
+                documentId);
+            return;
+        }
+
         var content = compilation.Summaries.ToJson();
         var artifact = await FindSummariesAsync(documentId);
         if (artifact is null)
@@ -182,6 +194,16 @@ public class IndexCompileJob : AsyncBackgroundJob<IndexCompileJobArgs>, ITransie
         }
 
         await uow.CompleteAsync();
+    }
+
+    /// <summary>The source hash of the document's enabled chunks as they are now, computed as <see cref="ReadSourceAsync"/> does.</summary>
+    protected virtual async Task<string> CurrentSourceHashAsync(Guid documentId, string? language)
+    {
+        var chunks = await _asyncExecuter.ToListAsync((await _chunkRepository.GetQueryableAsync())
+            .Where(c => c.DocumentId == documentId && !c.IsDisabled)
+            .OrderBy(c => c.Ordinal)
+            .Select(c => new { c.Ordinal, c.HeadingPath, c.ContentHash }));
+        return DocumentSummaries.SourceHash(language, chunks.Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash)));
     }
 
     protected virtual async Task MoveSummariesAsync(Guid documentId)

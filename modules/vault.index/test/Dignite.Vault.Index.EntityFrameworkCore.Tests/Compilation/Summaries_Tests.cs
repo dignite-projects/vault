@@ -209,6 +209,26 @@ public class Summaries_Tests : VaultIndexTestBase<VaultIndexSummaryTestModule>
         (await SummariesAsync()).ShouldBeNull();
     }
 
+    /// <summary>
+    /// Compilations run in parallel: the one queued by a re-chunking sync can finish before the one that was already
+    /// reading the old chunks. The later write of the older one would leave summaries the outline does not serve.
+    /// </summary>
+    [Fact]
+    public async Task Summaries_of_chunks_replaced_while_they_compiled_do_not_overwrite_the_newer_ones()
+    {
+        await SetProfileAsync(IndexCompilation.Summaries);
+        await IndexAsync(Lease);
+        _model.DuringCall = async () =>
+        {
+            await IndexAsync(Lease.Replace("末日", "25日"));
+            await CompileAsync();
+        };
+
+        await CompileAsync();
+
+        (await OutlineAsync()).DocumentSummary.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task A_document_removed_while_it_compiles_gets_no_summaries()
     {

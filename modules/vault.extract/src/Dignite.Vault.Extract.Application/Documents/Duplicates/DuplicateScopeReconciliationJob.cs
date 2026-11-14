@@ -61,7 +61,6 @@ namespace Dignite.Vault.Extract.Documents.Duplicates;
 /// ABP conventions all live there.
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.DuplicateScopeReconciliation")]
 public class DuplicateScopeReconciliationJob
     : AsyncBackgroundJob<DuplicateScopeReconciliationArgs>, ITransientDependency
 {
@@ -160,6 +159,14 @@ public class DuplicateScopeReconciliationJob
                             continue;
                         }
 
+                        // The target was computed from the projected fingerprint. A field extraction that saved the
+                        // document since then judged it under the current scope itself; writing the target would
+                        // replace that verdict with one from the old fingerprint, and no concurrency stamp catches it.
+                        if (document.FieldFingerprint != row.FieldFingerprint)
+                        {
+                            continue;
+                        }
+
                         document.SetReviewReason(DocumentReviewReasons.DuplicateSuspected, target);
 
                         // A recycle-bin document has no live lifecycle to re-derive; its flag is corrected in
@@ -195,6 +202,7 @@ public class DuplicateScopeReconciliationJob
     }
 }
 
+[BackgroundJobName("VaultExtract.DuplicateScopeReconciliation")]
 public class DuplicateScopeReconciliationArgs
 {
     public Guid DocumentTypeId { get; set; }

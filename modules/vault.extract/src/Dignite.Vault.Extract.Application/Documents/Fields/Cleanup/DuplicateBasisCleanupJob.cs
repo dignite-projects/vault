@@ -42,7 +42,6 @@ namespace Dignite.Vault.Extract.Documents.Fields.Cleanup;
 /// always has.
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.DuplicateBasisCleanup")]
 public class DuplicateBasisCleanupJob
     : AsyncBackgroundJob<DuplicateBasisCleanupArgs>, ITransientDependency
 {
@@ -145,6 +144,7 @@ public class DuplicateBasisCleanupJob
     }
 }
 
+[BackgroundJobName("VaultExtract.DuplicateBasisCleanup")]
 public class DuplicateBasisCleanupArgs
 {
     public Guid DocumentTypeId { get; set; }

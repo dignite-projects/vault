@@ -150,6 +150,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Background jobs run in parallel, on a worker per slow stage** (modules and shipped host). Extract gives text
+  extraction, classification (with segmentation and the cabinet suggestion) and field extraction workers of their
+  own, and Index its indexing and its summary compilation, so a scan's OCR or a long contract's field extraction no
+  longer holds up every other job in the host. Each worker runs up to `Vault:BackgroundJobs:MaxParallelJobExecutionCount`
+  jobs at a time (4 unless set; every instance needs the same value). The host takes ABP's locks as SQL Server
+  application locks on the `Default` database (`DistributedLock.SqlServer`), so several host instances can share the
+  databases and each job, and each outbox batch, runs on one of them. Jobs of one document that now run at the same
+  time take the document's lock around their writes, so they no longer fail each other's save; scope reconciliation
+  skips a document a field extraction re-judged meanwhile, and a summary compilation of chunks replaced while it ran
+  no longer overwrites the newer one. See [Background Jobs](docs/en/deployment/deployment.md#background-jobs).
+
 - **Environment variables and command-line arguments override `appsettings.secrets.json`** (shipped host). ABP adds
   the secrets file after them, so it used to win; the host now adds them again after it. The secrets file still
   supplies whatever the environment leaves unset.
@@ -254,6 +265,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Extract's background jobs were stored under their args types' full names**, not the `VaultExtract.*` names the
+  documentation gives: ABP reads `[BackgroundJobName]` from the args type, and Extract had put it on the job class. A
+  rename or a namespace move of an args type would have stranded the jobs queued under the old name, which ABP
+  abandons. See the deploy note.
+- **A pipeline job executed a run that had ended or that a later attempt had superseded.** When an operator retried a
+  failed parse while ABP still held the failed job for its own retry, both ran: the second to finish failed on the
+  Markdown the first had written and left the document `Failed`, retried for two days. A job now runs its run only
+  while the run has not ended and is the stage's latest attempt; a superseded run that never ended is marked
+  `Skipped` ("Superseded by attempt N.").
+
 - **`dotnet run --migrate-database` inside the repository migrated nothing** (shipped host) since the monorepo
   relayout. The migration service still carried the application template's "create the initial migration" step: it
   looked for `Migrations` under the solution's `src/`, found none (they are in the host project), asked the ABP CLI to
@@ -351,6 +372,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `*[Image OCR]*` markers and could join two of its headings into one.
 - Smaller fixes: a pipeline run's status message is cut on a character boundary (a long provider error could end
   in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
+
+### Deploy note
+
+- **Background job names.** Jobs queued before the upgrade carry the old names, and the new host abandons them. Let
+  the queue drain first, or rename them in the `Default` database before starting the new host:
+
+  ```sql
+  UPDATE AbpBackgroundJobs SET JobName = CASE JobName
+      WHEN 'Dignite.Vault.Extract.Documents.Cabinets.DocumentCabinetSuggestionJobArgs' THEN 'VaultExtract.DocumentCabinetSuggestion'
+      WHEN 'Dignite.Vault.Extract.Documents.Pipelines.Classification.DocumentClassificationJobArgs' THEN 'VaultExtract.DocumentClassification'
+      WHEN 'Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction.DocumentFieldExtractionJobArgs' THEN 'VaultExtract.DocumentFieldExtraction'
+      WHEN 'Dignite.Vault.Extract.Documents.Pipelines.Reprocessing.DocumentFieldReextractionDispatcherArgs' THEN 'VaultExtract.DocumentFieldReextractionDispatcher'
+      WHEN 'Dignite.Vault.Extract.Documents.Pipelines.Parse.DocumentParseJobArgs' THEN 'VaultExtract.DocumentParse'
+      WHEN 'Dignite.Vault.Extract.Documents.Pipelines.Reprocessing.DocumentReclassificationDispatcherArgs' THEN 'VaultExtract.DocumentReclassificationDispatcher'
+      WHEN 'Dignite.Vault.Extract.Documents.Pipelines.Segmentation.DocumentSegmentationJobArgs' THEN 'VaultExtract.DocumentSegmentation'
+      WHEN 'Dignite.Vault.Extract.Documents.Fields.Cleanup.DuplicateBasisCleanupArgs' THEN 'VaultExtract.DuplicateBasisCleanup'
+      WHEN 'Dignite.Vault.Extract.Documents.Duplicates.DuplicateScopeReconciliationArgs' THEN 'VaultExtract.DuplicateScopeReconciliation'
+      WHEN 'Dignite.Vault.Extract.Documents.Fields.Cleanup.FieldValidationWarningCleanupArgs' THEN 'VaultExtract.FieldValidationWarningCleanup'
+      ELSE JobName END
+  WHERE JobName LIKE 'Dignite.Vault.Extract.%';
+  ```
+
+- **Several host instances** now share the job queue safely, but every instance must run this release (an older one
+  takes no SQL Server locks) and have the same `Vault:BackgroundJobs:MaxParallelJobExecutionCount`.
 
 ## [0.6.0] - 2026-10-29
 

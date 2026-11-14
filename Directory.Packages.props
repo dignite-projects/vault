@@ -30,6 +30,8 @@
         <PackageVersion Include="Volo.Abp.EntityFrameworkCore.SqlServer" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.BackgroundJobs" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.DistributedLocking" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.DistributedLocking.Abstractions" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.BackgroundJobs.EntityFrameworkCore" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.BlobStoring" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.BlobStoring.FileSystem" Version="11.0.0-rc.2" />
@@ -152,6 +154,9 @@
         <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0" />
         <!-- The host's model clients (chat, embedding, rerank) run on its standard resilience pipeline. -->
         <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="11.0.0" />
+        <!-- The host's distributed lock: SQL Server application locks, so host instances never run the same background job
+             or outbox batch twice. -->
+        <PackageVersion Include="DistributedLock.SqlServer" Version="1.0.7" />
         <PackageVersion Include="ElBruno.MarkItDotNet" Version="0.6.0" />
         <PackageVersion Include="ElBruno.MarkItDotNet.Excel" Version="0.6.0" />
         <!-- Charset detection for legacy-encoded CSV/TSV/TXT uploads (#493). Tri-licensed MPL-1.1 /

@@ -62,7 +62,6 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 /// segment-row inserts and each derived-document insert + status change + pipeline enqueue run inside short UoWs.
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.DocumentSegmentation")]
 public class DocumentSegmentationJob
     : AsyncBackgroundJob<DocumentSegmentationJobArgs>, ITransientDependency
 {
@@ -76,6 +75,7 @@ public class DocumentSegmentationJob
     private readonly IUnitOfWorkManager _unitOfWorkManager;
     private readonly VaultExtractBehaviorOptions _behaviorOptions;
     private readonly ICancellationTokenProvider _cancellationTokenProvider;
+    private readonly DocumentWriteLock _documentWriteLock;
 
     public DocumentSegmentationJob(
         IDocumentRepository documentRepository,
@@ -87,7 +87,8 @@ public class DocumentSegmentationJob
         IGuidGenerator guidGenerator,
         IUnitOfWorkManager unitOfWorkManager,
         IOptions<VaultExtractBehaviorOptions> behaviorOptions,
-        ICancellationTokenProvider cancellationTokenProvider)
+        ICancellationTokenProvider cancellationTokenProvider,
+        DocumentWriteLock documentWriteLock)
     {
         _documentRepository = documentRepository;
         _segmentRepository = segmentRepository;
@@ -99,6 +100,7 @@ public class DocumentSegmentationJob
         _unitOfWorkManager = unitOfWorkManager;
         _behaviorOptions = behaviorOptions.Value;
         _cancellationTokenProvider = cancellationTokenProvider;
+        _documentWriteLock = documentWriteLock;
     }
 
     public override async Task ExecuteAsync(DocumentSegmentationJobArgs args)
@@ -379,6 +381,7 @@ public class DocumentSegmentationJob
             return;
         }
 
+        await using (await _documentWriteLock.AcquireAsync(context.SourceDocumentId))
         using (_currentTenant.Change(context.TenantId))
         using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
         {
@@ -440,6 +443,7 @@ public class DocumentSegmentationJob
     /// <summary>Short UoW: mark the document segmented (#377) on a terminal no-op (an embedded source with nothing standalone to route), so a retry / re-enqueue does not re-pay the LLM. Tenant-scoped + idempotent. A verdict about Markdown a re-parse has since replaced (#660) is dropped: marking the new text segmented would make its own pass skip detection.</summary>
     protected virtual async Task MarkDocumentSegmentedAsync(DetectionContext context)
     {
+        await using (await _documentWriteLock.AcquireAsync(context.SourceDocumentId))
         using (_currentTenant.Change(context.TenantId))
         using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
         {
@@ -586,6 +590,7 @@ public class DocumentSegmentationJob
             "Container {SourceId} segmentation incomplete ({Reason}); flagging for operator review.",
             context.SourceDocumentId, reason);
 
+        await using (await _documentWriteLock.AcquireAsync(context.SourceDocumentId))
         using (_currentTenant.Change(context.TenantId))
         using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
         {
@@ -623,6 +628,7 @@ public class DocumentSegmentationJob
     /// </summary>
     private async Task<int> FinalizeSegmentationFlagAsync(DetectionContext context)
     {
+        await using (await _documentWriteLock.AcquireAsync(context.SourceDocumentId))
         using (_currentTenant.Change(context.TenantId))
         using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
         {
@@ -711,6 +717,7 @@ public class DocumentSegmentationJob
         Guid SegmentId, string SegmentKey, DocumentSegmentKind Kind);
 }
 
+[BackgroundJobName("VaultExtract.DocumentSegmentation")]
 public class DocumentSegmentationJobArgs
 {
     /// <summary>The source document whose Markdown (with inline figure markers, #381) should be analyzed for standalone sub-documents.</summary>

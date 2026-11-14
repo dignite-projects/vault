@@ -4,11 +4,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents.Cabinets;
+using Dignite.Vault.Extract.Documents.Pipelines;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
+using Volo.Abp.DistributedLocking;
 using Volo.Abp.Modularity;
 using Volo.Abp.Uow;
 using Xunit;
@@ -68,6 +70,48 @@ public class DocumentCabinetSuggestionBackgroundJob_Tests
 
         doc.CabinetId.ShouldBe(cabinet.Id);
         await _documentRepository.Received().UpdateAsync(doc, Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Text extraction queues this job together with classification, and both save the document. Holding the document
+    /// lock only around the write keeps the two from failing each other's save without one waiting for the other's
+    /// model call.
+    /// </summary>
+    [Fact]
+    public async Task Writes_under_the_document_lock_and_calls_the_model_outside_it()
+    {
+        var cabinet = new Cabinet(Guid.NewGuid(), null, "法务");
+        var doc = CreateDocument(markdown: "業務委託契約書の内容です。", cabinetId: null);
+        SetupRepositories(doc, cabinet);
+        var distributedLock = GetRequiredService<IAbpDistributedLock>();
+        async Task<bool> IsLockedAsync()
+        {
+            await using var handle = await distributedLock.TryAcquireAsync(DocumentWriteLock.GetName(doc.Id));
+            return handle is null;
+        }
+
+        bool? lockedDuringModelCall = null;
+        bool? lockedDuringWrite = null;
+        _workflow
+            .RunAsync(Arg.Any<IReadOnlyList<Cabinet>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                lockedDuringModelCall = await IsLockedAsync();
+                return new CabinetSuggestionOutcome { CabinetId = cabinet.Id, Confidence = 0.9 };
+            });
+        _documentRepository
+            .UpdateAsync(doc, Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                lockedDuringWrite = await IsLockedAsync();
+                return doc;
+            });
+
+        await _job.ExecuteAsync(new DocumentCabinetSuggestionJobArgs { DocumentId = doc.Id });
+
+        doc.CabinetId.ShouldBe(cabinet.Id);
+        lockedDuringModelCall.ShouldBe(false);
+        lockedDuringWrite.ShouldBe(true);
     }
 
     [Fact]

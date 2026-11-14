@@ -31,7 +31,6 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Reprocessing;
 /// state from confidence: passing returns to Ready; failing goes to manual review.
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.DocumentReclassificationDispatcher")]
 public class DocumentReclassificationDispatcherJob
     : AsyncBackgroundJob<DocumentReclassificationDispatcherArgs>, ITransientDependency
 {
@@ -100,6 +99,7 @@ public class DocumentReclassificationDispatcherJob
     }
 }
 
+[BackgroundJobName("VaultExtract.DocumentReclassificationDispatcher")]
 public class DocumentReclassificationDispatcherArgs
 {
     /// <summary>Non-null means only this type (<see cref="ReclassificationScope.OnlyCurrentType"/>); null means all / cross-type.</summary>

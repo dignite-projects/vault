@@ -121,7 +121,11 @@ public class DocumentPipelineRunAccessor : ITransientDependency
         _logger = logger;
     }
 
-    public virtual async Task<DocumentPipelineRun> BeginOrStartAsync(
+    /// <summary>
+    /// Begins the run a pipeline job was queued for, or starts one. Returns <c>null</c> when the job's run is no
+    /// longer one to execute (see <see cref="BeginIfCurrentAsync"/>): the job then ends without doing its work.
+    /// </summary>
+    public virtual async Task<DocumentPipelineRun?> BeginOrStartAsync(
         Document document,
         Guid? pipelineRunId,
         string pipelineCode)
@@ -136,8 +140,7 @@ public class DocumentPipelineRunAccessor : ITransientDependency
         var run = await _runRepository.FindAsync(pipelineRunId.Value);
         if (run?.PipelineCode == pipelineCode)
         {
-            await _pipelineRunManager.BeginAsync(document, run);
-            return run;
+            return await BeginIfCurrentAsync(document, run) ? run : null;
         }
 
         if (run != null)
@@ -165,5 +168,41 @@ public class DocumentPipelineRunAccessor : ITransientDependency
             pipelineCode,
             pipelineRunId.Value);
         return replacementRun;
+    }
+
+    /// <summary>
+    /// Begins <paramref name="run"/> when its job still has it to execute, and returns whether it did. A run that has
+    /// ended (Succeeded or Skipped) was executed by an earlier delivery of the job. A run that a later attempt of the
+    /// same pipeline has superseded is not executed either: ABP retries a failed job on its own schedule, so attempt 1's
+    /// retry can come round after an operator's retry queued attempt 2, and with parallel workers the two run at once.
+    /// The parse that finishes second then fails on the Markdown the first one wrote and leaves the document Failed.
+    /// A superseded run that never ended is marked Skipped; a Failed one keeps its failure.
+    /// </summary>
+    protected virtual async Task<bool> BeginIfCurrentAsync(Document document, DocumentPipelineRun run)
+    {
+        if (run.Status is PipelineRunStatus.Succeeded or PipelineRunStatus.Skipped)
+        {
+            _logger.LogInformation(
+                "Pipeline run {PipelineRunId} ({PipelineCode}) on document {DocumentId} has already ended as {Status}; its job ends.",
+                run.Id, run.PipelineCode, document.Id, run.Status);
+            return false;
+        }
+
+        var latest = await _runRepository.FindLatestByDocumentAndCodeAsync(document.Id, run.PipelineCode);
+        if (latest != null && latest.AttemptNumber > run.AttemptNumber)
+        {
+            if (run.Status is PipelineRunStatus.Pending or PipelineRunStatus.Running)
+            {
+                await _pipelineRunManager.SkipAsync(document, run, $"Superseded by attempt {latest.AttemptNumber}.");
+            }
+
+            _logger.LogInformation(
+                "Pipeline run {PipelineRunId} ({PipelineCode}, attempt {AttemptNumber}) on document {DocumentId} was superseded by attempt {LatestAttemptNumber}; its job ends.",
+                run.Id, run.PipelineCode, run.AttemptNumber, document.Id, latest.AttemptNumber);
+            return false;
+        }
+
+        await _pipelineRunManager.BeginAsync(document, run);
+        return true;
     }
 }

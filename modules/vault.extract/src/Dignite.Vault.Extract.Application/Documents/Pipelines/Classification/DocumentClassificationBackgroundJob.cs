@@ -21,7 +21,6 @@ using Volo.Abp.Uow;
 
 namespace Dignite.Vault.Extract.Documents.Pipelines.Classification;
 
-[BackgroundJobName("VaultExtract.DocumentClassification")]
 public class DocumentClassificationBackgroundJob
     : DocumentPipelineBackgroundJobBase<DocumentClassificationJobArgs>, ITransientDependency
 {
@@ -50,8 +49,9 @@ public class DocumentClassificationBackgroundJob
         ICurrentTenant currentTenant,
         IBackgroundJobManager backgroundJobManager,
         DocumentPipelineJobScheduler pipelineJobScheduler,
-        IFlexFieldIndexManager<Document> indexManager)
-        : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter)
+        IFlexFieldIndexManager<Document> indexManager,
+        DocumentWriteLock documentWriteLock)
+        : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter, documentWriteLock)
     {
         _documentTypeRepository = documentTypeRepository;
         _workflow = workflow;
@@ -74,15 +74,21 @@ public class DocumentClassificationBackgroundJob
 
     private async Task ExecuteInTenantAsync(DocumentClassificationJobArgs args)
     {
-        ClassificationWorkItem workItem;
+        ClassificationWorkItem? begun;
         try
         {
-            workItem = await BeginRunAsync(args);
+            begun = await BeginRunAsync(args);
         }
         catch (EntityNotFoundException ex) when (IsDocumentGone(ex))
         {
             // #662: deleted while queued — end the job instead of letting ABP retry it until it abandons it.
             await EndForDeletedDocumentAsync(args.DocumentId, args.PipelineRunId, VaultExtractPipelines.Classification);
+            return;
+        }
+
+        if (begun is not { } workItem)
+        {
+            // The run has ended or a later attempt superseded it (DocumentPipelineRunAccessor.BeginIfCurrentAsync).
             return;
         }
 
@@ -107,8 +113,9 @@ public class DocumentClassificationBackgroundJob
         }
     }
 
-    private async Task<ClassificationWorkItem> BeginRunAsync(DocumentClassificationJobArgs args)
+    private async Task<ClassificationWorkItem?> BeginRunAsync(DocumentClassificationJobArgs args)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(args.DocumentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         var document = await DocumentRepository.GetAsync(args.DocumentId, includeDetails: false);
@@ -131,6 +138,11 @@ public class DocumentClassificationBackgroundJob
         await DocumentRepository.UpdateAsync(document, autoSave: true);
 
         await uow.CompleteAsync();
+
+        if (run is null)
+        {
+            return null;
+        }
 
         return new ClassificationWorkItem(run.Id, document.Id, document.TenantId, document.Markdown ?? string.Empty, candidates);
     }
@@ -167,6 +179,7 @@ public class DocumentClassificationBackgroundJob
         DocumentClassificationOutcome outcome,
         bool hasFigures)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(workItem.DocumentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         // includeFieldValues:true because the low-confidence path clears type-bound fields (#267
@@ -300,6 +313,7 @@ public class DocumentClassificationBackgroundJob
         IReadOnlyList<DocumentType> Candidates);
 }
 
+[BackgroundJobName("VaultExtract.DocumentClassification")]
 public class DocumentClassificationJobArgs
 {
     public Guid DocumentId { get; set; }
