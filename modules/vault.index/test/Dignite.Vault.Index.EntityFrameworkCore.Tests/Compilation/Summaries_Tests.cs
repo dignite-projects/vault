@@ -229,6 +229,23 @@ public class Summaries_Tests : VaultIndexTestBase<VaultIndexSummaryTestModule>
         (await OutlineAsync()).DocumentSummary.ShouldNotBeNull();
     }
 
+    /// <summary>Through the host's distributed cache: a recompilation of unchanged chunks asks the model nothing.</summary>
+    [Fact]
+    public async Task A_forced_recompilation_of_unchanged_chunks_reuses_every_summary()
+    {
+        _model.ModelId = "summary-model";
+        await SetProfileAsync(IndexCompilation.Summaries);
+        await IndexAsync(Lease);
+        await CompileAsync();
+        var calls = _model.Calls.Count;
+        calls.ShouldBeGreaterThan(0);
+
+        await CompileAsync(force: true);
+
+        _model.Calls.Count.ShouldBe(calls);
+        (await OutlineAsync()).DocumentSummary.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task A_document_removed_while_it_compiles_gets_no_summaries()
     {

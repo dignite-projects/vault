@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Ddd.Application" />
     <PackageReference Include="Volo.Abp.BackgroundJobs" />
+    <PackageReference Include="Volo.Abp.Caching" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <!-- Ingestion builds on DataIngestion's reader, chunkers and enrichers. Its IngestionPipeline is not used: it reads
          files only, and the Markdown comes from Extract in memory (storage PoC, step 2). -->

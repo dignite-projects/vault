@@ -113,8 +113,8 @@ public class IndexCompileJob : AsyncBackgroundJob<IndexCompileJobArgs>, ITransie
 
             await WriteSummariesAsync(args.DocumentId, source.SourceHash, compilation);
             Logger.LogInformation(
-                "Compiled the summaries of document {DocumentId}: {Sections} sections, {Calls} calls, {InputTokens} input and {OutputTokens} output tokens.",
-                args.DocumentId, compilation.Summaries.Sections.Count, compilation.CallCount, compilation.InputTokenCount, compilation.OutputTokenCount);
+                "Compiled the summaries of document {DocumentId}: {Sections} sections, {Calls} calls, {Reused} summaries reused, {InputTokens} input and {OutputTokens} output tokens.",
+                args.DocumentId, compilation.Summaries.Sections.Count, compilation.CallCount, compilation.ReusedCount, compilation.InputTokenCount, compilation.OutputTokenCount);
         }
     }
 

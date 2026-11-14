@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
+using Dignite.Vault.Index.Ai;
 using Dignite.Vault.Index.Indexing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DataIngestion;
@@ -163,6 +164,72 @@ public class IndexChunkEnricher_Tests
         model.Calls[0].User.Count(c => c == 'あ').ShouldBe(IndexChunkEnricher.MaxChunkLength);
     }
 
+    [Fact]
+    public async Task A_chunk_enriched_before_takes_its_stored_result_and_only_changed_chunks_are_asked()
+    {
+        var cache = new InMemoryModelResultCache();
+        var model = new ScriptedEnrichmentChatClient { ModelId = "enrichment-model" };
+        await RunAsync(new IndexChunkEnricher(model, IndexEnrichment.Keywords | IndexEnrichment.Questions, NullLogger.Instance, cache: cache), 5);
+
+        var enricher = new IndexChunkEnricher(model, IndexEnrichment.Keywords | IndexEnrichment.Questions, NullLogger.Instance, cache: cache);
+        var chunks = await RunAsync(enricher, 5, i => i == 2 ? "passage 2, edited" : "passage " + i);
+
+        model.Calls.Count.ShouldBe(2);
+        Regex.Matches(model.Calls[1].User, "Passage \\d+:").Count.ShouldBe(1);
+        model.Calls[1].User.ShouldContain("passage 2, edited");
+        enricher.CachedChunkCount.ShouldBe(4);
+        enricher.CallCount.ShouldBe(1);
+        enricher.InputTokenCount.ShouldBe(100);
+        ((string[])chunks[4].Metadata[IndexChunkEnricher.KeywordsKey]).ShouldBe(["kw4", "term"]);
+        ((string[])chunks[4].Metadata[IndexChunkEnricher.QuestionsKey]).ShouldBe(["What does passage 4 say?"]);
+        ((string[])chunks[2].Metadata[IndexChunkEnricher.KeywordsKey]).ShouldBe(["kw0", "term"]);
+    }
+
+    /// <summary>
+    /// A model in JSON schema mode can answer an open object and whitespace. Storing that would hand it back to the second
+    /// ask and to every later run, which is why results are stored and responses are not.
+    /// </summary>
+    [Fact]
+    public async Task An_answer_that_could_not_be_read_is_not_stored()
+    {
+        var cache = new InMemoryModelResultCache();
+        var model = new ScriptedEnrichmentChatClient { ModelId = "enrichment-model", UnreadableOnCalls = [1, 2] };
+        var first = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache);
+        await RunAsync(first, 3);
+        first.FailedChunkCount.ShouldBe(3);
+
+        var second = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache);
+        var chunks = await RunAsync(second, 3);
+
+        model.Calls.Count.ShouldBe(3);
+        second.CachedChunkCount.ShouldBe(0);
+        chunks.ShouldAllBe(c => c.Metadata.ContainsKey(IndexChunkEnricher.KeywordsKey));
+    }
+
+    [Fact]
+    public async Task Results_are_reused_only_from_the_same_named_model_under_the_same_instructions()
+    {
+        var cache = new InMemoryModelResultCache();
+        var unnamed = new ScriptedEnrichmentChatClient();
+        await RunAsync(new IndexChunkEnricher(unnamed, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache), 2);
+        await RunAsync(new IndexChunkEnricher(unnamed, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache), 2);
+        unnamed.Calls.Count.ShouldBe(2);
+        cache.Entries.ShouldBeEmpty();
+
+        var named = new ScriptedEnrichmentChatClient { ModelId = "enrichment-model" };
+        await RunAsync(new IndexChunkEnricher(named, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache), 2);
+        await RunAsync(new IndexChunkEnricher(named, IndexEnrichment.Keywords | IndexEnrichment.Questions, NullLogger.Instance, cache: cache), 2);
+        await RunAsync(new IndexChunkEnricher(named, IndexEnrichment.Keywords, NullLogger.Instance, "ja", cache), 2);
+        named.Calls.Count.ShouldBe(3);
+
+        var other = new ScriptedEnrichmentChatClient { ModelId = "other-model" };
+        await RunAsync(new IndexChunkEnricher(other, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache), 2);
+        other.Calls.Count.ShouldBe(1);
+
+        await RunAsync(new IndexChunkEnricher(named, IndexEnrichment.Keywords, NullLogger.Instance, cache: cache), 2);
+        named.Calls.Count.ShouldBe(3);
+    }
+
     private static async Task<List<IngestionChunk<string>>> RunAsync(IndexChunkEnricher enricher, int count, Func<int, string>? text = null)
     {
         var document = new IngestionDocument("doc");
@@ -192,6 +259,9 @@ public class IndexChunkEnricher_Tests
 public sealed class ScriptedEnrichmentChatClient : IChatClient
 {
     public List<(string System, string User)> Calls { get; } = [];
+
+    /// <summary>The model the client names in its metadata; <c>null</c> names none.</summary>
+    public string? ModelId { get; set; }
 
     /// <summary>The call (from 1) that throws.</summary>
     public int? FailOnCall { get; set; }
@@ -236,7 +306,8 @@ public sealed class ScriptedEnrichmentChatClient : IChatClient
         }
     }
 
-    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+    public object? GetService(Type serviceType, object? serviceKey = null)
+        => serviceType == typeof(ChatClientMetadata) && ModelId is not null ? new ChatClientMetadata("scripted", null, ModelId) : null;
 
     public void Dispose()
     {

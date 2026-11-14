@@ -29,6 +29,9 @@ public sealed class SummaryCompilation
 
     public int FailedCallCount { get; init; }
 
+    /// <summary>Summaries taken from a <see cref="ModelResultCache"/> instead of a model call.</summary>
+    public int ReusedCount { get; init; }
+
     /// <summary>What was left out or could not be done; <c>null</c> when nothing.</summary>
     public string? Note { get; init; }
 
@@ -68,6 +71,11 @@ public sealed class SummaryCompilation
 /// only whitespace until its token limit, which a second call usually does not repeat. Best effort beyond that: a batch
 /// whose call fails, or whose answer cannot be read twice, leaves its sections without summaries, its parents are
 /// summarized from what there is, and the compilation says so in its note.
+/// </para>
+/// <para>
+/// With a <see cref="ModelResultCache"/>, an item the same model summarized from the same text under the same
+/// instructions takes that summary instead of a model call, so a document recompiled after a small edit, or after some
+/// of its summaries failed, is summarized again only where something changed or failed. Only kept summaries are stored.
 /// </para>
 /// </summary>
 public class DocumentSummaryCompiler
@@ -117,20 +125,27 @@ public class DocumentSummaryCompiler
 
     private readonly IChatClient _chatClient;
     private readonly ILogger _logger;
-    private readonly string _languageInstruction;
+    private readonly ModelResultCache? _cache;
+    private readonly string _sectionSystemPrompt;
+    private readonly string _documentSystemPrompt;
 
     /// <param name="language">The document's language tag, such as <c>ja</c>; <c>null</c> when unknown.</param>
-    public DocumentSummaryCompiler(IChatClient chatClient, ILogger logger, string? language = null)
+    /// <param name="cache">Where summaries are reused from; <c>null</c> asks the model for every item.</param>
+    public DocumentSummaryCompiler(IChatClient chatClient, ILogger logger, string? language = null, ModelResultCache? cache = null)
     {
         _chatClient = chatClient;
         _logger = logger;
-        _languageInstruction = PromptLanguage.Instruction(language, "the summaries");
+        _cache = cache;
+        var languageInstruction = PromptLanguage.Instruction(language, "the summaries");
+        _sectionSystemPrompt = SectionInstructions + languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule;
+        _documentSystemPrompt = DocumentInstructions + languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule;
     }
 
     private long _inputTokens;
     private long _outputTokens;
     private int _calls;
     private int _failedCalls;
+    private int _reused;
 
     public virtual async Task<SummaryCompilation> CompileAsync(
         string? title,
@@ -138,7 +153,7 @@ public class DocumentSummaryCompiler
         CancellationToken cancellationToken = default)
     {
         _inputTokens = _outputTokens = 0;
-        _calls = _failedCalls = 0;
+        _calls = _failedCalls = _reused = 0;
 
         var ordered = chunks.OrderBy(c => c.Ordinal).ToList();
         var outline = DocumentOutline.Build(ordered.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath)));
@@ -163,7 +178,7 @@ public class DocumentSummaryCompiler
                 empty.Failed = true;
             }
 
-            foreach (var batch in Batch(items.Where(HasContent).ToList()))
+            foreach (var batch in Batch(await ReuseSectionsAsync(items.Where(HasContent).ToList(), cancellationToken)))
             {
                 await SummarizeSectionsAsync(batch, cancellationToken);
             }
@@ -207,6 +222,7 @@ public class DocumentSummaryCompiler
         OutputTokenCount = _outputTokens,
         CallCount = _calls,
         FailedCallCount = _failedCalls,
+        ReusedCount = _reused,
         Note = notes.Count == 0 ? null : string.Join(" ", notes)
     };
 
@@ -447,6 +463,42 @@ public class DocumentSummaryCompiler
         return item.ToString();
     }
 
+    /// <summary>
+    /// Gives each task whose summary is stored that summary, and returns the tasks left for the model; every task when
+    /// there is no cache, or the model has no name.
+    /// </summary>
+    protected virtual async Task<List<SummaryTask>> ReuseSectionsAsync(List<SummaryTask> tasks, CancellationToken cancellationToken)
+    {
+        var keys = tasks.Select(task => SectionKey(Render(task, "Heading"))).ToList();
+        if (_cache is null || tasks.Count == 0 || keys.Any(key => key is null))
+        {
+            return tasks;
+        }
+
+        var stored = await _cache.GetManyAsync(keys!, cancellationToken);
+        var pending = new List<SummaryTask>();
+        for (var i = 0; i < tasks.Count; i++)
+        {
+            if (stored[i] is { } summary)
+            {
+                tasks[i].Summary = summary;
+                _reused++;
+            }
+            else
+            {
+                pending.Add(tasks[i]);
+            }
+        }
+
+        return pending;
+    }
+
+    private string? SectionKey(string rendered)
+        => _cache is null ? null : ModelResultCache.Key(_chatClient, $"{_sectionSystemPrompt}\n{MaxSectionSummaryLength}", rendered);
+
+    private string? DocumentKey(string rendered)
+        => _cache is null ? null : ModelResultCache.Key(_chatClient, $"{_documentSystemPrompt}\n{MaxDocumentSummaryLength}", rendered);
+
     protected virtual async Task SummarizeSectionsAsync(List<(SummaryTask Task, string Rendered)> batch, CancellationToken cancellationToken)
     {
         var user = new StringBuilder();
@@ -457,7 +509,7 @@ public class DocumentSummaryCompiler
 
         List<ChatMessage> messages =
         [
-            new(ChatRole.System, SectionInstructions + _languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule),
+            new(ChatRole.System, _sectionSystemPrompt),
             new(ChatRole.User, user.ToString())
         ];
 
@@ -483,6 +535,17 @@ public class DocumentSummaryCompiler
         {
             batch[i].Task.Failed = !answered.Contains(i);
         }
+
+        if (_cache is not null)
+        {
+            await _cache.SetManyAsync(
+                batch
+                    .Where(item => item.Task.Summary is not null)
+                    .Select(item => (Key: SectionKey(item.Rendered), item.Task.Summary))
+                    .Where(item => item.Key is not null)
+                    .Select(item => new KeyValuePair<string, string>(item.Key!, item.Summary!)),
+                cancellationToken);
+        }
     }
 
     /// <param name="source">What the summary is written from (<see cref="DocumentSource"/>).</param>
@@ -497,9 +560,17 @@ public class DocumentSummaryCompiler
         }
 
         var rendered = Render(source, "Title");
+        var key = DocumentKey(rendered);
+        if (key is not null && (await _cache!.GetManyAsync([key], cancellationToken))[0] is { } stored)
+        {
+            document.Summary = stored;
+            _reused++;
+            return;
+        }
+
         List<ChatMessage> messages =
         [
-            new(ChatRole.System, DocumentInstructions + _languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule),
+            new(ChatRole.System, _documentSystemPrompt),
             new(ChatRole.User, rendered)
         ];
 
@@ -517,6 +588,11 @@ public class DocumentSummaryCompiler
             {
                 document.Summary = summary;
                 document.Unsupported = false;
+                if (key is not null && summary is not null)
+                {
+                    await _cache!.SetManyAsync([new KeyValuePair<string, string>(key, summary)], cancellationToken);
+                }
+
                 return;
             }
 

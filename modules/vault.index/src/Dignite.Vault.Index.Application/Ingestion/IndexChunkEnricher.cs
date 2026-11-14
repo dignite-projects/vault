@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,6 +31,11 @@ namespace Dignite.Vault.Index.Ingestion;
 /// only whitespace until its token limit, which a second call usually does not repeat. Best effort beyond that, as
 /// DataIngestion's enrichers are: a batch whose call fails, or whose answer cannot be read twice, leaves its chunks
 /// without enrichment and is counted in <see cref="FailedChunkCount"/>; the index run still succeeds.
+/// </para>
+/// <para>
+/// With a <see cref="ModelResultCache"/>, a chunk whose text the same model enriched under the same instructions takes
+/// that result instead of a model call (<see cref="CachedChunkCount"/>), so a document re-indexed after a small edit is
+/// enriched again only where it changed.
 /// </para>
 /// </summary>
 public class IndexChunkEnricher : IngestionChunkProcessor<string>
@@ -69,15 +75,36 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
     private readonly IChatClient _chatClient;
     private readonly IndexEnrichment _enrichment;
     private readonly ILogger _logger;
-    private readonly string _languageInstruction;
+    private readonly ModelResultCache? _cache;
+    private readonly string _systemPrompt;
 
     /// <param name="language">The document's language tag, such as <c>ja</c>; <c>null</c> when unknown.</param>
-    public IndexChunkEnricher(IChatClient chatClient, IndexEnrichment enrichment, ILogger logger, string? language = null)
+    /// <param name="cache">Where results are reused from; <c>null</c> asks the model for every chunk.</param>
+    public IndexChunkEnricher(
+        IChatClient chatClient,
+        IndexEnrichment enrichment,
+        ILogger logger,
+        string? language = null,
+        ModelResultCache? cache = null)
     {
         _chatClient = chatClient;
         _enrichment = enrichment;
         _logger = logger;
-        _languageInstruction = "." + PromptLanguage.Instruction(language, "them");
+        _cache = cache;
+
+        var asks = new List<string>();
+        if (enrichment.HasFlag(IndexEnrichment.Keywords))
+        {
+            asks.Add(KeywordsInstruction);
+        }
+
+        if (enrichment.HasFlag(IndexEnrichment.Questions))
+        {
+            asks.Add(QuestionsInstruction);
+        }
+
+        _systemPrompt = Instructions + string.Join("; and ", asks) + "." + PromptLanguage.Instruction(language, "them") +
+            ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule;
     }
 
     public long InputTokenCount { get; private set; }
@@ -87,6 +114,9 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
     public int CallCount { get; private set; }
 
     public int FailedChunkCount { get; private set; }
+
+    /// <summary>Chunks that took a stored result instead of a model call.</summary>
+    public int CachedChunkCount { get; private set; }
 
     public override async IAsyncEnumerable<IngestionChunk<string>> ProcessAsync(
         IAsyncEnumerable<IngestionChunk<string>> chunks,
@@ -122,36 +152,71 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
 
     protected virtual async Task EnrichAsync(IReadOnlyList<IngestionChunk<string>> batch, CancellationToken cancellationToken)
     {
-        var answer = await AskAsync(batch, cancellationToken);
-        if (answer is null)
+        // The key covers the instructions and the caps the stored result was cleaned to, so changing either asks again.
+        var keys = _cache is null
+            ? null
+            : batch.Select(chunk => ModelResultCache.Key(
+                _chatClient,
+                $"{_systemPrompt}\n{MaxKeywords}/{MaxKeywordLength}/{MaxQuestions}/{MaxQuestionLength}",
+                Passage(chunk))).ToArray();
+        var pending = new List<int>();
+        if (keys is not null && keys.All(key => key is not null))
         {
-            FailedChunkCount += batch.Count;
+            var stored = await _cache!.GetManyAsync(keys!, cancellationToken);
+            for (var i = 0; i < batch.Count; i++)
+            {
+                if (stored[i] is { } json && JsonSerializer.Deserialize<StoredEnrichment>(json) is { } result)
+                {
+                    Apply(batch[i], result.Keywords, result.Questions);
+                    CachedChunkCount++;
+                }
+                else
+                {
+                    pending.Add(i);
+                }
+            }
+        }
+        else
+        {
+            keys = null;
+            pending.AddRange(Enumerable.Range(0, batch.Count));
+        }
+
+        if (pending.Count == 0)
+        {
             return;
         }
 
-        var enriched = 0;
+        var asked = pending.Select(i => batch[i]).ToList();
+        var answer = await AskAsync(asked, cancellationToken);
+        if (answer is null)
+        {
+            FailedChunkCount += asked.Count;
+            return;
+        }
+
+        var results = new Dictionary<int, StoredEnrichment>();
         foreach (var item in answer.Chunks)
         {
-            if (item.Index < 0 || item.Index >= batch.Count)
+            if (item.Index < 0 || item.Index >= asked.Count)
             {
                 continue;
             }
 
-            var chunk = batch[item.Index];
-            if (_enrichment.HasFlag(IndexEnrichment.Keywords))
-            {
-                chunk.Metadata[KeywordsKey] = Clean(item.Keywords, MaxKeywords, MaxKeywordLength);
-            }
-
-            if (_enrichment.HasFlag(IndexEnrichment.Questions))
-            {
-                chunk.Metadata[QuestionsKey] = Clean(item.Questions, MaxQuestions, MaxQuestionLength);
-            }
-
-            enriched++;
+            var result = new StoredEnrichment(
+                Clean(item.Keywords, MaxKeywords, MaxKeywordLength),
+                Clean(item.Questions, MaxQuestions, MaxQuestionLength));
+            Apply(asked[item.Index], result.Keywords, result.Questions);
+            results[item.Index] = result;
         }
 
-        FailedChunkCount += batch.Count - Math.Min(enriched, batch.Count);
+        FailedChunkCount += asked.Count - results.Count;
+        if (keys is not null)
+        {
+            await _cache!.SetManyAsync(
+                results.Select(pair => new KeyValuePair<string, string>(keys[pending[pair.Key]]!, JsonSerializer.Serialize(pair.Value))),
+                cancellationToken);
+        }
     }
 
     /// <summary>
@@ -195,30 +260,37 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
     /// </summary>
     protected virtual List<ChatMessage> BuildMessages(IReadOnlyList<IngestionChunk<string>> batch)
     {
-        var asks = new List<string>();
-        if (_enrichment.HasFlag(IndexEnrichment.Keywords))
-        {
-            asks.Add(KeywordsInstruction);
-        }
-
-        if (_enrichment.HasFlag(IndexEnrichment.Questions))
-        {
-            asks.Add(QuestionsInstruction);
-        }
-
         var user = new StringBuilder();
         for (var i = 0; i < batch.Count; i++)
         {
             user.Append("Passage ").Append(i).AppendLine(":");
-            user.AppendLine(PromptBoundary.WrapDocument(TextTruncator.AtCharBoundary(batch[i].Content, MaxChunkLength)));
+            user.AppendLine(PromptBoundary.WrapDocument(Passage(batch[i])));
         }
 
         return
         [
-            new(ChatRole.System, Instructions + string.Join("; and ", asks) + _languageInstruction + ContentInstruction + "\n\n" + PromptBoundary.BoundaryRule),
+            new(ChatRole.System, _systemPrompt),
             new(ChatRole.User, user.ToString())
         ];
     }
+
+    /// <summary>What the model reads of a chunk.</summary>
+    private static string Passage(IngestionChunk<string> chunk) => TextTruncator.AtCharBoundary(chunk.Content, MaxChunkLength);
+
+    private void Apply(IngestionChunk<string> chunk, string[] keywords, string[] questions)
+    {
+        if (_enrichment.HasFlag(IndexEnrichment.Keywords))
+        {
+            chunk.Metadata[KeywordsKey] = keywords;
+        }
+
+        if (_enrichment.HasFlag(IndexEnrichment.Questions))
+        {
+            chunk.Metadata[QuestionsKey] = questions;
+        }
+    }
+
+    private sealed record StoredEnrichment(string[] Keywords, string[] Questions);
 
     /// <summary>One line each, trimmed, without duplicates, within the count and length caps.</summary>
     private static string[] Clean(IEnumerable<string>? values, int maxCount, int maxLength)

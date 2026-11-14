@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
+using Dignite.Vault.Index.Ai;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -290,8 +291,52 @@ public class DocumentSummaryCompiler_Tests
         DocumentSummaries.SourceHash("ja", [(0, "# A", "h0"), (2, "# A ## B", "h1")]).ShouldNotBe(hash);
     }
 
-    private static DocumentSummaryCompiler Compiler(IChatClient model, string? language = null)
-        => new(model, NullLogger.Instance, language);
+    [Fact]
+    public async Task A_recompilation_takes_the_stored_summaries_of_unchanged_items_and_asks_only_for_the_rest()
+    {
+        var cache = new InMemoryModelResultCache();
+        var model = new ScriptedSummaryChatClient { ModelId = "summary-model" };
+        var first = await Compiler(model, cache: cache).CompileAsync("Contract", Contract);
+        var firstCalls = model.Calls.Count;
+
+        var again = await Compiler(model, cache: cache).CompileAsync("Contract", Contract);
+
+        model.Calls.Count.ShouldBe(firstCalls);
+        again.CallCount.ShouldBe(0);
+        again.Failed.ShouldBeFalse();
+        again.ReusedCount.ShouldBe(first.Summaries.Sections.Count + 1);
+        again.Summaries.Sections.OrderBy(s => s.Key).ShouldBe(first.Summaries.Sections.OrderBy(s => s.Key));
+        again.Summaries.Document.ShouldBe(first.Summaries.Document);
+
+        var edited = Contract.Select(c => c.Ordinal == 4 ? c with { Text = "B text, edited" } : c).ToList();
+        var recompiled = await Compiler(model, cache: cache).CompileAsync("Contract", edited);
+
+        var newCalls = model.Calls.Skip(firstCalls).ToList();
+        newCalls.ShouldNotBeEmpty();
+        newCalls.ShouldAllBe(call => !call.User.Contains("A1 text") && !call.User.Contains("A2 text"));
+        recompiled.ReusedCount.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task A_summary_that_states_a_number_its_text_does_not_is_not_stored()
+    {
+        var cache = new InMemoryModelResultCache();
+        var model = new ScriptedSummaryChatClient
+        {
+            ModelId = "summary-model",
+            Section = (headings, _) => JsonSerializer.Serialize(new
+            {
+                summaries = headings.Select((_, i) => new { index = i, summary = "It costs 999 yen." })
+            })
+        };
+
+        await Compiler(model, cache: cache).CompileAsync("Contract", Contract);
+
+        cache.Entries.Values.ShouldNotContain(value => value.Contains("999"));
+    }
+
+    private static DocumentSummaryCompiler Compiler(IChatClient model, string? language = null, ModelResultCache? cache = null)
+        => new(model, NullLogger.Instance, language, cache);
 }
 
 /// <summary>
@@ -303,6 +348,9 @@ public sealed class ScriptedSummaryChatClient : IChatClient
     private static readonly Regex Item = new("Item (\\d+):\\n(?:Heading:\\n<field>\\n(.*?)\\n</field>)?", RegexOptions.Singleline);
 
     public List<(string System, string User)> Calls { get; } = [];
+
+    /// <summary>The model the client names in its metadata; <c>null</c> names none.</summary>
+    public string? ModelId { get; set; }
 
     /// <summary>The calls (from 1) that throw.</summary>
     public HashSet<int> FailOnCalls { get; set; } = [];
@@ -369,7 +417,8 @@ public sealed class ScriptedSummaryChatClient : IChatClient
         }
     }
 
-    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+    public object? GetService(Type serviceType, object? serviceKey = null)
+        => serviceType == typeof(ChatClientMetadata) && ModelId is not null ? new ChatClientMetadata("scripted", null, ModelId) : null;
 
     public void Dispose()
     {

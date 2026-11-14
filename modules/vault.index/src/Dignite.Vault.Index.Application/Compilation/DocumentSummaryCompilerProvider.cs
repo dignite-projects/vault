@@ -1,3 +1,4 @@
+using Dignite.Vault.Index.Ai;
 using System;
 using Dignite.Vault.Index.Indexing;
 using Microsoft.Extensions.AI;
@@ -16,11 +17,13 @@ public class DocumentSummaryCompilerProvider : ITransientDependency
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ModelResultCache _cache;
 
-    public DocumentSummaryCompilerProvider(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
+    public DocumentSummaryCompilerProvider(IServiceProvider serviceProvider, ILoggerFactory loggerFactory, ModelResultCache cache)
     {
         _serviceProvider = serviceProvider;
         _loggerFactory = loggerFactory;
+        _cache = cache;
     }
 
     public virtual bool IsAvailable => ChatClient is not null;
@@ -33,6 +36,6 @@ public class DocumentSummaryCompilerProvider : ITransientDependency
     /// <summary>A compiler that writes in <paramref name="language"/> (the document's tag); <c>null</c> without a model.</summary>
     public virtual DocumentSummaryCompiler? Create(string? language)
         => ChatClient is { } chatClient
-            ? new DocumentSummaryCompiler(chatClient, _loggerFactory.CreateLogger<DocumentSummaryCompiler>(), language)
+            ? new DocumentSummaryCompiler(chatClient, _loggerFactory.CreateLogger<DocumentSummaryCompiler>(), language, _cache)
             : null;
 }

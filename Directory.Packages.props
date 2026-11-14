@@ -26,6 +26,7 @@
         <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.Ddd.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Caching" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.EntityFrameworkCore.SqlServer" Version="11.0.0-rc.2" />
         <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="11.0.0-rc.2" />

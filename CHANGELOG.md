@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vault Index reuses its model results** (module). A chunk's enrichment and a section's or the document's summary
+  are kept for a day in the host's distributed cache (ABP `IDistributedCache`, per tenant), keyed by the model, the
+  instructions and the exact text read, so a document re-indexed after a small edit, re-synced after its job failed part
+  way, or recompiled after some summaries failed asks the model only for what changed or failed. Only results that
+  passed their checks are kept: an unreadable answer or a summary with an invented number is asked for again. The index
+  and compile jobs log how many they reused. See
+  [Index chat model](docs/en/configuration/ai-provider.md#index-chat-model-vaultindex).
 - **Aspire AppHost for local development** (`src/Dignite.Vault.AppHost`). `dotnet run --project src/Dignite.Vault.AppHost`
   builds SQL Server 2025 with full-text search (`etc/docker/sqlserver-fts`), creates the `VaultExtract` and `VaultIndex`
   databases in a persistent container, runs `--migrate-database`, then starts the host and the SPA, with the Aspire
