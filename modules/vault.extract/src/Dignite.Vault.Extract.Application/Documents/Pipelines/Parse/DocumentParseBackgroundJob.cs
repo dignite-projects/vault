@@ -12,6 +12,7 @@ using Dignite.Vault.Extract.Documents.Pipelines.Classification;
 using Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DocumentExtraction;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -37,7 +38,7 @@ public class DocumentParseBackgroundJob
 
     private readonly DocumentPipelineJobScheduler _pipelineJobScheduler;
     private readonly IBackgroundJobManager _backgroundJobManager;
-    private readonly ITextExtractor _textExtractor;
+    private readonly DocumentExtractionClient _extractionClient;
     private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
     private readonly IDistributedEventBus _distributedEventBus;
     private readonly IClock _clock;
@@ -73,7 +74,7 @@ public class DocumentParseBackgroundJob
         IDataFilter dataFilter,
         DocumentPipelineJobScheduler pipelineJobScheduler,
         IBackgroundJobManager backgroundJobManager,
-        ITextExtractor textExtractor,
+        DocumentExtractionClient extractionClient,
         IBlobContainer<VaultExtractDocumentContainer> blobContainer,
         IDistributedEventBus distributedEventBus,
         IClock clock,
@@ -91,7 +92,7 @@ public class DocumentParseBackgroundJob
     {
         _pipelineJobScheduler = pipelineJobScheduler;
         _backgroundJobManager = backgroundJobManager;
-        _textExtractor = textExtractor;
+        _extractionClient = extractionClient;
         _blobContainer = blobContainer;
         _distributedEventBus = distributedEventBus;
         _clock = clock;
@@ -136,19 +137,17 @@ public class DocumentParseBackgroundJob
 
         try
         {
-            TextExtractionResult result;
+            ParseOutput result;
             if (workItem.SeedMarkdown != null)
             {
                 // Derived sub-document (#371): seed Markdown from the source DocumentSegment slice instead of
                 // re-extracting it. The slice is already (clean) Markdown — a born-digital text constituent or a
                 // figure span's transcription — so seeding preserves the exact slice text (no drift) and surfaces no
                 // embedded figures, so no recursive sub-document detection occurs.
-                result = new TextExtractionResult
-                {
-                    Markdown = workItem.SeedMarkdown,
-                    ProviderName = ScenarioBSegmentSeedProviderName,
-                    IsComplete = true
-                };
+                result = new ParseOutput(
+                    workItem.SeedMarkdown,
+                    Language: null,
+                    new DocumentParseMetadata(ScenarioBSegmentSeedProviderName));
             }
             else
             {
@@ -162,15 +161,20 @@ public class DocumentParseBackgroundJob
                 // so it must be disposed, consistent with DocumentAppService.GetBlobAsync disposeStream:true.
                 // Use await using so it is released when this try block (External phase) ends; CompleteRunAsync no longer needs it.
                 await using var blobStream = await _blobContainer.GetAsync(workItem.BlobName);
-                var ctx = new TextExtractionContext
-                {
-                    ContentType = workItem.ContentType!,
-                    FileExtension = Path.GetExtension(workItem.OriginalFileName ?? string.Empty)
-                    // No language hints set: OCR language is provider-specific (#441). VisionLlm / Azure DI
-                    // auto-detect; PaddleOcr falls back to its own PaddleOcr:Languages config.
-                };
 
-                result = await _textExtractor.ExtractAsync(blobStream, ctx, _cancellationTokenProvider.Token);
+                // No language hints: OCR language is engine-specific (#441). VisionLlm / Azure DI auto-detect;
+                // PaddleOcr falls back to its own PaddleOcr:Languages config.
+                var extracted = await _extractionClient.ExtractAsync(
+                    blobStream,
+                    args.DocumentId.ToString(),
+                    workItem.ContentType!,
+                    ParseExtractionOptions.Create(workItem.OriginalFileName),
+                    _cancellationTokenProvider.Token);
+
+                result = new ParseOutput(
+                    ExtractionDocumentMarkdown.Render(extracted),
+                    extracted.GetLanguage(),
+                    new DocumentParseMetadata(extracted.GetProvider(), extracted.IsComplete(), extracted.GetIncompleteReason()));
             }
 
             // #381: the PDF provider brackets each embedded-figure transcription with *[Image OCR p:N]*…*[End OCR]*
@@ -183,11 +187,7 @@ public class DocumentParseBackgroundJob
                 ?? MarkdownTitleExtractor.ExtractTitle(result.Markdown)
                 ?? FallbackTitleFromFileName(workItem.OriginalFileName);
 
-            // External phase (no UoW): archive native payload into blob storage + assemble Domain provenance metadata.
-            // Archiving fails open: over limit / write failure / disabled archive affects only the manifest, not text extraction completion below.
-            var extractionMetadata = await ArchiveNativePayloadAndBuildMetadataAsync(args.DocumentId, result);
-
-            await CompleteRunAsync(args.DocumentId, workItem.RunId, result, title, extractionMetadata, args.IsReparse);
+            await CompleteRunAsync(args.DocumentId, workItem.RunId, result, title, args.IsReparse);
         }
         catch (Exception ex)
         {
@@ -246,9 +246,8 @@ public class DocumentParseBackgroundJob
     private async Task CompleteRunAsync(
         Guid documentId,
         Guid runId,
-        TextExtractionResult result,
+        ParseOutput result,
         string? title,
-        DocumentParseMetadata extractionMetadata,
         bool isReparse)
     {
         // #660: an empty re-parse result is refused before anything is written, so the previous text stays and the
@@ -271,15 +270,15 @@ public class DocumentParseBackgroundJob
 
         if (isReparse)
         {
-            await CompleteReparseAsync(document, run, result, title, extractionMetadata);
+            await CompleteReparseAsync(document, run, result, title);
             await uow.CompleteAsync();
             return;
         }
 
         await PipelineRunManager.CompleteParseAsync(
             document, run, result.Markdown, title,
-            language: result.DetectedLanguage,
-            extractionMetadata: extractionMetadata);
+            language: result.Language,
+            extractionMetadata: result.Metadata);
 
         // Publish DocumentTextExtractedEto with a thin payload; downstream consumers pull Markdown back through REST.
         await _distributedEventBus.PublishAsync(
@@ -398,16 +397,15 @@ public class DocumentParseBackgroundJob
     protected virtual async Task CompleteReparseAsync(
         Document document,
         DocumentPipelineRun run,
-        TextExtractionResult result,
-        string? title,
-        DocumentParseMetadata extractionMetadata)
+        ParseOutput result,
+        string? title)
     {
         await _pipelineJobScheduler.QueueAsync(document, VaultExtractPipelines.Classification);
 
         await PipelineRunManager.CompleteReparseAsync(
             document, run, result.Markdown, title,
-            language: result.DetectedLanguage,
-            extractionMetadata: extractionMetadata);
+            language: result.Language,
+            extractionMetadata: result.Metadata);
 
         var withdrawn = await _subDocumentRetractor.RetractAllAsync(document.Id);
 
@@ -422,72 +420,6 @@ public class DocumentParseBackgroundJob
         Logger.LogInformation(
             "Document {DocumentId} re-parsed; withdrew {SubDocumentCount} sub-document(s) and queued classification (#660).",
             document.Id, withdrawn);
-    }
-
-    /// <summary>
-    /// External phase (no UoW): archives the winning provider's native payload into blob storage using a stable per-document key
-    /// that is overwritten by re-extraction, and assembles the Domain typed metadata value object (#210).
-    /// <para>
-    /// <b>Archiving fails open</b>: no payload / over limit / blob write failure -> log warning and set manifest null.
-    /// <see cref="DocumentParseMetadata"/> with provider name <b>still returns normally</b>, and text extraction continues successfully.
-    /// Raw spatial signals such as bbox stay in blob storage; the DB stores only the manifest.
-    /// </para>
-    /// </summary>
-    protected virtual async Task<DocumentParseMetadata> ArchiveNativePayloadAndBuildMetadataAsync(
-        Guid documentId,
-        TextExtractionResult result)
-    {
-        var manifest = await TryArchiveNativePayloadAsync(documentId, result.NativePayload);
-        return new DocumentParseMetadata(
-            result.ProviderName, manifest, result.IsComplete, result.IncompleteReason);
-    }
-
-    private async Task<NativePayloadManifest?> TryArchiveNativePayloadAsync(Guid documentId, NativePayload? payload)
-    {
-        if (payload is null || payload.Content is not { Length: > 0 } content)
-        {
-            return null;
-        }
-
-        // Missing ContentType / SchemaName would make the manifest constructor throw (Check.NotNullOrWhiteSpace), but the NativePayload contract
-        // itself does not require non-empty values because future rich Markdown / third-party providers may partially fill it.
-        // Fail open before writing the blob: auxiliary audit blobs must never break the main Markdown pipeline or leave unregistered orphan blobs.
-        if (string.IsNullOrWhiteSpace(payload.ContentType) || string.IsNullOrWhiteSpace(payload.SchemaName))
-        {
-            Logger.LogWarning(
-                "Native extraction payload for document {DocumentId} has {Bytes} bytes but blank ContentType/SchemaName; "
-                + "skipping archive (text extraction still succeeds).",
-                documentId, content.Length);
-            return null;
-        }
-
-        if (content.LongLength > DocumentConsts.MaxNativePayloadArchiveBytes)
-        {
-            Logger.LogWarning(
-                "Native extraction payload for document {DocumentId} is {Size} bytes, exceeding the archive limit "
-                + "{Limit}; skipping archive (text extraction still succeeds).",
-                documentId, content.LongLength, DocumentConsts.MaxNativePayloadArchiveBytes);
-            return null;
-        }
-
-        // Stable per-document key: re-extraction overwrites it, one archive blob per document, avoiding orphans.
-        var blobName = $"extraction-native/{documentId}";
-        try
-        {
-            using var stream = new MemoryStream(content, writable: false);
-            await _blobContainer.SaveAsync(blobName, stream, overrideExisting: true);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex,
-                "Failed to archive native extraction payload for document {DocumentId} to blob {BlobName}; "
-                + "continuing without archive (text extraction still succeeds).",
-                documentId, blobName);
-            return null;
-        }
-
-        var sha256 = ContentHasher.Sha256Hex(content);
-        return new NativePayloadManifest(blobName, payload.ContentType, content.LongLength, sha256, payload.SchemaName);
     }
 
     private async Task<string?> TryGenerateTitleAsync(string markdown, CancellationToken cancellationToken = default)
@@ -547,6 +479,9 @@ public class DocumentParseBackgroundJob
         // #491: a file name can carry astral-plane characters; cut at a char boundary (see TryGenerateTitleAsync).
         return TextTruncator.AtCharBoundary(trimmed, DocumentConsts.MaxTitleLength);
     }
+
+    /// <summary>What a parse produced: the stored Markdown, the detected language and the provenance.</summary>
+    protected sealed record ParseOutput(string Markdown, string? Language, DocumentParseMetadata Metadata);
 
     private sealed record ParseWorkItem(
         Guid RunId,

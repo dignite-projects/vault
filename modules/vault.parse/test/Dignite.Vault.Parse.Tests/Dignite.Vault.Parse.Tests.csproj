@@ -9,13 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Two kinds of tests for the DefaultTextExtractor orchestrator. Pure unit tests NSubstitute the
-         IOcrProvider and the IMarkdownTextProvider side-contract and construct the extractor with new(...) -
-         no ABP TestBase, no DB, no real provider module - to reach the branches the integration tests cannot:
-         the no-capable-provider throw (no catch-all is ever installed there), the same-priority tie-break, the
-         half-filled native-payload drop, and exhaustive image-extension dispatch. The AbpIntegratedTest-based
-         DefaultTextExtractor / MarkdownProviderDispatch / TextEncodingNormalization tests wire the real ElBruno
-         catch-all; they lived in Extract's Application.Tests until the Parse split (#716). -->
+    <!-- Two kinds of tests for the ParseRoutingClient router. Pure unit tests NSubstitute the engines and
+         construct the router with new(...) - no ABP TestBase, no DB, no real engine module - to reach the branches
+         the integration tests cannot: the no-capable-engine throw (no catch-all is ever installed there), the
+         same-priority tie-break and exhaustive image-extension dispatch. The AbpIntegratedTest-based
+         ParseRoutingClientIntegration / ParseRoutingClientDispatch / TextEncodingNormalization tests wire the real
+         ElBruno catch-all; they lived in Extract's Application.Tests until the Parse split (#716). -->
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -26,6 +25,10 @@
     <!-- AbpIntegratedTest and the Autofac container for the integration-style tests. -->
     <PackageReference Include="Volo.Abp.TestBase" />
     <PackageReference Include="Volo.Abp.Autofac" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\ParseTestKit.cs" Link="ParseTestKit.cs" />
   </ItemGroup>
 
   <ItemGroup>

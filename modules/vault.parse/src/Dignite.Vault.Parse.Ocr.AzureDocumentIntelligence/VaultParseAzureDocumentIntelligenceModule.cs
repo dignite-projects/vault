@@ -3,7 +3,7 @@ using Volo.Abp.Modularity;
 
 namespace Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence;
 
-[DependsOn(typeof(VaultParseOcrModule))]
+[DependsOn(typeof(VaultParseModule))]
 public class VaultParseAzureDocumentIntelligenceModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)

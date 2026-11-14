@@ -6,7 +6,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>Dignite.Vault.Parse.OpenXml</RootNamespace>
-    <Description>OpenXML Markdown text providers for Dignite Vault Extract: PptxExtractor owns the full PPTX parsing pass (slide text + native alt-text + speaker notes + charts/tables), and DocxExtractor owns the full DOCX parsing pass (headings + flowing text + embedded images, with tables/lists/inline-formatting/charts landing across #308). Both extract embedded raster images and transcribe each through the host-selected IOcrProvider, inlining everything into the Markdown at its reading position. EMF/WMF vector images are an accepted blind spot.</Description>
+    <Description>OpenXML engines for Dignite Vault Parse: PptxExtractor (slide text, alt text, speaker notes, charts and tables, one section per slide) and DocxExtractor (headings, tables, lists, inline formatting, hyperlinks, text boxes, notes), each transcribing embedded images through the host OCR engine. DocumentExtractionClients that return a Microsoft.Extensions.Documents document.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,14 +14,14 @@
     <!-- OpenXML SDK: PresentationDocument parsing (slide text, embedded ImageParts, ChartPart backing
          data, native alt-text). Version pinned to match the DocumentFormat.OpenXml that
          ElBruno.MarkItDotNet pulls transitively (3.3.0), so the host process resolves a single OpenXml
-         (no upgrade/downgrade conflict between the two Markdown providers — same discipline as PdfPig). -->
+         (no upgrade/downgrade conflict between the two engines — same discipline as PdfPig). -->
     <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- References the orchestrator project (IMarkdownTextProvider), which transitively brings the Ocr
-         contract (IOcrProvider) and Abstractions (TextExtractionResult). No keyed Vision IChatClient is
-         injected here: embedded-image transcription goes through the host-selected IOcrProvider only. -->
+    <!-- References Parse core (the router, the Markdown reader, shared helpers), which brings Abstractions
+         (ParseExtractionClient, ParseOcrClient). No keyed Vision IChatClient is injected here: image
+         transcription goes through the host-selected OCR engine only. -->
     <ProjectReference Include="..\Dignite.Vault.Parse\Dignite.Vault.Parse.csproj" />
   </ItemGroup>
 

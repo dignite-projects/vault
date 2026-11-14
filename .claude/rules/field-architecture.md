@@ -3,7 +3,6 @@ description: "Dignite Vault Extract field architecture: where a field is defined
 paths:
   - "modules/vault.extract/src/**/Document.cs"
   - "modules/vault.extract/src/**/DocumentDto.cs"
-  - "modules/vault.extract/src/**/TextExtractionResult.cs"
   - "modules/vault.extract/src/**/Fields/**/*.cs"
   - "modules/vault.extract/src/**/*Field*.cs"
   - "modules/vault.extract/src/**/DocumentTypes/**/*.cs"

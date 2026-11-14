@@ -5,8 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
 using DocumentFormat.OpenXml.Packaging;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -20,15 +21,15 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
-/// OpenXML-based Markdown provider for Word documents (#308, Phase 3 of #299). Owns the full <c>.docx</c>
+/// OpenXML-based engine for Word documents (#308, Phase 3 of #299). Owns the full <c>.docx</c>
 /// parsing pass so it can rebuild the document's structure (headings, tables, charts, inline formatting,
 /// hyperlinks, lists) <b>and</b> extract embedded raster images,
-/// transcribe each through the host-selected <see cref="IOcrProvider"/>, and inline the transcription into
+/// transcribe each through the host-selected <see cref="ParseOcrClient"/>, and inline the transcription into
 /// the Markdown at its reading position. This closes the silent-image-loss gap where embedded figures in
 /// Word documents were degraded to a constant <c>![image](embedded-image)</c> placeholder — the exact
 /// inline-only mechanism proven by <c>PdfExtractor</c> (#301) and <see cref="PptxExtractor"/> (#307).
 /// <para>
-/// <b>Image → text uses <see cref="IOcrProvider"/> only</b> (no keyed Vision <c>IChatClient</c> here, no
+/// <b>Image → text uses <see cref="ParseOcrClient"/> only</b> (no keyed Vision <c>IChatClient</c> here, no
 /// new LLM call site). Semantics are transcription only; the figure's bytes are the OCR input, so there is
 /// no user free-text entering a prompt and no <c>PromptBoundary</c> concern. Tables and charts (later step)
 /// are pure structured extraction from the OpenXML format (no OCR / no vision / no LLM).
@@ -51,13 +52,12 @@ namespace Dignite.Vault.Parse.OpenXml;
 /// Markdown-footnote definitions at the end of the document (#315).
 /// </para>
 /// <para>
-/// <b>Relationship to ElBruno.</b> Unlike <c>.pptx</c>, the catch-all ElBruno provider <i>can</i> convert
+/// <b>Relationship to ElBruno.</b> Unlike <c>.pptx</c>, the catch-all ElBruno engine <i>can</i> convert
 /// <c>.docx</c> (it has a Word converter), but only as a <b>module-composition</b> fallback: omit this
-/// module and <c>DefaultTextExtractor</c> selects ElBruno for <c>.docx</c>, preserving prior behavior. At
-/// <b>runtime</b>, once this module is installed it claims <c>.docx</c> at
-/// <see cref="MarkdownProviderPriorities.Specialized"/> and the orchestrator does <b>not</b> fall through
-/// to another Markdown provider. So an unopenable <c>.docx</c> is reported as empty +
-/// <see cref="TextExtractionResult.IsComplete"/> <c>= false</c> with a reason (#268), the honest escape
+/// module and the router selects ElBruno for <c>.docx</c>. At <b>runtime</b>, once this module is installed it
+/// claims <c>.docx</c> at <see cref="ParseExtractionPriorities.Default"/> and the router does <b>not</b> fall
+/// through to another engine. So an unopenable <c>.docx</c> is reported as empty +
+/// incomplete with a reason (#268), the honest escape
 /// hatch — it is <b>not</b> silently re-routed to ElBruno at runtime.
 /// </para>
 /// <para>
@@ -70,10 +70,10 @@ namespace Dignite.Vault.Parse.OpenXml;
 /// structural rebuild for #308.
 /// </para>
 /// </summary>
-[ExposeServices(typeof(IMarkdownTextProvider))]
-public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
+[ExposeServices(typeof(ParseExtractionClient), typeof(DocxExtractor))]
+public class DocxExtractor : ParseExtractionClient, ITransientDependency
 {
-    /// <summary>Provider family name surfaced on <see cref="TextExtractionResult.ProviderName"/> for auditability.</summary>
+    /// <summary>The engine name written to <see cref="ParseDocumentMetadata.Provider"/>.</summary>
     public const string ProviderIdentifier = "OpenXmlDocx";
 
     /// <summary>EMU per pixel at 96 DPI (914400 EMU/inch ÷ 96). Used to size images for the decorative threshold.</summary>
@@ -102,29 +102,30 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
     /// </summary>
     private const int MaxListIndentLevels = 9;
 
-    private readonly IOcrProvider _ocrProvider;
+    private readonly ParseOcrClient _ocr;
     private readonly OpenXmlExtractorOptions _options;
 
     public ILogger<DocxExtractor> Logger { get; set; } = NullLogger<DocxExtractor>.Instance;
 
     public DocxExtractor(
-        IOcrProvider ocrProvider,
+        ParseOcrClient ocr,
         IOptions<OpenXmlExtractorOptions> options)
     {
-        _ocrProvider = ocrProvider;
+        _ocr = ocr;
         _options = options.Value;
     }
 
-    /// <inheritdoc/>
-    public virtual bool CanHandle(string fileExtension)
-        => string.Equals(fileExtension, ".docx", StringComparison.OrdinalIgnoreCase);
+    public override string ProviderName => ProviderIdentifier;
 
-    /// <inheritdoc/>
-    public virtual int Priority => MarkdownProviderPriorities.Specialized;
+    public override bool CanExtract(string fileExtension, string mediaType)
+        => fileExtension == ".docx"
+            || (fileExtension.Length == 0 && string.Equals(mediaType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", StringComparison.OrdinalIgnoreCase));
 
-    public virtual async Task<TextExtractionResult> ExtractAsync(
+    public override async Task<ExtractionDocument> ExtractAsync(
         Stream fileStream,
-        TextExtractionContext context,
+        string identifier,
+        string mediaType,
+        DocumentExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var bytes = await ParseStreams.ReadAllBytesAsync(fileStream, cancellationToken);
@@ -136,19 +137,15 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Corrupt / not-actually-a-docx. ElBruno can handle .docx, but only as a module-composition
-            // fallback (omit this module → DefaultTextExtractor selects ElBruno). At runtime this provider
-            // already owns .docx and the orchestrator does not fall through to another Markdown provider, so
-            // returning bare empty would silently drop the document. Report empty + incomplete instead — the
-            // honest #268 escape hatch (same stance as PptxExtractor).
+            // Corrupt / not-actually-a-docx. ElBruno can read .docx, but only as a module-composition
+            // fallback (omit this module → the router selects ElBruno). At runtime this engine already owns
+            // .docx and the router does not fall through to another engine, so returning bare empty would
+            // silently drop the document. Report empty + incomplete instead — the honest #268 escape hatch
+            // (same stance as PptxExtractor).
             Logger.LogWarning(ex, "Could not open the DOCX ({Bytes} bytes); reporting empty + incomplete.", bytes.Length);
-            return new TextExtractionResult
-            {
-                Markdown = string.Empty,
-                ProviderName = ProviderIdentifier,
-                IsComplete = false,
-                IncompleteReason = "The document could not be opened (corrupt or unsupported file)."
-            };
+            return new ExtractionDocument(identifier)
+                .SetProvider(ProviderIdentifier)
+                .MarkIncomplete("The document could not be opened (corrupt or unsupported file).");
         }
 
         using (document)
@@ -159,7 +156,7 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
             var state = new DocxExtractionState
             {
                 ImageBudget = _options.MaxImagesPerFile,
-                LanguageHints = ResolveLanguageHints(context)
+                LanguageHints = ResolveLanguageHints(options)
             };
 
             // Build the per-document hyperlink id -> uri cache once (#318) so a link resolves in O(1) rather
@@ -204,16 +201,9 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
                 Logger.LogWarning("DOCX extraction incomplete: {Reason}", incompleteReason);
             }
 
-            return new TextExtractionResult
-            {
-                Markdown = string.Join("\n\n", blocks),
-                DetectedLanguage = null,
-                ProviderName = ProviderIdentifier,
-                IsComplete = complete,
-                IncompleteReason = incompleteReason,
-                // DOCX text + per-image OCR has no single aggregated spatial payload to archive (#210).
-                NativePayload = null
-            };
+            // A DOCX has no pages: the document is one section, read from the Markdown the body renders to.
+            var extracted = MarkdownDocumentReader.Read(string.Join("\n\n", blocks), identifier).SetProvider(ProviderIdentifier);
+            return complete ? extracted : extracted.MarkIncomplete(incompleteReason!);
         }
     }
 
@@ -660,7 +650,7 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
     /// Renders a footnote / endnote body to Markdown by reusing the body paragraph/run renderer (so a note
     /// that carries formatting / links is handled consistently) and transcribing any embedded image in the
     /// note through the shared <see cref="OpenXmlFigureTranscriber"/> (#315 red line: notes go through the
-    /// host <see cref="IOcrProvider"/>, no new LLM call site). Paragraphs are joined with blank lines. A
+    /// host <see cref="ParseOcrClient"/>, no new LLM call site). Paragraphs are joined with blank lines. A
     /// nested note reference inside a note is not followed (no collector is passed), so it does not recurse.
     /// </summary>
     private async Task<string> RenderNoteBodyAsync(
@@ -787,7 +777,7 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
 
     /// <summary>
     /// Resolves an embedded image relationship and transcribes it via the host-selected
-    /// <see cref="IOcrProvider"/>, appending the (optionally captioned) transcription as a block. Shared by
+    /// <see cref="ParseOcrClient"/>, appending the (optionally captioned) transcription as a block. Shared by
     /// the DrawingML (<c>a:blip</c>) and legacy VML (<c>v:imagedata</c>) image paths. The figure-OCR pipeline
     /// itself — budget guard, resolve, image-outcome switch, OCR, truncation signal, caption — lives in the
     /// shared <see cref="OpenXmlFigureTranscriber"/> (#317, shared with <see cref="PptxExtractor"/>); this
@@ -803,7 +793,7 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
     {
         // DOCX is a flow document — no page concept — so the figure marker is the bare page-less form (#480).
         var block = await OpenXmlFigureTranscriber.TranscribeAsync(
-            mainPart, relationshipId, caption, pageNumber: null, state, _options, _ocrProvider, Logger, cancellationToken);
+            mainPart, relationshipId, caption, pageNumber: null, state, _options, _ocr, Logger, cancellationToken);
         if (block is not null)
         {
             blocks.Add(block);
@@ -1070,8 +1060,8 @@ public class DocxExtractor : IMarkdownTextProvider, ITransientDependency
     /// language default reads its own config (e.g. PaddleOcr:Languages). Kept <c>protected virtual</c> so a
     /// consumer can override to supply hints (e.g. from per-tenant config).
     /// </summary>
-    protected virtual IList<string> ResolveLanguageHints(TextExtractionContext context)
-        => OpenXmlExtractionState.ResolveLanguageHints(context);
+    protected virtual IReadOnlyList<string> ResolveLanguageHints(DocumentExtractionOptions? options)
+        => OpenXmlExtractionState.ResolveLanguageHints(options);
 
     /// <summary>
     /// Builds the #268 incompleteness reason from the loss counters, or returns <c>null</c> when nothing was

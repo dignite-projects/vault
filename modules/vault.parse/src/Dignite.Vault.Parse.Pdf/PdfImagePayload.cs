@@ -1,11 +1,10 @@
-using Dignite.Vault.Parse.Ocr;
 using UglyToad.PdfPig.Content;
 
 namespace Dignite.Vault.Parse.Pdf;
 
 /// <summary>
 /// Resolves an embedded <see cref="IPdfImage"/> into image-file bytes + MIME type suitable for feeding
-/// to <c>IOcrProvider.RecognizeAsync</c>. Returns <c>null</c> for codecs PdfPig cannot turn into a
+/// to the OCR engine. Returns <c>null</c> for codecs PdfPig cannot turn into a
 /// standalone image file (JBIG2 / JPX / CCITT, or raw bitmaps it cannot PNG-encode) — the caller treats
 /// that as an undecodable image and trips the completeness signal.
 /// </summary>

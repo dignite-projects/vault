@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 namespace Dignite.Vault.Parse.Evaluation;
 
 /// <summary>
-/// Parses every corpus document with the host's providers and scores it against its ground truth. The digital
+/// Parses every corpus document with the host's engines and scores it against its ground truth. The digital
 /// documents are deterministic, so each must hold its <c>Reports/baseline.json</c> scores within
 /// <see cref="ParseEvaluationFixture.Tolerance"/>; the documents that need OCR depend on a vision model and are only
 /// reported.
@@ -56,15 +56,15 @@ public class ParseEvaluation_Tests(ParseEvaluationFixture fixture, ITestOutputHe
     }
 
     /// <summary>
-    /// Parse is moving onto the document tree of Microsoft.Extensions.Documents, and Vault's Markdown will be rendered
-    /// from it. A parse read into the tree and rendered back must score what the parse itself scores.
+    /// Vault's Markdown is rendered from the document tree, and engines that answer in Markdown are read into it. That
+    /// Markdown read back into a tree and rendered again must score the same: the reader and the renderer agree.
     /// </summary>
     [Theory]
     [MemberData(nameof(DigitalDocuments))]
     public async Task A_parse_read_into_the_document_tree_and_rendered_back_scores_the_same(string id)
     {
         var document = ParseEvaluationFixture.Corpus.Single(d => d.Id == id);
-        var markdown = (await fixture.ParseAsync(document)).Markdown;
+        var markdown = ExtractionDocumentMarkdown.Render(await fixture.ParseAsync(document));
 
         var rendered = ExtractionDocumentMarkdown.Render(MarkdownDocumentReader.Read(markdown, id));
 

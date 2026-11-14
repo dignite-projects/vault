@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Shouldly;
 using Volo.Abp.Testing;
 using Xunit;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
 using NSubstitute;
 using System.Threading;
 
@@ -17,16 +17,16 @@ namespace Dignite.Vault.Parse;
 /// already worked against regression.
 /// </summary>
 public class TextEncodingNormalization_Tests
-    : AbpIntegratedTest<DefaultTextExtractor_Tests.ParseTestModule>
+    : AbpIntegratedTest<ParseRoutingClientIntegration_Tests.ParseTestModule>
 {
     private const string ReplacementChar = "�";
     private const string ByteOrderMark = "﻿";
 
-    private readonly ITextExtractor _extractor;
+    private readonly DocumentExtractionClient _extractor;
 
     public TextEncodingNormalization_Tests()
     {
-        _extractor = GetRequiredService<ITextExtractor>();
+        _extractor = GetRequiredService<DocumentExtractionClient>();
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
@@ -122,14 +122,11 @@ public class TextEncodingNormalization_Tests
     private async Task<string> ExtractMarkdownAsync(byte[] bytes, string extension, string contentType)
     {
         using var stream = new MemoryStream(bytes);
-        var result = await _extractor.ExtractAsync(stream, new TextExtractionContext
-        {
-            ContentType = contentType,
-            FileExtension = extension
-        });
+        var result = await _extractor.ParseAsync(stream, "upload" + extension, contentType);
 
-        await GetRequiredService<IOcrProvider>().DidNotReceive().RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
-        return result.Markdown ?? string.Empty;
+        await GetRequiredService<ParseOcrClient>().DidNotReceive().ExtractAsync(
+            Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
+        return result.Markdown;
     }
 
     private static byte[] Preamble(Encoding encoding, string content)

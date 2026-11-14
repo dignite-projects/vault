@@ -34,7 +34,8 @@
     <ProjectReference Include="..\Dignite.Vault.Extract.Abstractions\Dignite.Vault.Extract.Abstractions.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Extract.Application.Contracts\Dignite.Vault.Extract.Application.Contracts.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Extract.Domain\Dignite.Vault.Extract.Domain.csproj" />
-    <!-- ITextExtractor and its result, NativePayload, ImageOcrMarkup: the Parse contracts only, never the orchestrator (#716). -->
+    <!-- DocumentExtractionClient (the host registers the Parse router behind it), the options and metadata conventions,
+         the Markdown rendering and ImageOcrMarkup: the Parse contracts only, never the router or an engine (#716). -->
     <ProjectReference Include="..\..\..\vault.parse\src\Dignite.Vault.Parse.Abstractions\Dignite.Vault.Parse.Abstractions.csproj" />
   </ItemGroup>
 

@@ -1,6 +1,6 @@
 using System;
 
-namespace Dignite.Vault.Parse.Ocr;
+namespace Dignite.Vault.Parse;
 
 /// <summary>
 /// Content-based detection of image / PDF formats by their leading magic bytes. Lives in the OCR

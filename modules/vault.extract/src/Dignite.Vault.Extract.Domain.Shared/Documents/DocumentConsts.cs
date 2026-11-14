@@ -13,7 +13,7 @@ public static class DocumentConsts
     /// Hard upload file size limit in bytes, default 20 MiB (#221). Fail-closed safety gate:
     /// over limit -> loud <c>BusinessException</c> (<c>Document.FileTooLarge</c>), no blob write, no pipeline trigger.
     /// Aligned with the frontend document-upload component's 20 MB client-side validation; frontend is UX, server is the boundary.
-    /// Static mutable: host may raise this at startup according to deployment compute / OCR provider, same as <see cref="MaxNativePayloadArchiveBytes"/>.
+    /// Static mutable: host may raise this at startup according to deployment compute / OCR provider.
     /// When raising it, also raise host Kestrel <c>MaxRequestBodySize</c> / <c>FormOptions.MultipartBodyLengthLimit</c>.
     /// </summary>
     public static long MaxUploadFileBytes { get; set; } = 20L * 1024 * 1024;
@@ -90,13 +90,6 @@ public static class DocumentConsts
     /// on the fingerprint-collision query so a fingerprint shared by many documents cannot return an unbounded set.
     /// </summary>
     public const int MaxDuplicateCandidates = 20;
-
-    /// <summary>
-    /// Native payload archive size limit in bytes, default 16 MiB (#210).
-    /// Over limit -> log warning, set manifest null, and text extraction still succeeds (archive fails open).
-    /// May be overridden by tests or host, same static mutable pattern as MaxTitleLength.
-    /// </summary>
-    public static long MaxNativePayloadArchiveBytes { get; set; } = 16L * 1024 * 1024;
 
     /// <summary>
     /// Hard per-call result limit for programmatic / LLM-triggered retrieval, such as MCP search tools.

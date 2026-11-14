@@ -8,7 +8,6 @@ using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.Core;
 using Azure.Core.Pipeline;
-using Dignite.Vault.Parse.Ocr;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Xunit;
@@ -16,13 +15,13 @@ using Xunit;
 namespace Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence;
 
 /// <summary>
-/// Unit tests for <see cref="AzureDocumentIntelligenceOcrProvider"/> at the Azure SDK boundary. A test
+/// Unit tests for <see cref="AzureDocumentIntelligenceOcrClient"/> at the Azure SDK boundary. A test
 /// subclass overrides the <c>CreateClient()</c> seam to return a <see cref="DocumentIntelligenceClient"/>
 /// wired to an in-process <see cref="MockTransport"/>, which short-circuits the HTTP pipeline and plays back
 /// the Document Intelligence long-running-operation protocol (POST 202 with Operation-Location, then a GET
 /// that reports <c>succeeded</c>). No Azure resource is contacted.
 /// </summary>
-public class AzureDocumentIntelligenceOcrProvider_Tests
+public class AzureDocumentIntelligenceOcrClient_Tests
 {
     private const string Endpoint = "https://fake.cognitiveservices.azure.com";
 
@@ -52,14 +51,14 @@ public class AzureDocumentIntelligenceOcrProvider_Tests
             """;
     }
 
-    private static AzureDocumentIntelligenceOcrProvider Provider(MockTransport transport)
+    private static AzureDocumentIntelligenceOcrClient Provider(MockTransport transport)
         => new TestProvider(new AzureDocumentIntelligenceOptions { Endpoint = Endpoint, ApiKey = "fake-key" }, transport);
 
     [Fact]
     public async Task Should_Request_The_Prebuilt_Layout_Model_With_Markdown_Output()
     {
         var transport = new MockTransport(SucceededBody("# Heading"));
-        var result = await Provider(transport).RecognizeAsync(FakeImage(), new OcrOptions());
+        var result = await Provider(transport).ParseAsync(FakeImage(), "upload", "");
 
         transport.AnalyzeRequestUri.ShouldContain("prebuilt-layout");
         // Markdown-first execution point: the layout model must be asked for Markdown output, not plain text.
@@ -72,7 +71,7 @@ public class AzureDocumentIntelligenceOcrProvider_Tests
     {
         var transport = new MockTransport(SucceededBody("# Invoice\n\n| Item | Price |", locale: "ja"));
 
-        var result = await Provider(transport).RecognizeAsync(FakeImage(), new OcrOptions());
+        var result = await Provider(transport).ParseAsync(FakeImage(), "upload", "");
 
         result.Markdown.ShouldBe("# Invoice\n\n| Item | Price |");
         result.DetectedLanguage.ShouldBe("ja");
@@ -80,24 +79,21 @@ public class AzureDocumentIntelligenceOcrProvider_Tests
     }
 
     [Fact]
-    public async Task Should_Archive_The_Raw_Response_As_Native_Payload()
+    public async Task Should_Keep_The_AnalyzeResult_As_The_Raw_Representation()
     {
         var transport = new MockTransport(SucceededBody("# Heading"));
 
-        var result = await Provider(transport).RecognizeAsync(FakeImage(), new OcrOptions());
+        var result = await Provider(transport).ParseAsync(FakeImage(), "upload", "");
 
-        // #210: the raw AnalyzeResult JSON (including out-of-band bbox/span signals) is archived verbatim.
-        result.NativePayloadContentType.ShouldBe("application/json");
-        result.NativePayloadSchemaName.ShouldBe("AzureDocumentIntelligence.AnalyzeResult");
-        result.NativePayloadContent.ShouldNotBeNull();
-        Encoding.UTF8.GetString(result.NativePayloadContent!).ShouldContain("analyzeResult");
+        // #210: the AnalyzeResult (with its out-of-band bbox / span signals) stays on the document.
+        result.Document.RawRepresentation.ShouldBeOfType<AnalyzeResult>().ModelId.ShouldBe("prebuilt-layout");
     }
 
     [Fact]
     public async Task Should_Fall_Back_To_Joined_Line_Text_When_Content_Is_Empty()
     {
         // Azure returned no top-level Markdown content; the provider rebuilds flat Markdown paragraphs from
-        // the page lines itself rather than leaking that responsibility to the orchestrator.
+        // the page lines itself rather than leaking that responsibility to the router.
         var body = """
             {
               "status": "succeeded",
@@ -126,7 +122,7 @@ public class AzureDocumentIntelligenceOcrProvider_Tests
             """;
         var transport = new MockTransport(body);
 
-        var result = await Provider(transport).RecognizeAsync(FakeImage(), new OcrOptions());
+        var result = await Provider(transport).ParseAsync(FakeImage(), "upload", "");
 
         result.Markdown.ShouldBe(string.Join("\n\n", "line A", "line B"));
     }
@@ -139,11 +135,11 @@ public class AzureDocumentIntelligenceOcrProvider_Tests
         var transport = new MockTransport(getBody: "", postStatus: 400);
 
         await Should.ThrowAsync<RequestFailedException>(() =>
-            Provider(transport).RecognizeAsync(FakeImage(), new OcrOptions()));
+            Provider(transport).ParseAsync(FakeImage(), "upload", ""));
     }
 
     // Injects the in-process transport through the provider's CreateClient() seam.
-    private sealed class TestProvider : AzureDocumentIntelligenceOcrProvider
+    private sealed class TestProvider : AzureDocumentIntelligenceOcrClient
     {
         private readonly MockTransport _transport;
 

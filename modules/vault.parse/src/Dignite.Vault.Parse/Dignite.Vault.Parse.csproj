@@ -6,7 +6,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>Dignite.Vault.Parse</RootNamespace>
-    <Description>Text-extraction orchestration for Dignite Vault Extract: the default ITextExtractor implementation that dispatches by file extension between OCR and Markdown providers (with OCR fallback for PDFs without a text layer), plus the IMarkdownTextProvider contract.</Description>
+    <Description>The Dignite Vault Parse router (a DocumentExtractionClient that sends each file to the engine that reads it, with OCR for PDFs without a text layer), the Markdown reader for engines that answer in Markdown, and the helpers the engines share.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,7 +14,6 @@
     <PackageReference Include="Markdig.Signed" />
     <PackageReference Include="HtmlAgilityPack" />
     <ProjectReference Include="..\Dignite.Vault.Parse.Abstractions\Dignite.Vault.Parse.Abstractions.csproj" />
-    <ProjectReference Include="..\Dignite.Vault.Parse.Ocr\Dignite.Vault.Parse.Ocr.csproj" />
   </ItemGroup>
 
 </Project>

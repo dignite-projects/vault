@@ -9,7 +9,7 @@ public static class VisionLlmOcrConsts
     /// DI key for the vision-capable <c>IChatClient</c> the VisionLlm OCR provider resolves.
     /// <para>
     /// Registered by the host wiring (<c>VaultExtractHostModule.ConfigureAI</c>) and consumed by
-    /// <see cref="VisionLlmOcrProvider"/> via <c>[FromKeyedServices(...)]</c> — the same keyed-client
+    /// <see cref="VisionLlmOcrClient"/> via <c>[FromKeyedServices(...)]</c> — the same keyed-client
     /// pattern as <c>VaultExtractConsts.StructuredChatClientKey</c> / <c>TitleGeneratorChatClientKey</c>.
     /// </para>
     /// <para>

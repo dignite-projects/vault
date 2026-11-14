@@ -1,21 +1,18 @@
 using Shouldly;
 using Volo.Abp.DependencyInjection;
 using Xunit;
-using Dignite.Vault.Parse.Ocr;
 
 namespace Dignite.Vault.Parse.Ocr.VisionLlm;
 
 /// <summary>
 /// Guards the ABP conventional-registration metadata for the VisionLlm services.
 /// <para>
-/// The pure-unit provider tests construct <see cref="VisionLlmOcrProvider"/> with <c>new(...)</c> and a
-/// mocked <see cref="IPdfRasterizer"/>, so they cannot catch a missing DI registration. ABP exposes an
-/// interface <c>IFoo</c> by convention only when the class name ends with <c>Foo</c>:
-/// <c>VisionLlmOcrProvider</c> ends with <c>OcrProvider</c> (matches <see cref="IOcrProvider"/>), but
-/// <c>PdfToImageRasterizer</c> does NOT end with <c>PdfRasterizer</c>, so <see cref="IPdfRasterizer"/> is
-/// only exposed via the explicit <c>[ExposeServices]</c>. These tests assert both interfaces are exposed,
-/// failing loudly if the attribute is ever dropped (which would crash resolution at runtime once the
-/// VisionLlm module is enabled in a host).
+/// The pure-unit engine tests construct <see cref="VisionLlmOcrClient"/> with <c>new(...)</c> and a
+/// mocked <see cref="IPdfRasterizer"/>, so they cannot catch a missing DI registration. Neither service is exposed by
+/// ABP's naming convention: <c>PdfToImageRasterizer</c> does NOT end with <c>PdfRasterizer</c>, and the engine base
+/// classes are found only through the explicit <c>[ExposeServices]</c> (the router as <see cref="ParseExtractionClient"/>,
+/// the PDF and OpenXML engines as <see cref="ParseOcrClient"/>). These tests fail loudly if an attribute is ever
+/// dropped, which would crash resolution at runtime once the VisionLlm module is enabled in a host.
 /// </para>
 /// </summary>
 public class VisionLlmOcrRegistration_Tests
@@ -28,9 +25,10 @@ public class VisionLlmOcrRegistration_Tests
     }
 
     [Fact]
-    public void Provider_Exposes_IOcrProvider()
+    public void Engine_is_exposed_as_the_ocr_engine_and_an_engine()
     {
-        ExposedServiceExplorer.GetExposedServices(typeof(VisionLlmOcrProvider))
-            .ShouldContain(typeof(IOcrProvider));
+        var exposed = ExposedServiceExplorer.GetExposedServices(typeof(VisionLlmOcrClient));
+        exposed.ShouldContain(typeof(ParseOcrClient));
+        exposed.ShouldContain(typeof(ParseExtractionClient));
     }
 }

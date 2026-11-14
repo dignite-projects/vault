@@ -12,6 +12,7 @@ using Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 using Dignite.Vault.Extract.Documents.Pipelines.Parse;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp;
@@ -31,7 +32,7 @@ public class DeletedDocumentQueuedJobTestModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        context.Services.AddSingleton(Substitute.For<ITextExtractor>());
+        context.Services.AddSingleton(Substitute.For<DocumentExtractionClient>());
         context.Services.AddSingleton(Substitute.For<IBlobContainer<VaultExtractDocumentContainer>>());
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
         context.Services.AddSingleton(Substitute.For<IDistributedEventBus>());
@@ -56,7 +57,7 @@ public class DeletedDocumentQueuedJob_Tests : VaultExtractTestBase<DeletedDocume
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentPipelineRunRepository _runRepository;
     private readonly DocumentPipelineJobScheduler _scheduler;
-    private readonly ITextExtractor _textExtractor;
+    private readonly DocumentExtractionClient _extractionClient;
     private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly IDistributedEventBus _eventBus;
@@ -69,7 +70,7 @@ public class DeletedDocumentQueuedJob_Tests : VaultExtractTestBase<DeletedDocume
         _documentRepository = GetRequiredService<IDocumentRepository>();
         _runRepository = GetRequiredService<IDocumentPipelineRunRepository>();
         _scheduler = GetRequiredService<DocumentPipelineJobScheduler>();
-        _textExtractor = GetRequiredService<ITextExtractor>();
+        _extractionClient = GetRequiredService<DocumentExtractionClient>();
         _blobContainer = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
         _backgroundJobManager = GetRequiredService<IBackgroundJobManager>();
         _eventBus = GetRequiredService<IDistributedEventBus>();
@@ -153,12 +154,11 @@ public class DeletedDocumentQueuedJob_Tests : VaultExtractTestBase<DeletedDocume
         var documentId = await ArrangeDocumentAsync();
         var runId = await QueueRunAsync(documentId, VaultExtractPipelines.Parse);
         _blobContainer.GetAsync(Arg.Any<string>()).Returns(_ => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
-        _textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<TextExtractionContext>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                WithUnitOfWorkAsync(() => _documentRepository.DeleteAsync(documentId)).GetAwaiter().GetResult();
-                return new TextExtractionResult { Markdown = "# Late", ProviderName = "ElBruno.MarkItDotNet" };
-            });
+        _extractionClient.Answers(_ =>
+        {
+            WithUnitOfWorkAsync(() => _documentRepository.DeleteAsync(documentId)).GetAwaiter().GetResult();
+            return ExtractedDocuments.Of("# Late");
+        });
 
         await Should.ThrowAsync<EntityNotFoundException>(() => ExecuteJobAsync(VaultExtractPipelines.Parse, documentId, runId));
 

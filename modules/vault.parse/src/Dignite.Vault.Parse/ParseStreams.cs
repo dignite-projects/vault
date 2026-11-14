@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 namespace Dignite.Vault.Parse;
 
 /// <summary>
-/// Shared stream helpers for <see cref="IMarkdownTextProvider"/> implementations. Lives in the
-/// orchestrator project (referenced by every provider module) so the buffering logic is defined once
+/// Shared stream helpers for the Parse engines. Lives in the
+/// core project (referenced by every engine module) so the buffering logic is defined once
 /// rather than copied per provider (PdfExtractor / PptxExtractor / future DOCX).
 /// </summary>
 public static class ParseStreams
 {
     /// <summary>
-    /// Materializes the whole stream into a byte array. The orchestrator (<c>DefaultTextExtractor</c>)
+    /// Materializes the whole stream into a byte array. The router (<c>ParseRoutingClient</c>)
     /// already buffers the upload into a seekable <see cref="MemoryStream"/>, so a single
     /// <see cref="MemoryStream.ToArray"/> copy suffices on the production path; only a non-MemoryStream is
     /// re-buffered.

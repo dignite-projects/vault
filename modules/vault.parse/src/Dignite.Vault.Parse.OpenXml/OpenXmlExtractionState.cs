@@ -40,15 +40,15 @@ public class OpenXmlExtractionState
     public int ChartFailures;
 
     /// <summary>OCR language hints for embedded-image transcription (resolved once per extraction).</summary>
-    public IList<string> LanguageHints = new List<string>();
+    public IReadOnlyList<string> LanguageHints = [];
 
     /// <summary>
     /// Resolves the OCR language hints for embedded-image transcription: the per-document hints from the
-    /// context, or empty. There is no central host default (#441 removed it); a provider that needs a
+    /// extraction options, or empty. There is no central host default (#441 removed it); a provider that needs a
     /// language default reads its own config (e.g. <c>PaddleOcr:Languages</c>). Shared by both OpenXML
     /// extractors' <c>protected virtual ResolveLanguageHints</c> override seam (#317) so the resolution rule
     /// lives in one place while each extractor keeps its overridable entry point.
     /// </summary>
-    public static IList<string> ResolveLanguageHints(TextExtractionContext context)
-        => context.LanguageHints ?? new List<string>();
+    public static IReadOnlyList<string> ResolveLanguageHints(Microsoft.Extensions.DocumentExtraction.DocumentExtractionOptions? options)
+        => options.GetLanguageHints();
 }
