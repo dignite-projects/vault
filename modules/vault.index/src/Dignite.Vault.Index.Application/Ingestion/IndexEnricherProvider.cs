@@ -1,3 +1,4 @@
+using Dignite.Vault.Index.Ai;
 using System;
 using Dignite.Vault.Index.Indexing;
 using Microsoft.Extensions.AI;
@@ -16,11 +17,13 @@ public class IndexEnricherProvider : ITransientDependency
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ModelResultCache _cache;
 
-    public IndexEnricherProvider(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
+    public IndexEnricherProvider(IServiceProvider serviceProvider, ILoggerFactory loggerFactory, ModelResultCache cache)
     {
         _serviceProvider = serviceProvider;
         _loggerFactory = loggerFactory;
+        _cache = cache;
     }
 
     public virtual bool IsAvailable => ChatClient is not null;
@@ -39,6 +42,6 @@ public class IndexEnricherProvider : ITransientDependency
         var chatClient = ChatClient;
         return chatClient is null || enrichment == IndexEnrichment.None
             ? null
-            : new IndexChunkEnricher(chatClient, enrichment, _loggerFactory.CreateLogger<IndexChunkEnricher>(), language);
+            : new IndexChunkEnricher(chatClient, enrichment, _loggerFactory.CreateLogger<IndexChunkEnricher>(), language, _cache);
     }
 }

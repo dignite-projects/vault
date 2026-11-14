@@ -301,6 +301,12 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         var enricher = _enricherProvider.Create(profile.Enrichment, document.Language);
         var drafts = await _chunker.ChunkAsync(text, document.Id.ToString(), profile, enricher);
+        if (enricher is { CachedChunkCount: > 0 } reusing)
+        {
+            Logger.LogInformation(
+                "Document {DocumentId}: {Reused} of {Chunks} chunks reused their enrichment; {Calls} enrichment calls.",
+                document.Id, reusing.CachedChunkCount, drafts.Count, reusing.CallCount);
+        }
         if (drafts.Count == 0)
         {
             throw new BusinessException(VaultIndexErrorCodes.EmptyDocument);
