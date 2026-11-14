@@ -16,6 +16,7 @@
         <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.Tests/Dignite.Vault.Parse.Tests.csproj" />
         <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.OpenXml.Tests/Dignite.Vault.Parse.OpenXml.Tests.csproj" />
         <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.Pdf.Tests/Dignite.Vault.Parse.Pdf.Tests.csproj" />
+        <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.Evaluation.Tests/Dignite.Vault.Parse.Evaluation.Tests.csproj" />
         <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence.Tests/Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence.Tests.csproj" />
         <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.Ocr.PaddleOcr.Tests/Dignite.Vault.Parse.Ocr.PaddleOcr.Tests.csproj" />
         <Project Path="modules/vault.parse/test/Dignite.Vault.Parse.Ocr.VisionLlm.Tests/Dignite.Vault.Parse.Ocr.VisionLlm.Tests.csproj" />

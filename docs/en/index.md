@@ -66,6 +66,7 @@ scans · photos · PDFs · Office files
 - [Vision-LLM OCR](text-extraction/ocr-vision-llm.md) — the default: a vision-capable chat model for photos, receipts and image-only PDFs
 - [PaddleOCR](text-extraction/ocr-paddleocr.md) — a local OCR sidecar
 - [Azure Document Intelligence](text-extraction/ocr-azure-document-intelligence.md) — cloud OCR (`prebuilt-layout`)
+- [Parse Evaluation](text-extraction/parse-evaluation.md) — extraction quality on a corpus with ground truth, and the baseline CI holds it to
 
 ### Pipeline
 

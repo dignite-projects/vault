@@ -57,6 +57,10 @@
         {
           "text": "Azure Document Intelligence",
           "path": "text-extraction/ocr-azure-document-intelligence.md"
+        },
+        {
+          "text": "Parse Evaluation",
+          "path": "text-extraction/parse-evaluation.md"
         }
       ]
     },

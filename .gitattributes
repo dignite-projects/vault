@@ -1,5 +1,8 @@
 # Auto detect text files and normalize line endings to LF
 * text=auto
 
+# The parse evaluation corpus is scored byte for byte (a CSV's CRLF and Shift_JIS included), so it is stored verbatim
+modules/vault.parse/test/Dignite.Vault.Parse.Evaluation.Tests/Corpus/** -text
+
 # Git hook scripts must always use LF so bash can execute them on any platform
 .githooks/* text eol=lf

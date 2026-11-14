@@ -1,0 +1,133 @@
+{
+  "id": "invoice",
+  "file": "invoice.pdf",
+  "mediaType": "application/pdf",
+  "format": "pdf",
+  "language": "ja",
+  "ocr": false,
+  "pages": 1,
+  "noise": [],
+  "pageNumbers": false,
+  "elements": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "請求書"
+    },
+    {
+      "type": "paragraph",
+      "text": "請求番号：INV-2026-1120"
+    },
+    {
+      "type": "paragraph",
+      "text": "発行日：2026年11月20日"
+    },
+    {
+      "type": "paragraph",
+      "text": "株式会社サンプル商事 御中"
+    },
+    {
+      "type": "paragraph",
+      "text": "下記のとおりご請求申し上げます。"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ご請求明細"
+    },
+    {
+      "type": "table",
+      "headerRows": 1,
+      "rows": [
+        [
+          "区分",
+          "品名",
+          "数量",
+          "単価",
+          "金額"
+        ],
+        [
+          "保守",
+          "システム保守（11月分）",
+          "1",
+          "120,000",
+          "120,000"
+        ],
+        [
+          null,
+          "障害対応（11月12日）",
+          "2",
+          "15,000",
+          "30,000"
+        ],
+        [
+          "開発",
+          "帳票機能の追加",
+          "1",
+          "280,000",
+          "280,000"
+        ],
+        [
+          "小計",
+          null,
+          null,
+          null,
+          "430,000"
+        ],
+        [
+          "消費税（10%）",
+          null,
+          null,
+          null,
+          "43,000"
+        ],
+        [
+          "合計",
+          null,
+          null,
+          null,
+          "473,000"
+        ]
+      ],
+      "spans": [
+        [
+          1,
+          0,
+          2,
+          1
+        ],
+        [
+          4,
+          0,
+          1,
+          4
+        ],
+        [
+          5,
+          0,
+          1,
+          4
+        ],
+        [
+          6,
+          0,
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "お振込先"
+    },
+    {
+      "type": "paragraph",
+      "text": "みずなみ銀行 本店営業部 普通預金 1234567 カ）デジナイト"
+    },
+    {
+      "type": "paragraph",
+      "text": "お支払期日：2026年12月31日"
+    }
+  ]
+}
