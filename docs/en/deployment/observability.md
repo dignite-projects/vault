@@ -7,15 +7,14 @@
 
 # Observability
 
-Dignite Vault Extract emits OpenTelemetry traces and metrics from the MAF + `Microsoft.Extensions.AI` stack it consumes, and ships them through a single host-configured export pipeline. This page covers what's emitted, how to wire it up locally, and how to point it at a production backend.
+Dignite Vault Extract emits OpenTelemetry traces and metrics from the `Microsoft.Extensions.AI` stack it consumes, and ships them through a single host-configured export pipeline. This page covers what's emitted, how to wire it up locally, and how to point it at a production backend.
 
 ## What's Emitted
 
 | Source | Type | Highlights |
 |---|---|---|
-| **`Microsoft.Agents.AI`** | Traces, Metrics | MAF agent-invocation spans + token-usage / tool-call metrics for the `ChatClientAgent` runs (today: document classification via `RunAsync<T>`). MAF also defines `CompactionTelemetry` (`compaction.*` spans) but those only fire when chat-history compaction is configured — Dignite Vault Extract's agent runs are single-shot and tool-free, so no `compaction.*` spans are emitted. |
 | **`Microsoft.Extensions.AI`** | Traces, Metrics | `chat-client.GetResponseAsync` spans with GenAI semantic-convention tags (model id, prompt / completion tokens, finish reason). Emitted automatically by the `.UseOpenTelemetry()` decorators wired on every chat client in `VaultExtractHostModule.ConfigureAI`. |
-| **`Dignite.Vault.Extract.*`** | Traces, Metrics (reserved) | Wildcard reservation only — **nothing emits under it today**. Dignite Vault Extract Core registers no custom `ActivitySource` / `Meter` (every LLM stage — classification / field extraction / title generation / slug suggestion — is observable through the `Microsoft.Extensions.AI` + `Microsoft.Agents.AI` instrumentation above). The wildcard is a forward hook for **Dignite Vault Extract Core's own future pipeline metrics** (e.g. classification-confidence histograms, OCR-duration counters) to land in the pipeline without host-side changes. It is **not** an integration point for downstream business modules — those are out of scope and run in their own host with their own OTel pipeline. |
+| **`Dignite.Vault.Extract.*`** | Traces, Metrics (reserved) | Wildcard reservation only — **nothing emits under it today**. Dignite Vault Extract Core registers no custom `ActivitySource` / `Meter` (every LLM stage — classification / field extraction / title generation / slug suggestion — is observable through the `Microsoft.Extensions.AI` instrumentation above). The wildcard is a forward hook for **Dignite Vault Extract Core's own future pipeline metrics** (e.g. classification-confidence histograms, OCR-duration counters) to land in the pipeline without host-side changes. It is **not** an integration point for downstream business modules — those are out of scope and run in their own host with their own OTel pipeline. |
 
 If Dignite Vault Extract Core later adds a Meter or ActivitySource named `Dignite.Vault.Extract.<name>`, it lands in the pipeline automatically — the host registers wildcard `AddSource("Dignite.Vault.Extract.*")` / `AddMeter("Dignite.Vault.Extract.*")`.
 
@@ -87,8 +86,8 @@ start http://localhost:18888
 
 Expected sightings:
 
-- **Traces** tab — an ASP.NET Core request span (or background-job activity) containing nested `chat-client.GetResponseAsync` spans for classification / field extraction / title generation / slug suggestion. Classification additionally has a MAF `invoke_agent` span. No `execute_tool` children — all LLM calls are tool-free.
-- **Metrics** tab — MAF + `Microsoft.Extensions.AI` token-usage counters tick on each LLM invocation.
+- **Traces** tab — an ASP.NET Core request span (or background-job activity) containing nested `chat-client.GetResponseAsync` spans for classification / field extraction / title generation / slug suggestion. No `execute_tool` children — all LLM calls are tool-free.
+- **Metrics** tab — `Microsoft.Extensions.AI` token-usage counters tick on each LLM invocation.
 - **Structured Logs** tab — Serilog logs with `TraceId` correlations to the spans on the left.
 
 ### First-start delay
@@ -103,12 +102,11 @@ This only becomes a caveat if a future code path introduces *streaming* (`GetStr
 
 ### Gotcha: the `Experimental.*` source-name prefix
 
-MAF and `Microsoft.Extensions.AI` currently publish their ActivitySources and Meters under names with an **`Experimental.`** prefix:
+`Microsoft.Extensions.AI` currently publishes its ActivitySource and Meter under names with an **`Experimental.`** prefix:
 
 | Library | Actual source name | Why |
 |---|---|---|
-| `Microsoft.Agents.AI` | `Experimental.Microsoft.Agents.AI` | Follows the OpenTelemetry GenAI semantic-convention draft (https://opentelemetry.io/docs/specs/semconv/gen-ai/) — the spec is still pre-stable so Microsoft scopes the telemetry under "Experimental" until conventions freeze. |
-| `Microsoft.Extensions.AI` | `Experimental.Microsoft.Extensions.AI` | Same reason. |
+| `Microsoft.Extensions.AI` | `Experimental.Microsoft.Extensions.AI` | Follows the OpenTelemetry GenAI semantic-convention draft (https://opentelemetry.io/docs/specs/semconv/gen-ai/) — the spec is still pre-stable so Microsoft scopes the telemetry under "Experimental" until conventions freeze. |
 
 The prefix will be dropped once the spec stabilizes. `VaultExtractHostModule.ConfigureOpenTelemetry` registers both the prefixed and unprefixed names so the pipeline keeps working through that rename.
 

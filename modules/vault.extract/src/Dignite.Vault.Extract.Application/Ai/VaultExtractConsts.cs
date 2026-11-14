@@ -28,7 +28,7 @@ public static class VaultExtractConsts
     /// Same shape as the title-generator client (no FunctionInvocation, no DistributedCache) —
     /// these calls do not invoke tools, their prompts are document-content-derived or
     /// admin-input-derived (unique per call), and their outputs are schema-bound by
-    /// MAF <c>RunAsync&lt;T&gt;</c> or <c>ChatResponseFormat.ForJsonSchema</c>. Wrapping them with
+    /// <c>GetResponseAsync&lt;T&gt;</c> or <c>ChatResponseFormat.ForJsonSchema</c>. Wrapping them with
     /// FunctionInvocation just produces phantom <c>orchestrate_tools</c> spans on traces,
     /// and DistributedCache lookups always miss.
     /// </para>

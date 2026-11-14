@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -70,23 +69,12 @@ public class DocumentSegmentationWorkflow : ITransientDependency
                 """;
 
         var template = _promptProvider.GetSegmentationPrompt(_options.DefaultLanguage);
-        AIAgent agent = new ChatClientAgent(
-            _chatClient,
-            new ChatClientAgentOptions
-            {
-                Name = "ExtractSubDocumentDetector",
-                ChatOptions = new ChatOptions
-                {
-                    Instructions = template.SystemInstructions + " " + PromptBoundary.BoundaryRule
-                },
-                UseProvidedChatClientAsIs = true
-            })
-            .AsBuilder()
-            .UseOpenTelemetry()
-            .Build();
-
-        var response = await agent.RunAsync<SegmentationResponse>(
+        var response = await _chatClient.GetResponseAsync<SegmentationResponse>(
             userMessage,
+            new ChatOptions
+            {
+                Instructions = template.SystemInstructions + " " + PromptBoundary.BoundaryRule
+            },
             cancellationToken: cancellationToken);
 
         var parsed = response.Result;

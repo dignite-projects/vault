@@ -1,7 +1,7 @@
 namespace Dignite.Vault.Extract.Ai;
 
 /// <summary>
-/// Provides system prompts for MAF workflows.
+/// Provides system prompts for the LLM workflows.
 /// Implementations may return different templates by language, tenant, or business scenario. Tests
 /// inject substitute implementations to isolate LLM calls.
 /// </summary>

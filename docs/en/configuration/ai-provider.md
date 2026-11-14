@@ -330,14 +330,10 @@ context.Services.AddOpenTelemetry()
     .WithTracing(b => b
         .AddSource("Experimental.Microsoft.Extensions.AI")
         .AddSource("Microsoft.Extensions.AI")
-        .AddSource("Experimental.Microsoft.Agents.AI")
-        .AddSource("Microsoft.Agents.AI")
         .AddSource("Dignite.Vault.Extract.*"))
     .WithMetrics(b => b
         .AddMeter("Experimental.Microsoft.Extensions.AI")
         .AddMeter("Microsoft.Extensions.AI")
-        .AddMeter("Experimental.Microsoft.Agents.AI")
-        .AddMeter("Microsoft.Agents.AI")
         .AddMeter("Dignite.Vault.Extract.*"));
 ```
 
@@ -346,7 +342,6 @@ The shipped host's `VaultExtractHostModule.ConfigureOpenTelemetry` adds the same
 | Source / Meter | Emitted by | Covers |
 | --- | --- | --- |
 | `Experimental.Microsoft.Extensions.AI` (Activity and Meter) | The `UseOpenTelemetry` decorator on each keyed client | GenAI semantic conventions: `chat {model}` spans, `gen_ai.client.operation.duration`, `gen_ai.client.token.usage` |
-| `Experimental.Microsoft.Agents.AI` (Activity and Meter) | The agent runtime (`ChatClientAgent.RunAsync<T>`) used by classification | Agent-level spans around each `RunAsync` call |
 | `Dignite.Vault.Extract.*` (reserved) | Nothing in Vault Extract today | Reserved for module-specific telemetry, including a downstream consumer's own meters |
 
 ## See Also

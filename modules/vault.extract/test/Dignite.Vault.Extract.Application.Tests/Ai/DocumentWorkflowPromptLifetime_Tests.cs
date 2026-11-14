@@ -101,9 +101,8 @@ public class DocumentWorkflowPromptLifetime_Tests
                 var msgs = call.Arg<IEnumerable<ChatMessage>>().ToList();
                 var opts = call.Arg<ChatOptions?>();
 
-                // ChatClientAgent passes system instructions via ChatOptions.Instructions
-                // (Microsoft.Extensions.AI ≥ 10.5) rather than as a ChatRole.System message.
-                // Collect both sources so the assertion stays correct across versions.
+                // The workflows pass system instructions via ChatOptions.Instructions rather than as a
+                // ChatRole.System message. Collect both sources so the assertion holds either way.
                 var allText = string.Join(" ",
                     msgs.Select(m => m.Text ?? "").Append(opts?.Instructions ?? ""));
 
