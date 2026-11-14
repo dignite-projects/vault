@@ -42,10 +42,10 @@ Vault Extract is distributed as an ABP application module: the `Dignite.Vault.Ex
 
 | Requirement | Version |
 |-------------|---------|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet) | 10.0 |
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet) | 11.0 |
 | [Node.js](https://nodejs.org) | `^22.22.3` or `^24.15.0` (Angular 22) |
-| SQL Server | 2019+ (LocalDB works for development) |
-| [ABP CLI](https://abp.io/docs/latest/cli) | matching ABP 10.7 |
+| SQL Server | 2022+ (EF Core 11 emits SQL for compatibility level 160; Vault Index needs 2025). LocalDB works for development |
+| [ABP CLI](https://abp.io/docs/latest/cli) | matching ABP 11.0 |
 | An LLM provider | **mandatory** — any OpenAI-compatible endpoint; a local Ollama works |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop) | optional — PaddleOCR sidecar and the local OpenTelemetry dashboard |
 

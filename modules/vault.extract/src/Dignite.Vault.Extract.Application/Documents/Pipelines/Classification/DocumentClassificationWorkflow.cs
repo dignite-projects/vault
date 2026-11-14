@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,12 +13,12 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Vault.Extract.Documents.Pipelines.Classification;
 
 /// <summary>
-/// Document classification workflow using MAF <c>ChatClientAgent</c> with structured output.
+/// Document classification workflow: one structured-output call through Microsoft.Extensions.AI.
 /// </summary>
 public class DocumentClassificationWorkflow : ITransientDependency
 {
     /// <summary>
-    /// Structured-output (<c>RunAsync&lt;ClassificationResponse&gt;</c>), tool-free,
+    /// Structured-output (<c>GetResponseAsync&lt;ClassificationResponse&gt;</c>), tool-free,
     /// prompt-unique call — routed through the dedicated keyed client
     /// (<see cref="VaultExtractConsts.StructuredChatClientKey"/>) so traces stay clean
     /// and hosts can optionally point classification at a smaller / cheaper model than
@@ -100,23 +99,12 @@ public class DocumentClassificationWorkflow : ITransientDependency
                 """;
 
         var template = _promptProvider.GetClassificationPrompt(_options.DefaultLanguage);
-        AIAgent agent = new ChatClientAgent(
-            _chatClient,
-            new ChatClientAgentOptions
-            {
-                Name = "ExtractDocumentClassifier",
-                ChatOptions = new ChatOptions
-                {
-                    Instructions = template.SystemInstructions + " " + PromptBoundary.BoundaryRule
-                },
-                UseProvidedChatClientAsIs = true
-            })
-            .AsBuilder()
-            .UseOpenTelemetry()
-            .Build();
-
-        var response = await agent.RunAsync<ClassificationResponse>(
+        var response = await _chatClient.GetResponseAsync<ClassificationResponse>(
             userMessage,
+            new ChatOptions
+            {
+                Instructions = template.SystemInstructions + " " + PromptBoundary.BoundaryRule
+            },
             cancellationToken: cancellationToken);
 
         var parsed = response.Result;

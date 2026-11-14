@@ -9,7 +9,7 @@
 
 **Dignite Vault Extract** is the channel layer that turns content requiring IDP (Intelligent Document Processing) — scans, photos, PDF images, Office files and digital documents — into trustworthy structured data: **Markdown**, a classified **document type**, and **field values** extracted by a schema you define. It hands that data to downstream consumers (RAG platforms, business systems, AI clients) over a REST API, an MCP server and distributed events.
 
-It is an [ABP Framework](https://abp.io) application module (ABP 10.7, .NET 10, Angular 22), licensed under LGPL-3.0-only.
+It is an [ABP Framework](https://abp.io) application module (ABP 11, .NET 11, Angular 22), licensed under LGPL-3.0-only.
 
 ```text
 scans · photos · PDFs · Office files

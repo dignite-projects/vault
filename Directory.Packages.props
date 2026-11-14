@@ -7,61 +7,61 @@
     <ItemGroup Label="Build tools">
         <PackageVersion Include="ConfigureAwait.Fody" Version="3.4.1" />
         <PackageVersion Include="Fody" Version="6.9.3" />
-        <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.400" />
+        <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100" />
     </ItemGroup>
 
     <ItemGroup Label="ABP Framework">
-        <PackageVersion Include="Volo.Abp.Core" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Authorization" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Autofac" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Features" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Guids" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Validation" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.VirtualFileSystem" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.EventBus.Abstractions" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Gdpr.Abstractions" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Http.Client" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Mapperly" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Ddd.Domain.Shared" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Ddd.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.SqlServer" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.BackgroundJobs" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.BackgroundJobs.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.BlobStoring" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.BlobStoring.FileSystem" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Auditing" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.AuditLogging.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.AspNetCore.Serilog" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Swashbuckle" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Account.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Account.HttpApi" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Account.Web.OpenIddict" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Identity.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Identity.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.Identity.HttpApi" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.OpenIddict.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.Identity" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.OpenIddict" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.HttpApi" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Web" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.FeatureManagement.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.FeatureManagement.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.FeatureManagement.HttpApi" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.SettingManagement.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.SettingManagement.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.SettingManagement.HttpApi" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.TenantManagement.Application" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.TenantManagement.EntityFrameworkCore" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.TenantManagement.HttpApi" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.TestBase" Version="10.7.1" />
-        <PackageVersion Include="Volo.Abp.AspNetCore.TestBase" Version="10.7.1" />
+        <PackageVersion Include="Volo.Abp.Core" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Authorization" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Autofac" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Features" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Guids" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Validation" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.VirtualFileSystem" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.EventBus.Abstractions" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Gdpr.Abstractions" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Http.Client" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Mapperly" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Ddd.Domain.Shared" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Ddd.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.SqlServer" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.BackgroundJobs" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.BackgroundJobs.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.BlobStoring" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.BlobStoring.FileSystem" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Auditing" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.AuditLogging.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.Serilog" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Swashbuckle" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Account.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Account.HttpApi" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Account.Web.OpenIddict" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Identity.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Identity.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Identity.HttpApi" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.OpenIddict.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.Identity" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.OpenIddict" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.HttpApi" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Web" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.FeatureManagement.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.FeatureManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.FeatureManagement.HttpApi" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.SettingManagement.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.SettingManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.SettingManagement.HttpApi" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.TenantManagement.Application" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.TenantManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.TenantManagement.HttpApi" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.TestBase" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.TestBase" Version="11.0.0-rc.2" />
     </ItemGroup>
 
     <!-- Dignite.Abp.FlexFields: the runtime-defined-field constraint kernel field architecture v3 is
@@ -83,23 +83,21 @@
     </ItemGroup>
 
     <ItemGroup Label="LeptonX">
-        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite" Version="5.7.1" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite" Version="6.0.0-rc.2" />
     </ItemGroup>
 
     <ItemGroup Label="ABP Studio">
-        <PackageVersion Include="Volo.Abp.Studio.Client.AspNetCore" Version="3.1.4" />
+        <PackageVersion Include="Volo.Abp.Studio.Client.AspNetCore" Version="3.1.6" />
     </ItemGroup>
 
     <ItemGroup Label="AI">
-        <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />
-        <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.11.0" />
-        <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
-        <!-- Vault Index ingestion. 10.11.0-preview.1 is the build that depends on Microsoft.Extensions.AI 10.11.0, the version
-             above; 11.0.0-preview.1 would pull Microsoft.Extensions.AI 11.0.0 into the net10.0 host. -->
-        <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="10.11.0-preview.1.26513.7" />
-        <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="10.11.0-preview.1.26513.7" />
+        <PackageVersion Include="Microsoft.Extensions.AI" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.0" />
+        <!-- Vault Index ingestion. Pre-release until Microsoft ships a stable Microsoft.Extensions.DataIngestion. -->
+        <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="11.0.0-preview.1.26560.3" />
+        <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="11.0.0-preview.1.26560.3" />
         <PackageVersion Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="1.0.1" />
-        <PackageVersion Include="Microsoft.Agents.AI" Version="1.20.0" />
     </ItemGroup>
 
     <ItemGroup Label="MCP">
@@ -125,24 +123,24 @@
     </ItemGroup>
 
     <ItemGroup Label="OpenTelemetry">
-        <!-- Aligned with the OTel 1.15.x family that Microsoft.Agents.AI 1.4+ depends on
-             (see the plan doc section "MAF version upgrade 1.2 -> 1.5"). The host wires up the export
-             pipeline so MAF's built-in CompactionTelemetry, Microsoft.Extensions.AI's
-             gen_ai.* spans, and project-owned Dignite.Vault.Extract.* Meters reach OTLP. -->
-        <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
-        <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.18.0" />
-        <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
-        <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
-        <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+        <!-- The host wires up the export pipeline so Microsoft.Extensions.AI's gen_ai.* spans and the
+             project-owned Dignite.Vault.Extract.* Meters reach OTLP. -->
+        <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
+        <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.21.0" />
+        <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
+        <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.21.0" />
+        <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.21.0" />
     </ItemGroup>
 
     <ItemGroup Label="Infrastructure">
-        <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" />
-        <PackageVersion Include="Microsoft.EntityFrameworkCore.Proxies" Version="10.0.11" />
-        <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.11" />
-        <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.12" />
+        <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.EntityFrameworkCore.Proxies" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="11.0.0" />
+        <!-- EF Core 11's Tools package no longer brings Design; dotnet ef needs it in the startup project. -->
+        <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="11.0.0" />
         <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
-        <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
+        <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0" />
         <PackageVersion Include="ElBruno.MarkItDotNet" Version="0.6.0" />
         <PackageVersion Include="ElBruno.MarkItDotNet.Excel" Version="0.6.0" />
         <!-- Charset detection for legacy-encoded CSV/TSV/TXT uploads (#493). Tri-licensed MPL-1.1 /
@@ -180,8 +178,8 @@
     </ItemGroup>
 
     <ItemGroup Label="Test">
-        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-        <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.11" />
+        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
+        <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="11.0.0" />
         <PackageVersion Include="NSubstitute" Version="6.2.0" />
         <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
         <PackageVersion Include="Shouldly" Version="4.3.0" />

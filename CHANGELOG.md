@@ -145,6 +145,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: every package targets .NET 11 and ABP 11.** All projects move to `net11.0`, ABP 11.0
+  (`11.0.0-rc.2` until 11.0 is released), EF Core 11, `Microsoft.Extensions.AI` 11.0 and
+  `Microsoft.Extensions.DataIngestion` 11.0 previews. A consumer host must target .NET 11 as well. EF Core 11 emits SQL
+  for compatibility level 160, so `Default` needs SQL Server 2022 or later; `VaultIndex` still needs 2025. Neither
+  database schema changes. A host that runs `dotnet ef` needs `Microsoft.EntityFrameworkCore.Design` in its startup
+  project, which EF Core 11's Tools package no longer brings. The Angular packages stay on `@abp/ng.*` `~10.7.1` for
+  now: `@dignite/ng.flex-fields` and `@dignite/ng.notification-center` declare `@abp/ng.core ~10.7.0` as a peer.
+- **Classification, sub-document detection and cabinet suggestion call `IChatClient` directly.** They used
+  `Microsoft.Agents.AI`'s `ChatClientAgent` only for `RunAsync<T>`; `GetResponseAsync<T>` is the same structured-output
+  call, so prompts and results are unchanged. The `Microsoft.Agents.AI` package is gone from the module, and a host no
+  longer needs to register its ActivitySource and Meter; the agent-level `invoke_agent` span is gone, the chat span
+  stays. See [Observability](docs/en/deployment/observability.md).
 - **BREAKING (shipped host deployment): the database behind `VaultIndex` must be SQL Server 2025 or Azure SQL.**
   The `Ingestion` migration creates a `vector(1024)` column, and `--migrate-database` fails on SQL Server 2022 or
   older. `VaultIndex` falls back to `Default`, so a deployment whose `Default` is an older SQL Server must set a

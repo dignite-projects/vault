@@ -29,7 +29,7 @@ Things that fail in CI or at runtime if ignored:
 - All channel capability lives in `Application`: background jobs, workflows, pipeline runs, document reads and writes. `HttpApi` and `Mcp` are thin adapters over application services.
 - `Abstractions` holds the integration-event ETOs and references no other project in this repo.
 - `Application` sees text extraction only through `Dignite.Vault.Parse.Abstractions`. The host picks the providers.
-- The host is a container: it wires modules and providers and registers three keyed `IChatClient`s (`TitleGenerator`, `Structured`, `Vision`). **Middleware is configured only in the host.** LLM and OCR providers and their API keys are host deployment configuration; end customers never see them.
+- The host is a container: it wires modules and providers and registers the keyed AI clients: Extract's `IChatClient`s (`TitleGenerator`, `Structured`, `Vision`), and Index's `VaultIndex.Chat` chat client and `VaultIndex.Embedding` / `VaultIndex.Embedding.Previous` embedding generators. **Middleware is configured only in the host.** LLM and OCR providers and their API keys are host deployment configuration; end customers never see them.
 - Extract does no vectorization or retrieval and registers no `IEmbeddingGenerator`. That belongs to the `vault.index` module. Business modules (contracts, invoices, HR) are built by downstream consumers in their own repos.
 
 ## Documents, types and fields

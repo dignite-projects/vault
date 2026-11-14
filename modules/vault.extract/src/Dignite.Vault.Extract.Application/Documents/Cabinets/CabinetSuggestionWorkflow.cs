@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -85,23 +84,12 @@ public class CabinetSuggestionWorkflow : ITransientDependency
                 {{PromptBoundary.WrapDocument(truncatedText)}}
                 """;
 
-        AIAgent agent = new ChatClientAgent(
-            _chatClient,
-            new ChatClientAgentOptions
-            {
-                Name = "ExtractCabinetSuggester",
-                ChatOptions = new ChatOptions
-                {
-                    Instructions = SystemPrompt + " " + PromptBoundary.BoundaryRule
-                },
-                UseProvidedChatClientAsIs = true
-            })
-            .AsBuilder()
-            .UseOpenTelemetry()
-            .Build();
-
-        var response = await agent.RunAsync<CabinetSuggestionResponse>(
+        var response = await _chatClient.GetResponseAsync<CabinetSuggestionResponse>(
             userMessage,
+            new ChatOptions
+            {
+                Instructions = SystemPrompt + " " + PromptBoundary.BoundaryRule
+            },
             cancellationToken: cancellationToken);
 
         return ResolveOutcome(response.Result, candidates);

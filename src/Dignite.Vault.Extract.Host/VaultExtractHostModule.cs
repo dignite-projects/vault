@@ -712,7 +712,7 @@ public class VaultExtractHostModule : AbpModule
             VaultExtractConsts.TitleGeneratorChatClientKey,
             _ => openAIClient.GetChatClient(titleGeneratorModelId).AsIChatClient()));
 
-        // Structured-output chat client: shared by classification (MAF RunAsync<T>) plus
+        // Structured-output chat client: shared by classification (GetResponseAsync<T>) plus
         // direct JSON-schema callers such as field extraction. All are tool-free and
         // prompts are document/admin-input-derived (unique per call), so
         // FunctionInvocation and DistributedCache are pure overhead. OTel + Logging stay
@@ -929,9 +929,8 @@ public class VaultExtractHostModule : AbpModule
         }
     }
 
-    // OTel export pipeline. MAF (Microsoft.Agents.AI) and Microsoft.Extensions.AI (gen_ai.*
-    // spans from the chat-client UseOpenTelemetry decorators above) emit signals. Without an
-    // exporter wired here they are silently dropped.
+    // OTel export pipeline. Microsoft.Extensions.AI (gen_ai.* spans from the chat-client UseOpenTelemetry
+    // decorators above) emits signals. Without an exporter wired here they are silently dropped.
     private void ConfigureOpenTelemetry(ServiceConfigurationContext context, IConfiguration configuration)
     {
         var section = configuration.GetSection("OpenTelemetry");
@@ -954,8 +953,6 @@ public class VaultExtractHostModule : AbpModule
         otel.WithTracing(tracing =>
         {
             tracing
-                .AddSource("Experimental.Microsoft.Agents.AI")
-                .AddSource("Microsoft.Agents.AI")
                 .AddSource("Experimental.Microsoft.Extensions.AI")
                 .AddSource("Microsoft.Extensions.AI")
                 .AddSource("Dignite.Vault.Extract.*")
@@ -977,8 +974,6 @@ public class VaultExtractHostModule : AbpModule
         {
             metrics
                 .AddMeter("Dignite.Vault.Extract.*")
-                .AddMeter("Experimental.Microsoft.Agents.AI")
-                .AddMeter("Microsoft.Agents.AI")
                 .AddMeter("Experimental.Microsoft.Extensions.AI")
                 .AddMeter("Microsoft.Extensions.AI")
                 .AddAspNetCoreInstrumentation()

@@ -17,7 +17,7 @@ This page covers the classification pipeline as a *feature*: how it works, how t
 
 ```
 Document.Markdown ──► DocumentClassificationBackgroundJob ──► DocumentClassificationWorkflow
-                                                              (ChatClientAgent + structured output)
+                                                              (IChatClient structured output)    
                                                                          │
                                                                          ▼
                                             ConfidenceScore ≥ Type.ConfidenceThreshold ?

@@ -8,11 +8,8 @@
         <!--
           CS1591: missing XML docs (we document public APIs with rich /// comments where it matters
                   but don't require it everywhere).
-          MAAI001: Microsoft.Agents.AI APIs still carry experimental annotations on some
-                   stable-in-practice surfaces we use (ChatClientAgent / OpenTelemetry).
-                   Keep this explicit until Microsoft removes the analyzer warning.
         -->
-        <NoWarn>$(NoWarn);CS1591;MAAI001</NoWarn>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
         <NuGetAudit>false</NuGetAudit>
     </PropertyGroup>
 
