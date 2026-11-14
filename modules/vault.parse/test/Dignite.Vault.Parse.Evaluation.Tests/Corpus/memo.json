@@ -1,0 +1,92 @@
+{
+  "id": "memo",
+  "file": "memo.docx",
+  "mediaType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "format": "docx",
+  "language": "ja",
+  "ocr": false,
+  "pages": null,
+  "noise": [],
+  "pageNumbers": false,
+  "elements": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "社内メモ：文書取込の運用変更"
+    },
+    {
+      "type": "paragraph",
+      "text": "宛先：経理部・総務部 各位"
+    },
+    {
+      "type": "paragraph",
+      "text": "2026年12月1日から、紙の請求書は受付窓口でスキャンし、文書取込システムへ登録してください。"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "変更点"
+    },
+    {
+      "type": "list",
+      "items": [
+        "原本は受付後30日間保管し、その後廃棄する",
+        "登録時に文書の種類を選ぶ必要はない（自動で分類される）",
+        "分類できなかった文書は担当者の確認待ちになる"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "担当窓口"
+    },
+    {
+      "type": "table",
+      "headerRows": 1,
+      "rows": [
+        [
+          "拠点",
+          "窓口",
+          "担当",
+          "内線"
+        ],
+        [
+          "本社",
+          "受付",
+          "鈴木",
+          "1201"
+        ],
+        [
+          null,
+          "経理",
+          "高橋",
+          "1305"
+        ],
+        [
+          null,
+          "総務",
+          "田中",
+          "1410"
+        ],
+        [
+          "大阪支社",
+          "受付",
+          "伊藤",
+          "2101"
+        ]
+      ],
+      "spans": [
+        [
+          1,
+          0,
+          3,
+          1
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "ご不明な点は総務部までお問い合わせください。"
+    }
+  ]
+}

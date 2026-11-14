@@ -1,0 +1,78 @@
+{
+  "id": "report",
+  "file": "report.pdf",
+  "mediaType": "application/pdf",
+  "format": "pdf",
+  "language": "en",
+  "ocr": false,
+  "pages": 1,
+  "noise": [],
+  "pageNumbers": false,
+  "elements": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Quarterly Operations Report: Document Intake"
+    },
+    {
+      "type": "paragraph",
+      "text": "This report summarizes how incoming documents were processed in the third quarter, where the pipeline lost time, and which changes are planned for the next quarter."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Volume"
+    },
+    {
+      "type": "paragraph",
+      "text": "The intake service received 18,420 documents, 12 percent more than in the second quarter. Invoices made up 41 percent of the volume, contracts 23 percent and receipts 19 percent."
+    },
+    {
+      "type": "paragraph",
+      "text": "Peak days followed the month-end closing, when the queue grew to four times its average length."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Processing Time"
+    },
+    {
+      "type": "paragraph",
+      "text": "The median time from upload to a ready document fell from 96 seconds to 71 seconds. Scanned documents remained the slowest group because every page passes through optical character recognition."
+    },
+    {
+      "type": "paragraph",
+      "text": "Field extraction accounted for most of the remaining time on long contracts, where the whole text is sent to the model in one request."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Review Rate"
+    },
+    {
+      "type": "paragraph",
+      "text": "Operators reviewed 8.4 percent of the documents, down from 11.2 percent. Most reviews were caused by missing invoice numbers on photographed receipts and by unclear contract parties."
+    },
+    {
+      "type": "paragraph",
+      "text": "Reviews took a median of three minutes each, and nine out of ten ended with a correction to a single field."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Next Quarter"
+    },
+    {
+      "type": "paragraph",
+      "text": "The team will run independent stages in parallel, retry throttled model calls with backoff, and measure parsing quality on a fixed corpus before every release."
+    },
+    {
+      "type": "paragraph",
+      "text": "A layout-aware parser will replace the plain text layer for scanned pages, so that answers can cite the page they come from and reviewers can see the region a value was read from."
+    },
+    {
+      "type": "paragraph",
+      "text": "The review queue will be split by document type, so that the operators who know a type best receive its documents first."
+    }
+  ]
+}

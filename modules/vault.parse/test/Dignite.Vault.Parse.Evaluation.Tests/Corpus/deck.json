@@ -1,0 +1,67 @@
+{
+  "id": "deck",
+  "file": "deck.pptx",
+  "mediaType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "format": "pptx",
+  "language": "en",
+  "ocr": false,
+  "pages": 3,
+  "noise": [],
+  "pageNumbers": false,
+  "elements": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Vault Extract Rollout"
+    },
+    {
+      "type": "paragraph",
+      "text": "Phase 2 plan, December 2026"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Goals"
+    },
+    {
+      "type": "list",
+      "items": [
+        "Process every scanned invoice within two minutes",
+        "Keep the review rate under 5 percent",
+        "Cite the source page for every extracted field"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Schedule"
+    },
+    {
+      "type": "table",
+      "headerRows": 1,
+      "rows": [
+        [
+          "Phase",
+          "Start",
+          "End"
+        ],
+        [
+          "Pilot",
+          "2026-12-01",
+          "2026-12-20"
+        ],
+        [
+          "Rollout",
+          "2027-01-05",
+          "2027-02-28"
+        ],
+        [
+          "Review",
+          "2027-03-01",
+          "2027-03-15"
+        ]
+      ],
+      "spans": []
+    }
+  ]
+}

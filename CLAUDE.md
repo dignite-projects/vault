@@ -72,6 +72,7 @@ Code that violates one of these is a defect, not a precedent. https://abp.io/doc
 
 - One test project: `dotnet test modules/<module>/test/<Project>/<Project>.csproj` (`<module>` is `vault.extract`, `vault.parse` or `vault.index`). Tests are ABP integration style on in-memory SQLite, with Shouldly and NSubstitute.
 - Angular: `npx ng test vault-extract --watch=false` from `modules/vault.extract/angular/`; `npx ng test vault-index --watch=false` from `modules/vault.index/angular/`.
+- Parse's evaluation (`Dignite.Vault.Parse.Evaluation.Tests`, in CI) holds every digital corpus document to `Reports/baseline.json`: a Parse change that moves a score fails it until the baseline is rewritten with `VAULT_PARSE_EVAL_WRITE_BASELINE=1` and committed. See `docs/en/text-extraction/parse-evaluation.md`.
 - Index's SQL Server tests and retrieval evaluation run only with `VAULT_INDEX_TEST_SQLSERVER` (and `VAULT_INDEX_EVAL_EMBEDDING_*` for the evaluation) set; see `docs/en/deployment/index-status.md`.
 
 ## Decision record

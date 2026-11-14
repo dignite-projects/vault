@@ -98,6 +98,9 @@
         <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="11.0.0-preview.1.26560.3" />
         <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="11.0.0-preview.1.26560.3" />
         <PackageVersion Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="1.0.1" />
+        <!-- Evaluation suites (Vault Parse's corpus evaluation): custom evaluators and on-disk result storage. -->
+        <PackageVersion Include="Microsoft.Extensions.AI.Evaluation" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.AI.Evaluation.Reporting" Version="11.0.0" />
     </ItemGroup>
 
     <ItemGroup Label="MCP">

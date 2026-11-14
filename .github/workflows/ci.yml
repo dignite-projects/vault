@@ -98,6 +98,11 @@ jobs:
       - name: Run Parse OpenXml tests
         run: dotnet test modules/vault.parse/test/Dignite.Vault.Parse.OpenXml.Tests/Dignite.Vault.Parse.OpenXml.Tests.csproj --no-build --configuration Release --verbosity normal
 
+      # Parse quality on a corpus with ground truth (etc/eval/parse_corpus.py): every digital document must hold its
+      # Reports/baseline.json scores. The documents that need OCR call a vision model and are skipped here.
+      - name: Run Parse evaluation
+        run: dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Evaluation.Tests/Dignite.Vault.Parse.Evaluation.Tests.csproj --no-build --configuration Release --verbosity normal
+
       # The host does not wire these two OCR providers, but release.yml packs and publishes both as NuGet
       # packages, so their tests gate something that ships. Both suites run without a PaddleOCR sidecar or
       # an Azure endpoint.
