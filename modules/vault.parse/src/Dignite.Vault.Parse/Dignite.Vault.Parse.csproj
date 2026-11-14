@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Core" />
+    <PackageReference Include="Markdig.Signed" />
+    <PackageReference Include="HtmlAgilityPack" />
     <ProjectReference Include="..\Dignite.Vault.Parse.Abstractions\Dignite.Vault.Parse.Abstractions.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Parse.Ocr\Dignite.Vault.Parse.Ocr.csproj" />
   </ItemGroup>

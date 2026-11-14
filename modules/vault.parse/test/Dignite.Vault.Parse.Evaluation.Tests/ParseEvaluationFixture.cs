@@ -67,16 +67,19 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>The document parsed by the host's providers.</summary>
+    public async Task<TextExtractionResult> ParseAsync(CorpusDocument document)
+    {
+        using var scope = _application.ServiceProvider.CreateScope();
+        await using var stream = File.OpenRead(document.Path);
+        return await scope.ServiceProvider.GetRequiredService<ITextExtractor>().ExtractAsync(
+            stream,
+            new TextExtractionContext { ContentType = document.MediaType, FileExtension = document.Extension });
+    }
+
     public async Task<ParseOutcome> EvaluateAsync(CorpusDocument document)
     {
-        TextExtractionResult result;
-        using (var scope = _application.ServiceProvider.CreateScope())
-        await using (var stream = File.OpenRead(document.Path))
-        {
-            result = await scope.ServiceProvider.GetRequiredService<ITextExtractor>().ExtractAsync(
-                stream,
-                new TextExtractionContext { ContentType = document.MediaType, FileExtension = document.Extension });
-        }
+        var result = await ParseAsync(document);
 
         EvaluationResult evaluation;
         await using (var run = await _reporting.CreateScenarioRunAsync($"Parse.{document.Id}"))

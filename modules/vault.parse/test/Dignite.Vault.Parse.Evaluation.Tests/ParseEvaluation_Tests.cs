@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using Dignite.Vault.Parse.Evaluation.Scoring;
 using Shouldly;
 using Xunit;
 using Xunit.Abstractions;
@@ -52,6 +53,25 @@ public class ParseEvaluation_Tests(ParseEvaluationFixture fixture, ITestOutputHe
         }
 
         regressions.ShouldBeEmpty($"'{id}' fell below its baseline:\n" + string.Join('\n', regressions));
+    }
+
+    /// <summary>
+    /// Parse is moving onto the document tree of Microsoft.Extensions.Documents, and Vault's Markdown will be rendered
+    /// from it. A parse read into the tree and rendered back must score what the parse itself scores.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DigitalDocuments))]
+    public async Task A_parse_read_into_the_document_tree_and_rendered_back_scores_the_same(string id)
+    {
+        var document = ParseEvaluationFixture.Corpus.Single(d => d.Id == id);
+        var markdown = (await fixture.ParseAsync(document)).Markdown;
+
+        var rendered = ExtractionDocumentMarkdown.Render(MarkdownDocumentReader.Read(markdown, id));
+
+        var direct = ParseScorer.Score(document, markdown);
+        var throughTree = ParseScorer.Score(document, rendered);
+        output.WriteLine(rendered);
+        throughTree.ShouldBe(direct);
     }
 
     [VisionTheory]
