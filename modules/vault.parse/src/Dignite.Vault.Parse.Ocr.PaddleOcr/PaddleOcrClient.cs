@@ -8,18 +8,20 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Options;
 using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Vault.Parse.Ocr.PaddleOcr;
 
-public class PaddleOcrProvider : IOcrProvider, ITransientDependency
+[ExposeServices(typeof(ParseOcrClient), typeof(ParseExtractionClient), typeof(PaddleOcrClient))]
+public class PaddleOcrClient : ParseOcrClient, ITransientDependency
 {
     private readonly PaddleOcrOptions _options;
     private readonly IHttpClientFactory _httpClientFactory;
 
-    public PaddleOcrProvider(
+    public PaddleOcrClient(
         IOptions<PaddleOcrOptions> options,
         IHttpClientFactory httpClientFactory)
     {
@@ -27,63 +29,45 @@ public class PaddleOcrProvider : IOcrProvider, ITransientDependency
         _httpClientFactory = httpClientFactory;
     }
 
-    public virtual async Task<OcrResult> RecognizeAsync(
-        Stream fileStream,
-        OcrOptions options,
+    public override string ProviderName => "PaddleOCR";
+
+    public override async Task<ExtractionDocument> ExtractAsync(
+        Stream document,
+        string identifier,
+        string mediaType,
+        DocumentExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var modelName = _options.ModelName;
         var rawJson = await SendAsync(
-            fileStream,
-            options.LanguageHints,
-            options.ContentType,
+            document,
+            options.GetLanguageHints(),
+            mediaType,
             modelName,
             cancellationToken);
-
         var result = JsonSerializer.Deserialize<PaddleOcrResponse>(rawJson)
             ?? throw new InvalidOperationException("PaddleOCR server returned an empty response.");
 
-        var markdown = BuildMarkdown(result);
-        // SchemaName includes the model identifier so downstream consumers can choose how to parse
-        // bbox / block structure.
-        var schemaName = $"PaddleOCR/{result.ProviderModelName ?? modelName}";
-        var ocrResult = new OcrResult
-        {
-            Markdown = markdown,
-            DetectedLanguage = result.DetectedLanguage,
-            ProviderName = result.ProviderName ?? "PaddleOCR"
-        };
-        FillNativePayload(ocrResult, rawJson, schemaName);
-        return ocrResult;
-    }
-
-    private static void FillNativePayload(OcrResult ocrResult, string rawJson, string schemaName)
-    {
-        // #210: archive the raw sidecar JSON, including blocks with per-page / per-line text + page.
-        // Coordinate / confidence truthfulness depends on the model. PP-StructureV3 / PaddleOCR-VL,
-        // including the host current default, only reach page-level output: bbox is always the
-        // [0,0,0,0] placeholder and confidence is always 1.0; see sidecar server.py
-        // _process_structure / _process_vl. Real line-level bbox exists only with PP-OCRv4 when the
-        // request has include_bboxes=true, and this provider does not currently send that parameter.
-        // Under default configuration, the archived payload therefore has no usable coordinates /
-        // confidence; solve data capture first before implementing future Layer 3 parsing.
-        if (string.IsNullOrEmpty(rawJson)) return;
-
-        ocrResult.NativePayloadContent = Encoding.UTF8.GetBytes(rawJson);
-        ocrResult.NativePayloadContentType = "application/json";
-        ocrResult.NativePayloadSchemaName = schemaName;
+        // The sidecar answers in Markdown (or plain text, wrapped into paragraphs) with no usable regions: PP-StructureV3
+        // and PaddleOCR-VL report page-level output only (see the sidecar's server.py). Its answer as it came is the
+        // document's raw representation.
+        var extracted = MarkdownDocumentReader.Read(BuildMarkdown(result), identifier)
+            .SetProvider(result.ProviderName ?? ProviderName)
+            .SetLanguage(result.DetectedLanguage);
+        extracted.RawRepresentation = rawJson;
+        return extracted;
     }
 
     private async Task<string> SendAsync(
         Stream fileStream,
-        IList<string> languageHints,
+        IReadOnlyList<string> languageHints,
         string contentType,
         string modelName,
         CancellationToken cancellationToken)
     {
-        var languages = languageHints.Count > 0
+        IReadOnlyList<string> languages = languageHints.Count > 0
             ? languageHints
-            : _options.Languages;
+            : _options.Languages.ToList();
 
         using var ms = new MemoryStream();
         await fileStream.CopyToAsync(ms, cancellationToken);
@@ -115,7 +99,7 @@ public class PaddleOcrProvider : IOcrProvider, ITransientDependency
     {
         // Markdown-first: PP-StructureV3 / PaddleOCR-VL modes return structured Markdown. Modes such
         // as PP-OCRv4 that return only raw_text are wrapped by the Provider into flat Markdown
-        // paragraphs, keeping plain-text-to-Markdown translation out of the upstream orchestrator.
+        // paragraphs, keeping plain-text-to-Markdown translation inside the engine.
         return !string.IsNullOrEmpty(result.Markdown)
             ? result.Markdown
             : WrapParagraphs(result.RawText);

@@ -4,9 +4,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ClosedXML.Excel;
-using Dignite.Vault.Parse.Ocr;
 using Dignite.Vault.Parse.ElBrunoMarkItDown;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.Modularity;
@@ -15,41 +15,37 @@ using Xunit;
 
 namespace Dignite.Vault.Parse;
 
-public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor_Tests.ParseTestModule>
+/// <summary>
+/// The router as the host composes it: resolved as <see cref="DocumentExtractionClient"/>, with the real ElBruno catch-all
+/// engine and a substitute OCR engine.
+/// </summary>
+public class ParseRoutingClientIntegration_Tests : AbpIntegratedTest<ParseRoutingClientIntegration_Tests.ParseTestModule>
 {
-    private readonly ITextExtractor _extractor;
-    private readonly IOcrProvider _ocrProvider;
+    private readonly DocumentExtractionClient _extractor;
+    private readonly ParseOcrClient _ocrProvider;
 
-    public DefaultTextExtractor_Tests()
+    public ParseRoutingClientIntegration_Tests()
     {
-        _extractor = GetRequiredService<ITextExtractor>();
-        _ocrProvider = GetRequiredService<IOcrProvider>();
+        _extractor = GetRequiredService<DocumentExtractionClient>();
+        _ocrProvider = GetRequiredService<ParseOcrClient>();
     }
 
     [Fact]
     public async Task Should_Use_OcrProvider_For_Image_Files()
     {
         var stream = new MemoryStream(new byte[] { 0xFF, 0xD8 }); // fake JPEG bytes
-        var ctx = new TextExtractionContext
-        {
-            ContentType = "image/jpeg",
-            FileExtension = ".jpg"
-        };
 
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(stream, "photo.jpg", "image/jpeg");
 
-        // OCR Provider directly owns Markdown output, even when it is a flat paragraph; DefaultTextExtractor
-        // passes fields through.
         result.Markdown.ShouldBe("fake ocr markdown");
 
-        // OCR orchestration calls the provider only once; the concrete model is selected by provider/host
-        // configuration.
-        await _ocrProvider.Received(1).RecognizeAsync(
+        // The router calls the OCR engine once; the concrete model is the engine's / host's configuration.
+        await _ocrProvider.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o =>
-                o.ContentType == "image/jpeg" &&
-                // #441: no central host default; with no per-document hints the extractor passes empty hints.
-                o.LanguageHints.Count == 0),
+            Arg.Any<string>(),
+            "image/jpeg",
+            // #441: no central host default; with no per-document hints the engine gets none.
+            Arg.Is<DocumentExtractionOptions?>(o => ParseTestKit.HasLanguageHints(o, System.Array.Empty<string>())),
             Arg.Any<CancellationToken>());
     }
 
@@ -58,16 +54,10 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
     {
         var content = "Hello World";
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
-        var ctx = new TextExtractionContext
-        {
-            ContentType = "text/plain",
-            FileExtension = ".txt"
-        };
-
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(stream, "note.txt", "text/plain");
 
         result.Markdown.ShouldContain("Hello World");
-        await _ocrProvider.DidNotReceive().RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocrProvider.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -81,18 +71,12 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
         string expectedCity)
     {
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
-        var ctx = new TextExtractionContext
-        {
-            ContentType = contentType,
-            FileExtension = extension
-        };
-
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(stream, "table" + extension, contentType);
 
         result.Markdown.ShouldContain("|");
         result.Markdown.ShouldContain(expectedName);
         result.Markdown.ShouldContain(expectedCity);
-        await _ocrProvider.DidNotReceive().RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocrProvider.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -114,32 +98,24 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
         workbook.SaveAs(stream);
         stream.Position = 0;
 
-        var result = await _extractor.ExtractAsync(stream, new TextExtractionContext
-        {
-            ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            FileExtension = ".xlsx"
-        });
+        var result = await _extractor.ParseAsync(
+            stream, "book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
         result.Markdown.ShouldContain("People");
         result.Markdown.ShouldContain("Alice");
         result.Markdown.ShouldContain("Tokyo");
         result.Markdown.ShouldContain("Totals");
         result.Markdown.ShouldContain("Count");
-        await _ocrProvider.DidNotReceive().RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
-        result.ProviderName.ShouldBe(ElBrunoMarkdownProvider.ProviderIdentifier);
+        await _ocrProvider.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
+        result.ProviderName.ShouldBe(ElBrunoExtractionClient.ProviderIdentifier);
     }
 
     [Fact]
     public async Task Should_Fail_Explicitly_For_Malformed_Xlsx()
     {
         var stream = new MemoryStream(Encoding.UTF8.GetBytes("not an xlsx package"));
-        var ctx = new TextExtractionContext
-        {
-            ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            FileExtension = ".xlsx"
-        };
-
-        await Should.ThrowAsync<InvalidDataException>(() => _extractor.ExtractAsync(stream, ctx));
+        await Should.ThrowAsync<InvalidDataException>(() => _extractor.ParseAsync(
+            stream, "book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
     }
 
     [Fact]
@@ -185,15 +161,9 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
     {
         var content = "# Title\n\nSome content.";
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
-        var ctx = new TextExtractionContext
-        {
-            ContentType = "text/markdown",
-            FileExtension = ".md"
-        };
+        var result = await _extractor.ParseAsync(stream, "readme.md", "text/markdown");
 
-        var result = await _extractor.ExtractAsync(stream, ctx);
-
-        await _ocrProvider.DidNotReceive().RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocrProvider.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldNotBeNullOrEmpty();
         result.Markdown.ShouldContain("# Title");
         result.Markdown.ShouldContain("Some content");
@@ -204,13 +174,8 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
     {
         // Non-real PDF bytes make ElBruno conversion fail, so it falls back to OCR.
         var stream = new MemoryStream(Encoding.UTF8.GetBytes("not a real pdf"));
-        var ctx = new TextExtractionContext
-        {
-            ContentType = "application/pdf",
-            FileExtension = ".pdf"
-        };
 
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(stream, "scan.pdf", "application/pdf");
 
         result.Markdown.ShouldBe("fake ocr markdown");
     }
@@ -218,76 +183,46 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
     [Fact]
     public async Task Should_Not_Retry_Ocr_For_Image()
     {
-        _ocrProvider.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
-            .Returns(new OcrResult
-            {
-                Markdown = "| A | B |\n|---|---|\n| kept | table |"
-            });
+        _ocrProvider.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(call => ParseTestKit.OcrDocument(call.ArgAt<string>(1), "| A | B |\n|---|---|\n| kept | table |"));
 
         var stream = new MemoryStream(new byte[] { 0xFF, 0xD8 });
-        var ctx = new TextExtractionContext
-        {
-            ContentType = "image/jpeg",
-            FileExtension = ".jpg"
-        };
 
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(stream, "photo.jpg", "image/jpeg");
 
         result.Markdown.ShouldContain("kept");
 
-        // Orchestrator does not retry OCR; provider is called only once.
-        await _ocrProvider.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(),
-            Arg.Any<OcrOptions>(),
-            Arg.Any<CancellationToken>());
+        // The router does not retry OCR; the engine is called only once.
+        await _ocrProvider.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
-    // === #210 provenance: ProviderName propagation + NativePayload flat-field mapping ===
+    // === #210 provenance: the engine is named on the document ===
 
     [Fact]
-    public async Task Image_Path_Propagates_ProviderName_And_Maps_Native_Payload()
+    public async Task Image_path_names_the_ocr_engine()
     {
-        var stream = new MemoryStream(new byte[] { 0xFF, 0xD8 });
-        var ctx = new TextExtractionContext { ContentType = "image/jpeg", FileExtension = ".jpg" };
-
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(new MemoryStream(new byte[] { 0xFF, 0xD8 }), "photo.jpg", "image/jpeg");
 
         result.ProviderName.ShouldBe("FakeOcr");
-
-        // OCR provider native-payload flat fields are mapped by the orchestration layer to
-        // TextExtractionResult.NativePayload, the Abstractions type.
-        result.NativePayload.ShouldNotBeNull();
-        result.NativePayload!.SchemaName.ShouldBe("FakeOcr/schema");
-        result.NativePayload.ContentType.ShouldBe("application/json");
-        result.NativePayload.Content.Length.ShouldBe(4);
     }
 
     [Fact]
-    public async Task Digital_Path_Propagates_ProviderName_And_Null_Native_Payload()
+    public async Task Digital_path_names_the_catch_all_engine()
     {
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes("# Title\n\nbody text"));
-        var ctx = new TextExtractionContext { ContentType = "text/markdown", FileExtension = ".md" };
+        var result = await _extractor.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes("# Title\n\nbody text")), "readme.md", "text/markdown");
 
-        var result = await _extractor.ExtractAsync(stream, ctx);
-
-        result.ProviderName.ShouldBe(ElBrunoMarkdownProvider.ProviderIdentifier);
-
-        // Pure text-to-Markdown has no spatial model, so there is no native payload.
-        result.NativePayload.ShouldBeNull();
+        result.ProviderName.ShouldBe(ElBrunoExtractionClient.ProviderIdentifier);
     }
 
     [Fact]
-    public async Task Scanned_Pdf_Fallback_Uses_Ocr_ProviderName_And_Native_Payload()
+    public async Task Scanned_pdf_fallback_names_the_ocr_engine()
     {
         // Non-real PDF bytes make ElBruno conversion fail with no text layer, so it falls back to OCR.
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes("not a real pdf"));
-        var ctx = new TextExtractionContext { ContentType = "application/pdf", FileExtension = ".pdf" };
-
-        var result = await _extractor.ExtractAsync(stream, ctx);
+        var result = await _extractor.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes("not a real pdf")), "scan.pdf", "application/pdf");
 
         result.ProviderName.ShouldBe("FakeOcr");
-        result.NativePayload.ShouldNotBeNull();
-        result.NativePayload!.SchemaName.ShouldBe("FakeOcr/schema");
     }
 
     [DependsOn(
@@ -297,22 +232,10 @@ public class DefaultTextExtractor_Tests : AbpIntegratedTest<DefaultTextExtractor
     {
         public override void ConfigureServices(ServiceConfigurationContext context)
         {
-            // OCR provider owns selecting the configured deployment model and outputting Markdown;
-            // orchestrator does not retry profiles.
-            // Includes flat NativePayload fields plus provider identity, covering #210 provenance assembly:
-            // orchestration pass-through plus NativePayload mapping.
-            var fakeOcr = Substitute.For<IOcrProvider>();
-            fakeOcr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
-                .Returns(new OcrResult
-                {
-                    Markdown = "fake ocr markdown",
-                    ProviderName = "FakeOcr",
-                    NativePayloadContent = new byte[] { 1, 2, 3, 4 },
-                    NativePayloadContentType = "application/json",
-                    NativePayloadSchemaName = "FakeOcr/schema"
-                });
-
-            context.Services.AddSingleton<IOcrProvider>(fakeOcr);
+            // The OCR engine owns the configured model and its output; the router does not retry it.
+            var fakeOcr = ParseTestKit.Ocr("fake ocr markdown");
+            context.Services.AddSingleton(fakeOcr);
+            context.Services.AddSingleton<ParseExtractionClient>(fakeOcr);
         }
     }
 

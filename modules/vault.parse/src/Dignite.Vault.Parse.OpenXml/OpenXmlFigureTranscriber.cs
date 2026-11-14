@@ -3,15 +3,16 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
 using DocumentFormat.OpenXml.Packaging;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Logging;
 
 namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
 /// Resolves an embedded OpenXML image relationship to bytes, transcribes it through the host-selected
-/// <see cref="IOcrProvider"/>, and returns the (optionally captioned) Markdown block — or <c>null</c> when
+/// <see cref="ParseOcrClient"/>, and returns the (optionally captioned) Markdown block — or <c>null</c> when
 /// there is nothing to emit. This is the figure-OCR pipeline formerly copy-pasted between
 /// <c>DocxExtractor.TranscribeEmbeddedImageAsync</c> and <c>PptxExtractor.HandlePictureAsync</c>: the budget
 /// guard, <see cref="OpenXmlImagePayload.TryResolve"/> call, the image-outcome switch, the OCR call, the
@@ -41,7 +42,7 @@ internal static class OpenXmlFigureTranscriber
         int? pageNumber,
         OpenXmlExtractionState state,
         OpenXmlExtractorOptions options,
-        IOcrProvider ocrProvider,
+        ParseOcrClient ocr,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -84,7 +85,7 @@ internal static class OpenXmlFigureTranscriber
                 break;
 
             default:
-                // A future outcome added to the enum must not silently fall through to RecognizeAsync with
+                // A future outcome added to the enum must not silently fall through to the OCR call with
                 // possibly-null bytes — fail closed by treating it as undecodable.
                 logger.LogWarning("Unhandled image outcome {Outcome}; treating as undecodable.", resolved.Outcome);
                 state.Undecodable++;
@@ -93,17 +94,15 @@ internal static class OpenXmlFigureTranscriber
 
         state.ImageBudget--;
 
-        OcrResult ocr;
+        ExtractionDocument transcribed;
         try
         {
             using var imageStream = new MemoryStream(resolved.Bytes!, writable: false);
-            ocr = await ocrProvider.RecognizeAsync(
+            transcribed = await ocr.ExtractAsync(
                 imageStream,
-                new OcrOptions
-                {
-                    ContentType = resolved.ContentType!,
-                    LanguageHints = state.LanguageHints
-                },
+                "figure",
+                resolved.ContentType!,
+                ParseExtractionOptions.Create(fileName: null, state.LanguageHints),
                 cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -120,13 +119,13 @@ internal static class OpenXmlFigureTranscriber
             return null;
         }
 
-        if (!ocr.IsComplete)
+        if (!transcribed.IsComplete())
         {
             // OCR truncated at the token limit or discarded by the repetition guard.
             state.TruncatedOcr++;
         }
 
-        var transcription = ocr.Markdown?.Trim() ?? string.Empty;
+        var transcription = ExtractionDocumentMarkdown.Render(transcribed).Trim();
         if (transcription.Length == 0)
         {
             return null;

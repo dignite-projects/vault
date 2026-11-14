@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `Microsoft.Extensions.Documents.ExtractionDocument`, `MarkdownDocumentReader` reads Markdown into one, and
   `ParseElementRoles` / `ParseContentProperties` / `ParseDocumentMetadata` name the conventions (list items, code,
   quotes, page headers and footers, provider, language, completeness). A table that spans rows or columns renders as an
-  HTML table. Nothing calls them yet; every digital document of the parse evaluation corpus reads and renders back to
-  the same scores.
+  HTML table, and an indented block is kept as written (in engine output it continues a footnote). Every digital
+  document of the parse evaluation corpus reads and renders back to the same scores.
 - **Vault Index reuses its model results** (module). A chunk's enrichment and a section's or the document's summary
   are kept for a day in the host's distributed cache (ABP `IDistributedCache`, per tenant), keyed by the model, the
   instructions and the exact text read, so a document re-indexed after a small edit, re-synced after its job failed part
@@ -164,6 +164,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Vault Parse runs on `Microsoft.Extensions.DocumentExtraction`** (breaking for code that calls Parse or adds an
+  engine). Every engine is a `DocumentExtractionClient` that returns a `Microsoft.Extensions.Documents` document tree:
+  the PDF engine one section per page, the PowerPoint engine one per slide, the vision-LLM engine one per transcribed
+  page. `ParseRoutingClient` is registered as `DocumentExtractionClient` and sends each file to the engine that reads it,
+  and a PDF without text to the OCR engine; Extract's parse job injects it and stores the Markdown rendered from the
+  tree. Removed: `ITextExtractor`, `TextExtractionContext`, `TextExtractionResult`, `NativePayload`,
+  `IMarkdownTextProvider`, `DefaultTextExtractor`, `MarkdownProviderPriorities`, and the `Dignite.Vault.Parse.Ocr`
+  package (`IOcrProvider`, `OcrOptions`, `OcrResult`); a host that references that package drops the reference.
+  Renamed: `ElBrunoMarkdownProvider` → `ElBrunoExtractionClient`, `VisionLlmOcrProvider` → `VisionLlmOcrClient`,
+  `PaddleOcrProvider` → `PaddleOcrClient`, `AzureDocumentIntelligenceOcrProvider` → `AzureDocumentIntelligenceOcrClient`.
+  A custom engine derives from `ParseExtractionClient` or `ParseOcrClient`; see
+  [Adding a custom engine](docs/en/text-extraction/text-extraction.md#adding-a-custom-ocr--digital-engine). Module and
+  package names, configuration sections and the egress are unchanged. The Markdown scores the same on the parse
+  evaluation corpus; it can differ from before in blank lines, the leading spaces of table cells, and nested list
+  items, now indented to their parent's content instead of three spaces per level.
+- **The parse job no longer archives an engine's native output** to the blob `extraction-native/{documentId}`, and
+  `Document.ExtractionMetadata` loses its `NativePayloadManifest` (and `DocumentConsts.MaxNativePayloadArchiveBytes`
+  goes). Existing rows read with the manifest ignored, and a permanent delete still removes the blob of an earlier
+  parse. The engines keep their native answer on the tree's `RawRepresentation` (Azure's `AnalyzeResult`, the PaddleOCR
+  sidecar's JSON), which Extract does not store.
 - **Background jobs run in parallel, on a worker per slow stage** (modules and shipped host). Extract gives text
   extraction, classification (with segmentation and the cabinet suggestion) and field extraction workers of their
   own, and Index its indexing and its summary compilation, so a scan's OCR or a long contract's field extraction no

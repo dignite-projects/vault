@@ -4,7 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -16,7 +16,7 @@ namespace Dignite.Vault.Parse.Pdf;
 
 public class PdfExtractor_Tests
 {
-    private readonly IOcrProvider _ocr = Substitute.For<IOcrProvider>();
+    private readonly ParseOcrClient _ocr = Substitute.ForPartsOf<ParseOcrClient>();
 
     private PdfExtractor CreateExtractor(
         int minImagePixels = 0,
@@ -52,18 +52,10 @@ public class PdfExtractor_Tests
         return lines;
     }
 
-    private static TextExtractionContext PdfContext()
-        => new() { ContentType = "application/pdf", FileExtension = ".pdf" };
-
     private void StubOcr(string markdown, bool isComplete = true, string? reason = null)
-        => _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
-            .Returns(new OcrResult
-            {
-                Markdown = markdown,
-                ProviderName = "FakeOcr",
-                IsComplete = isComplete,
-                IncompleteReason = reason
-            });
+        => _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(call => ParseTestKit.OcrDocument(
+                call.ArgAt<string>(1), markdown, "FakeOcr", isComplete ? null : reason ?? "incomplete"));
 
     [Fact]
     public async Task Inlines_image_transcription_at_its_reading_position()
@@ -75,7 +67,7 @@ public class PdfExtractor_Tests
             texts: new[] { ("ALPHA", 760.0), ("CHARLIE", 100.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         var alpha = result.Markdown.IndexOf("ALPHA", StringComparison.Ordinal);
         var bravo = result.Markdown.IndexOf("BRAVO", StringComparison.Ordinal);
@@ -101,7 +93,7 @@ public class PdfExtractor_Tests
             texts: new[] { ("Body text", 700.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // #371/#381: the figure no longer rides an out-of-band Figures list — its transcription travels IN-BAND in
         // Document.Markdown (the egress payload), bracketed by *[Image OCR p:N]*…*[End OCR]* provenance markers
@@ -126,12 +118,12 @@ public class PdfExtractor_Tests
     {
         var pdf = PdfFixtures.Build(texts: new[] { ("Just digital text", 700.0) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // No figure → no in-band *[Image OCR]* markers at all, and no OCR ran.
         ImageOcrMarkup.Contains(result.Markdown).ShouldBeFalse();
         result.Markdown.ShouldNotContain(ImageOcrMarkup.CloseMarker);
-        await _ocr.DidNotReceive().RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -139,7 +131,7 @@ public class PdfExtractor_Tests
     {
         // The OCR call is dispatched (bytes sent) then throws (provider timeout / rate-limit). The extraction
         // must degrade — no in-band figure span, #268 incomplete — rather than fail the whole document.
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("provider down"));
 
         var png = TinyPng.CreateSolid(48, 48);
@@ -147,9 +139,9 @@ public class PdfExtractor_Tests
             texts: new[] { ("Body text", 700.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.Received(1).RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>()); // dispatched, even though it threw
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>()); // dispatched, even though it threw
         ImageOcrMarkup.Contains(result.Markdown).ShouldBeFalse();   // no transcription produced -> no in-band figure span
         result.IsComplete.ShouldBeFalse();                          // #268 trips on the failed figure OCR
     }
@@ -164,12 +156,14 @@ public class PdfExtractor_Tests
             texts: new[] { ("Body text", 700.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
-        await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // Exactly one image → exactly one OCR call, with an image content type (transcription only).
-        await _ocr.Received(1).RecognizeAsync(
+        await _ocr.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o => o.ContentType.StartsWith("image/", StringComparison.Ordinal)),
+            Arg.Any<string>(),
+            Arg.Is<string>(t => t.StartsWith("image/", StringComparison.Ordinal)),
+            Arg.Any<DocumentExtractionOptions?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -183,7 +177,7 @@ public class PdfExtractor_Tests
             texts: new[] { ("Body text", 700.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNullOrEmpty();
@@ -202,12 +196,11 @@ public class PdfExtractor_Tests
             texts: Array.Empty<(string, double)>(),
             images: new[] { (png, new PdfRectangle(50, 300, 400, 700)) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldBeNullOrEmpty();
         result.ProviderName.ShouldBe(PdfExtractor.ProviderIdentifier);
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -220,14 +213,13 @@ public class PdfExtractor_Tests
             texts: new[] { ("Body text", 700.0) },
             images: new[] { (icon, new PdfRectangle(50, 400, 60, 410)) });
 
-        var result = await CreateExtractor(minImagePixels: 1000).ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor(minImagePixels: 1000).ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("Body text");
         result.Markdown.ShouldNotContain("SHOULD_NOT_APPEAR");
         // Decorative images are not figure content → not counted against completeness.
         result.IsComplete.ShouldBeTrue();
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -244,13 +236,12 @@ public class PdfExtractor_Tests
                 (png, new PdfRectangle(50, 200, 200, 350))
             });
 
-        var result = await CreateExtractor(maxImagesPerPdf: 1).ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor(maxImagesPerPdf: 1).ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNull();
         result.IncompleteReason!.ShouldContain("cap");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -259,7 +250,7 @@ public class PdfExtractor_Tests
         // A figure's OCR failing (provider timeout / rate-limit / auth / one bad image) must degrade,
         // not nuke the whole digital extraction: the digital text layer is the primary payload, figure
         // OCR is the auxiliary add-on.
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("vision provider down"));
 
         var png = TinyPng.CreateSolid(32, 32);
@@ -268,14 +259,13 @@ public class PdfExtractor_Tests
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
         // Must NOT throw — the whole extraction does not fail because one figure's OCR did.
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("DIGITALBODYTEXT"); // digital text layer preserved
         result.IsComplete.ShouldBeFalse();                // #268 signal tripped
         result.IncompleteReason.ShouldNotBeNull();
         result.IncompleteReason!.ShouldContain("OCR");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -283,7 +273,7 @@ public class PdfExtractor_Tests
     {
         // A provider timeout surfaces as TaskCanceledException while the caller's token is NOT cancelled:
         // it is a figure failure, not a shutdown.
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
             .Throws(new TaskCanceledException());
 
         var png = TinyPng.CreateSolid(32, 32);
@@ -291,7 +281,7 @@ public class PdfExtractor_Tests
             texts: new[] { ("DIGITALBODYTEXT", 700.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("DIGITALBODYTEXT");
         result.IsComplete.ShouldBeFalse();
@@ -303,8 +293,8 @@ public class PdfExtractor_Tests
     public async Task Propagates_cancellation_of_the_callers_token_raised_during_figure_OCR()
     {
         using var cts = new CancellationTokenSource();
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
-            .Returns<Task<OcrResult>>(_ =>
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<Microsoft.Extensions.Documents.ExtractionDocument>>(_ =>
             {
                 cts.Cancel();
                 throw new OperationCanceledException(cts.Token);
@@ -316,7 +306,7 @@ public class PdfExtractor_Tests
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
 
         await Should.ThrowAsync<OperationCanceledException>(async () =>
-            await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext(), cts.Token));
+            await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf", cancellationToken: cts.Token));
     }
 
     [Fact]
@@ -332,11 +322,13 @@ public class PdfExtractor_Tests
         // #441: no central host default. With no per-document hints, the figure path passes empty hints;
         // a provider that needs a default reads its own config (e.g. PaddleOcr:Languages).
         var extractor = CreateExtractor();
-        await extractor.ExtractAsync(new MemoryStream(pdf), PdfContext());
+        await extractor.ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.Received(1).RecognizeAsync(
+        await _ocr.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o => o.LanguageHints.Count == 0),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Is<DocumentExtractionOptions?>(o => ParseTestKit.HasLanguageHints(o, System.Array.Empty<string>())),
             Arg.Any<CancellationToken>());
     }
 
@@ -345,12 +337,11 @@ public class PdfExtractor_Tests
     {
         var notPdf = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("this is not a pdf"));
 
-        var result = await CreateExtractor().ExtractAsync(notPdf, PdfContext());
+        var result = await CreateExtractor().ParseAsync(notPdf, "document.pdf", "application/pdf");
 
         // Open failed → empty Markdown so the orchestrator's OCR fallback can try.
         result.Markdown.ShouldBeNullOrEmpty();
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -366,10 +357,9 @@ public class PdfExtractor_Tests
             texts: SpreadLines(20), // ≥ FullPageScanMinTextLines (15) → a whole-page (visible) transcription
             images: new[] { (png, FullPageRect) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldNotContain("SHOULD_NOT_BE_OCRED");
         result.Markdown.ShouldContain("LINE00 scanned body text"); // text layer preserved
         result.Markdown.ShouldContain("LINE19 scanned body text");
@@ -391,10 +381,9 @@ public class PdfExtractor_Tests
             images: new[] { (png, FullPageRect) },
             textRenderingMode: TextRenderingMode.Neither); // invisible OCR layer (Tr 3)
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldContain("LINE00 scanned body text"); // invisible text is still extracted
         result.IsComplete.ShouldBeTrue();
     }
@@ -421,10 +410,9 @@ public class PdfExtractor_Tests
             },
             images: new[] { (png, FullPageRect) });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldContain("ARCHITECTURE DIAGRAM"); // figure transcribed and inlined
         result.Markdown.ShouldContain("Figure 1: System architecture");
         // In-region caption text is present, proving the figure was kept via low vertical coverage — not
@@ -444,10 +432,9 @@ public class PdfExtractor_Tests
             texts: new[] { ("Body text", 700.0) },
             images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) }); // ~25%×18% of the page
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldContain("SMALL FIGURE");
         result.IsComplete.ShouldBeTrue();
     }
@@ -466,10 +453,9 @@ public class PdfExtractor_Tests
             images: new[] { (png, FullPageRect) });
 
         var result = await CreateExtractor(skipFullPageScanBackground: false)
-            .ExtractAsync(new MemoryStream(pdf), PdfContext());
+            .ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldContain("RE_OCRED_BACKGROUND");
     }
 
@@ -486,7 +472,7 @@ public class PdfExtractor_Tests
             ("gamma delta", 300.0, 498.0) // right column, second wrapped line (just below the label)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // All content is present (non-lossy).
         result.Markdown.ShouldContain("LABEL");
@@ -522,7 +508,7 @@ public class PdfExtractor_Tests
             ("Premium", 50.0, 630.0), ("200", 230.0, 630.0), ("priority", 380.0, 630.0)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // A GFM table was produced.
         result.Markdown.ShouldContain("| --- |");
@@ -554,7 +540,7 @@ public class PdfExtractor_Tests
             ("Plum", 50.0, 664.0), ("300", 230.0, 664.0)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("| --- |"); // a real table, not a paragraph degrade
 
@@ -585,7 +571,7 @@ public class PdfExtractor_Tests
             ("All charges exclude consumption tax and are subject to change.", 50.0, 610.0)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // The grid reconstructs with the real header row (proves the heading was peeled, not promoted to the
         // header row, and that the footnote did not collapse the columns).
@@ -627,7 +613,7 @@ public class PdfExtractor_Tests
             ("Domain", 50.0, 634.0), ("example dot com", 230.0, 634.0)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // The key-value grid reconstructs (proves the full-width title did not collapse the column model).
         result.Markdown.ShouldContain("| Provider | Acme Corporation Limited |");
@@ -664,7 +650,7 @@ public class PdfExtractor_Tests
             ("date in full.", 50.0, 518.0)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // The table still reconstructs, and the two clauses read in document order: each clause's first line
         // (ALPHA / BETA) before its own continuation, and ALPHA's clause entirely before BETA's.
@@ -697,7 +683,7 @@ public class PdfExtractor_Tests
             ("Client", 50.0, 622.0), ("Beta Industries", 230.0, 622.0)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("| Provider | Acme Corporation |");
         var title = result.Markdown.IndexOf("Master Services Agreement", StringComparison.Ordinal);
@@ -729,7 +715,7 @@ public class PdfExtractor_Tests
             ("Plain Twelve Point Line Not Bold", 50.0, 612.0, 12.0, false)    // 12pt but not bold → stays body
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // The two title lines merge into one H1.
         result.Markdown.ShouldContain("# Annual Service Report For The Two Thousand Twenty Six Period");
@@ -753,7 +739,7 @@ public class PdfExtractor_Tests
             ("Second paragraph at the very same size.", 50.0, 660.0, 11.0, false)
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("First paragraph");
         result.Markdown.ShouldNotContain("#");
@@ -782,7 +768,7 @@ public class PdfExtractor_Tests
             (662.0, 11.0, Run(("A following paragraph of ordinary body weight for context.", false, false)))
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // The bold and italic spans inside the body line are wrapped; the surrounding prose is untouched.
         result.Markdown.ShouldContain(
@@ -807,7 +793,7 @@ public class PdfExtractor_Tests
             ("and that concludes the recital.", 628.0) // short last line still belongs to the paragraph
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // One paragraph: the wrapped lines are space-joined with no blank-line break between them.
         result.Markdown.ShouldContain(

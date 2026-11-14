@@ -6,12 +6,13 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>Dignite.Vault.Parse</RootNamespace>
-    <Description>Contracts of Dignite Vault Parse: ITextExtractor with its context and result, the native-payload envelope and the image-OCR Markdown markup. Depends only on Volo.Abp.Core, so a consumer of extracted Markdown can reference it without pulling in the orchestrator or any provider.</Description>
+    <Description>Contracts of Dignite Vault Parse, on Microsoft.Extensions.DocumentExtraction: the engine base classes, the options and metadata conventions, the Markdown rendering of a document and the image-OCR markup. A consumer references it without pulling in the router or any engine.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Core" />
     <PackageReference Include="Microsoft.Extensions.Documents.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DocumentExtraction.Abstractions" />
   </ItemGroup>
 
 </Project>

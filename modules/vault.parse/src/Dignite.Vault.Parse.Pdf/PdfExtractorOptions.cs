@@ -2,7 +2,7 @@ namespace Dignite.Vault.Parse.Pdf;
 
 /// <summary>
 /// Tuning for <see cref="PdfExtractor"/>. Each embedded image becomes one
-/// <c>IOcrProvider.RecognizeAsync</c> call (potentially one paid vision-LLM call), so the knobs guard
+/// OCR engine call (potentially one paid vision-LLM call), so the knobs guard
 /// cost and noise. Defaults are conservative; a host can override via <c>Configure&lt;PdfExtractorOptions&gt;</c>.
 /// </summary>
 public class PdfExtractorOptions

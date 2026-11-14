@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -14,19 +14,16 @@ namespace Dignite.Vault.Parse.Pdf;
 /// <summary>
 /// #383: cross-page running header / footer + page-number stripping, exercised end-to-end through
 /// <see cref="PdfExtractor"/> on multi-page digital PDFs. The pages carry no images, so the stubbed
-/// <see cref="IOcrProvider"/> is never called.
+/// <see cref="ParseOcrClient"/> is never called.
 /// </summary>
 public class PdfRunningHeaderFooter_Tests
 {
-    private readonly IOcrProvider _ocr = Substitute.For<IOcrProvider>();
+    private readonly ParseOcrClient _ocr = Substitute.ForPartsOf<ParseOcrClient>();
 
     private PdfExtractor CreateExtractor()
         => new(
             _ocr,
             Options.Create(new PdfExtractorOptions()));
-
-    private static TextExtractionContext PdfContext()
-        => new() { ContentType = "application/pdf", FileExtension = ".pdf" };
 
     // A page edge band (header ~810, footer ~30) with body lines in between. PDF origin is bottom-left, so
     // a larger Y is higher on the page.
@@ -54,7 +51,7 @@ public class PdfRunningHeaderFooter_Tests
             Page("ACME CONFIDENTIAL", "Page 3 of 3", "Section three gamma", "Detail about the gamma topic")
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // Running header repeated at the top edge of every page → stripped.
         result.Markdown.ShouldNotContain("ACME CONFIDENTIAL");
@@ -88,7 +85,7 @@ public class PdfRunningHeaderFooter_Tests
             }
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // Body at the very bottom of the page is kept (the whole point of repetition-gated stripping).
         result.Markdown.ShouldContain("Signed: Jane Doe");
@@ -109,7 +106,7 @@ public class PdfRunningHeaderFooter_Tests
             Page("ACME CONFIDENTIAL", "Page 1 of 1", "The only body line")
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("ACME CONFIDENTIAL");
         result.Markdown.ShouldContain("Page 1 of 1");
@@ -139,7 +136,7 @@ public class PdfRunningHeaderFooter_Tests
             MakePage("b", "Page 2 of 2")
         });
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pdf), PdfContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         // Middle repeated line is kept; edge-band running header/footer are stripped.
         result.Markdown.ShouldContain("REPEATED MIDDLE LINE");

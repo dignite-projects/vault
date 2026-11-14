@@ -57,7 +57,7 @@ namespace Dignite.Vault.Extract.Documents
         [Fact]
         public void An_HttpClient_based_provider_refusal_is_permanent()
         {
-            // PaddleOcrProvider throws HttpRequestException(statusCode: ...) for a non-success answer.
+            // PaddleOcrClient throws HttpRequestException(statusCode: ...) for a non-success answer.
             ProviderFailureClassifier.IsPermanent(
                 new HttpRequestException("PaddleOCR server returned 400", null, HttpStatusCode.BadRequest)).ShouldBeTrue();
         }

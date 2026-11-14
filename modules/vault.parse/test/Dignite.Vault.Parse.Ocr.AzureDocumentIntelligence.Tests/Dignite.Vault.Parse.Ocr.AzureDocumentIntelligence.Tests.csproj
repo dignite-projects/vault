@@ -17,9 +17,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="NSubstitute" />
     <PackageReference Include="Shouldly" />
     <!-- For ExposedServiceExplorer in the DI-registration regression test. -->
     <PackageReference Include="Volo.Abp.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\ParseTestKit.cs" Link="ParseTestKit.cs" />
   </ItemGroup>
 
   <ItemGroup>

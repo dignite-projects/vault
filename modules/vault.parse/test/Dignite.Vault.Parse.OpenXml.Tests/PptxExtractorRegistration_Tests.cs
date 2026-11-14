@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using Dignite.Vault.Parse.Ocr;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -9,42 +7,42 @@ using Xunit;
 namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
-/// Guards the ABP conventional-registration metadata and the extension self-declaration for
-/// <see cref="PptxExtractor"/>. The behavior tests construct the extractor with <c>new(...)</c>, so they
-/// cannot catch a missing DI registration. <c>PptxExtractor</c> does not end with <c>MarkdownTextProvider</c>,
-/// so <see cref="IMarkdownTextProvider"/> is exposed only via the explicit <c>[ExposeServices]</c> — this
-/// asserts it stays exposed (otherwise DefaultTextExtractor would never see it for <c>.pptx</c> dispatch),
-/// and that it claims only <c>.pptx</c> (so other extensions are left to their own providers / the ElBruno catch-all).
+/// Guards the ABP conventional-registration metadata and the file claim of <see cref="PptxExtractor"/>. The behavior tests
+/// construct the engine with <c>new(...)</c>, so they cannot catch a missing DI registration. The router finds engines
+/// as <see cref="ParseExtractionClient"/>, exposed only through the explicit <c>[ExposeServices]</c>; this asserts it
+/// stays exposed (otherwise the router would never see it and .pptx would fall back to ElBruno, which has no PresentationML converter).
 /// </summary>
 public class PptxExtractorRegistration_Tests
 {
     [Fact]
-    public void Provider_Exposes_IMarkdownTextProvider()
+    public void Engine_is_exposed_as_a_ParseExtractionClient()
     {
         ExposedServiceExplorer.GetExposedServices(typeof(PptxExtractor))
-            .ShouldContain(typeof(IMarkdownTextProvider));
+            .ShouldContain(typeof(ParseExtractionClient));
     }
 
     [Fact]
-    public void Provider_Is_Conventionally_Registered_Via_ITransientDependency()
+    public void Engine_is_conventionally_registered_via_ITransientDependency()
     {
+        // ABP derives the lifetime (and hence registration) from the ITransientDependency marker, NOT from
+        // [ExposeServices]; a dropped marker would silently de-register the engine while the attribute test stayed green.
         typeof(ITransientDependency).IsAssignableFrom(typeof(PptxExtractor)).ShouldBeTrue();
     }
 
     [Fact]
-    public void Claims_only_the_pptx_extension_and_outranks_the_fallback()
+    public void Claims_only_its_files_and_outranks_the_fallback()
     {
-        var extractor = new PptxExtractor(
-            Substitute.For<IOcrProvider>(),
+        var engine = new PptxExtractor(
+            Substitute.ForPartsOf<ParseOcrClient>(),
             Options.Create(new OpenXmlExtractorOptions()));
 
-        extractor.CanHandle(".pptx").ShouldBeTrue();
-        extractor.CanHandle(".PPTX").ShouldBeTrue();
-        extractor.CanHandle(".pdf").ShouldBeFalse();
-        extractor.CanHandle(".docx").ShouldBeFalse();
-        extractor.CanHandle(".ppt").ShouldBeFalse();
-        extractor.CanHandle(string.Empty).ShouldBeFalse();
+        engine.CanExtract(".pptx", "").ShouldBeTrue();
+        engine.CanExtract("", "application/vnd.openxmlformats-officedocument.presentationml.presentation").ShouldBeTrue();
+        engine.CanExtract(".png", "image/png").ShouldBeFalse();
+        engine.CanExtract(".docx", "").ShouldBeFalse();
+        engine.CanExtract(string.Empty, string.Empty).ShouldBeFalse();
 
-        extractor.Priority.ShouldBeGreaterThan(MarkdownProviderPriorities.Fallback);
+        engine.Priority.ShouldBeGreaterThan(ParseExtractionPriorities.Fallback);
+        engine.Priority.ShouldBeGreaterThan(ParseExtractionPriorities.Ocr);
     }
 }

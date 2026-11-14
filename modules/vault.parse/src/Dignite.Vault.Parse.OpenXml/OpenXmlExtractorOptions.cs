@@ -2,7 +2,7 @@ namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
 /// Tuning for the OpenXML providers (PPTX now, DOCX in #308). Each embedded image becomes one
-/// <c>IOcrProvider.RecognizeAsync</c> call (potentially one paid vision-LLM call), so the image knobs
+/// OCR engine call (potentially one paid vision-LLM call), so the image knobs
 /// guard cost and noise. The image-count / pixel knobs mirror <c>PdfExtractorOptions</c>; the byte cap
 /// (<see cref="MaxImageBytesPerImage"/>) is OpenXML-specific (ZIP-container decompression-bomb guard) and
 /// has no PDF counterpart. A host can override via <c>Configure&lt;OpenXmlExtractorOptions&gt;</c> / the

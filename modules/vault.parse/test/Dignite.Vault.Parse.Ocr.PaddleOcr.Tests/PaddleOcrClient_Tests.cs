@@ -6,7 +6,6 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Dignite.Vault.Parse.Ocr;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -15,20 +14,20 @@ using Xunit;
 namespace Dignite.Vault.Parse.Ocr.PaddleOcr;
 
 /// <summary>
-/// Unit tests for <see cref="PaddleOcrProvider"/> at the HTTP boundary: a recording
+/// Unit tests for <see cref="PaddleOcrClient"/> at the HTTP boundary: a recording
 /// <see cref="HttpMessageHandler"/> stands in for the PaddleOCR sidecar, so request mapping and response
 /// handling are verified without any running service.
 /// </summary>
-public class PaddleOcrProvider_Tests
+public class PaddleOcrClient_Tests
 {
-    private static (PaddleOcrProvider Provider, RecordingHandler Handler) CreateProvider(
+    private static (PaddleOcrClient Provider, RecordingHandler Handler) CreateProvider(
         HttpResponseMessage response,
         PaddleOcrOptions? options = null)
     {
         var handler = new RecordingHandler(response);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
-        var provider = new PaddleOcrProvider(Options.Create(options ?? new PaddleOcrOptions()), factory);
+        var provider = new PaddleOcrClient(Options.Create(options ?? new PaddleOcrOptions()), factory);
         return (provider, handler);
     }
 
@@ -38,22 +37,20 @@ public class PaddleOcrProvider_Tests
     private static MemoryStream FakeImage() => new(new byte[] { 0xFF, 0xD8, 0xFF });
 
     [Fact]
-    public async Task Should_Pass_Through_Structured_Markdown_And_Archive_Native_Payload()
+    public async Task Should_Pass_Through_Structured_Markdown_And_Keep_The_Raw_Answer()
     {
         var rawJson = """
             { "markdown": "# Heading\n\n| a | b |", "detected_language": "en", "provider_name": "PaddleOCR", "provider_model": "PP-StructureV3" }
             """;
         var (provider, _) = CreateProvider(Json(rawJson));
 
-        var result = await provider.RecognizeAsync(FakeImage(), new OcrOptions { ContentType = "image/jpeg" });
+        var result = await provider.ParseAsync(FakeImage(), "upload", "image/jpeg");
 
         result.Markdown.ShouldBe("# Heading\n\n| a | b |");
         result.DetectedLanguage.ShouldBe("en");
         result.ProviderName.ShouldBe("PaddleOCR");
-        // #210: the raw sidecar JSON is archived verbatim as the native payload.
-        result.NativePayloadContent.ShouldBe(Encoding.UTF8.GetBytes(rawJson));
-        result.NativePayloadContentType.ShouldBe("application/json");
-        result.NativePayloadSchemaName.ShouldBe("PaddleOCR/PP-StructureV3");
+        // #210: the sidecar's answer is kept verbatim as the document's raw representation.
+        result.Document.RawRepresentation.ShouldBe(rawJson);
         // PaddleOCR has no completeness concept → default complete.
         result.IsComplete.ShouldBeTrue();
     }
@@ -61,11 +58,11 @@ public class PaddleOcrProvider_Tests
     [Fact]
     public async Task Should_Wrap_RawText_Into_Flat_Markdown_Paragraphs_When_No_Markdown_Is_Returned()
     {
-        // PP-OCRv4 mode returns only raw_text; the provider — not the orchestrator — wraps it into flat
+        // PP-OCRv4 mode returns only raw_text; the engine wraps it into flat
         // Markdown paragraphs to satisfy Markdown-first.
         var (provider, _) = CreateProvider(Json("""{ "raw_text": "line one\nline two\n\nline three" }"""));
 
-        var result = await provider.RecognizeAsync(FakeImage(), new OcrOptions());
+        var result = await provider.ParseAsync(FakeImage(), "upload", "");
 
         var expected = string.Join(
             "\n\n",
@@ -80,9 +77,9 @@ public class PaddleOcrProvider_Tests
     {
         var (provider, handler) = CreateProvider(Json("""{ "markdown": "x" }"""));
 
-        await provider.RecognizeAsync(
+        await provider.ParseAsync(
             FakeImage(),
-            new OcrOptions { ContentType = "image/jpeg", LanguageHints = new List<string> { "fr", "de" } });
+            "upload", "image/jpeg", new[] { "fr", "de" });
 
         handler.Request!.Method.ShouldBe(HttpMethod.Post);
         handler.Request.RequestUri!.ToString().ShouldBe("http://localhost:8866/ocr");
@@ -100,22 +97,21 @@ public class PaddleOcrProvider_Tests
             Json("""{ "markdown": "x" }"""),
             new PaddleOcrOptions { Languages = new List<string> { "ja", "en" } });
 
-        await provider.RecognizeAsync(FakeImage(), new OcrOptions()); // no LanguageHints
+        await provider.ParseAsync(FakeImage(), "upload", ""); // no LanguageHints
 
         handler.RequestBody.ShouldContain("ja,en");
     }
 
     [Fact]
-    public async Task Should_Use_The_Configured_Model_Name_In_Request_And_Schema()
+    public async Task Should_Send_The_Configured_Model_Name()
     {
         var (provider, handler) = CreateProvider(
-            Json("""{ "raw_text": "hi" }"""), // no provider_model in response → schema uses option model
+            Json("""{ "raw_text": "hi" }"""),
             new PaddleOcrOptions { ModelName = "PP-OCRv4" });
 
-        var result = await provider.RecognizeAsync(FakeImage(), new OcrOptions());
+        await provider.ParseAsync(FakeImage(), "upload", "");
 
         handler.RequestBody.ShouldContain("PP-OCRv4");
-        result.NativePayloadSchemaName.ShouldBe("PaddleOCR/PP-OCRv4");
     }
 
     [Fact]
@@ -125,7 +121,7 @@ public class PaddleOcrProvider_Tests
             Json("""{ "markdown": "x" }"""),
             new PaddleOcrOptions { Endpoint = "http://localhost:8866/" });
 
-        await provider.RecognizeAsync(FakeImage(), new OcrOptions());
+        await provider.ParseAsync(FakeImage(), "upload", "");
 
         handler.Request!.RequestUri!.ToString().ShouldBe("http://localhost:8866/ocr");
     }
@@ -140,7 +136,7 @@ public class PaddleOcrProvider_Tests
             });
 
         var ex = await Should.ThrowAsync<HttpRequestException>(() =>
-            provider.RecognizeAsync(FakeImage(), new OcrOptions()));
+            provider.ParseAsync(FakeImage(), "upload", ""));
 
         ex.Message.ShouldContain("500");
         ex.Message.ShouldContain("model crashed");
@@ -152,7 +148,7 @@ public class PaddleOcrProvider_Tests
         var (provider, _) = CreateProvider(Json("null"));
 
         await Should.ThrowAsync<InvalidOperationException>(() =>
-            provider.RecognizeAsync(FakeImage(), new OcrOptions()));
+            provider.ParseAsync(FakeImage(), "upload", ""));
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

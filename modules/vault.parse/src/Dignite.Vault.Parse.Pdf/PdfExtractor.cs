@@ -6,7 +6,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -18,52 +19,53 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Vault.Parse.Pdf;
 
 /// <summary>
-/// PdfPig-based Markdown provider for digital PDFs (#301). Owns the full <c>.pdf</c> parsing pass so it
+/// PdfPig-based engine for digital PDFs (#301). Owns the full <c>.pdf</c> parsing pass so it
 /// can extract the text layer (words + bbox + reading order) and the embedded raster image objects, then
-/// transcribe each image through the host-selected <see cref="IOcrProvider"/> and inline the
-/// transcription into the Markdown at the image's reading position. This closes the silent-image-loss gap
+/// transcribe each image through the host-selected <see cref="ParseOcrClient"/> and inline the
+/// transcription at the image's reading position. Each page with content is a section of the document,
+/// referring to its page (PdfPig's frame: points, origin bottom-left). This closes the silent-image-loss gap
 /// where embedded figures in digital PDFs never reached the channel output.
 /// <para>
-/// <b>Image → text uses <see cref="IOcrProvider"/> only</b> (no keyed Vision <c>IChatClient</c> here, no
+/// <b>Image → text uses <see cref="ParseOcrClient"/> only</b> (no keyed Vision <c>IChatClient</c> here, no
 /// new LLM call site). Semantics are transcription only; the figure's bytes are the OCR input, so there is
 /// no user free-text entering a prompt and no <c>PromptBoundary</c> concern.
 /// </para>
 /// <para>
-/// <b>Scope.</b> A PDF with no digital text layer (scanned / image-only) returns empty Markdown here and
-/// is left to <c>DefaultTextExtractor</c>'s whole-page OCR fallback — this provider does not OCR images on
+/// <b>Scope.</b> A PDF with no digital text layer (scanned / image-only) returns an empty document here and
+/// is left to the router's whole-page OCR fallback — this provider does not OCR images on
 /// a text-less PDF, so there is no double OCR. Vector-only graphics are an accepted blind spot
 /// (<c>GetImages()</c> does not see them).
 /// </para>
 /// </summary>
-[ExposeServices(typeof(IMarkdownTextProvider))]
-public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
+[ExposeServices(typeof(ParseExtractionClient), typeof(PdfExtractor))]
+public class PdfExtractor : ParseExtractionClient, ITransientDependency
 {
-    /// <summary>Provider family name surfaced on <see cref="TextExtractionResult.ProviderName"/> for auditability.</summary>
+    /// <summary>The engine name written to <see cref="ParseDocumentMetadata.Provider"/>.</summary>
     public const string ProviderIdentifier = "PdfPig";
 
-    private readonly IOcrProvider _ocrProvider;
+    private readonly ParseOcrClient _ocr;
     private readonly PdfExtractorOptions _options;
 
     public ILogger<PdfExtractor> Logger { get; set; } = NullLogger<PdfExtractor>.Instance;
 
     public PdfExtractor(
-        IOcrProvider ocrProvider,
+        ParseOcrClient ocr,
         IOptions<PdfExtractorOptions> options)
     {
-        _ocrProvider = ocrProvider;
+        _ocr = ocr;
         _options = options.Value;
     }
 
-    /// <inheritdoc/>
-    public virtual bool CanHandle(string fileExtension)
-        => string.Equals(fileExtension, ".pdf", StringComparison.OrdinalIgnoreCase);
+    public override string ProviderName => ProviderIdentifier;
 
-    /// <inheritdoc/>
-    public virtual int Priority => MarkdownProviderPriorities.Specialized;
+    public override bool CanExtract(string fileExtension, string mediaType)
+        => fileExtension == ".pdf" || (fileExtension.Length == 0 && string.Equals(mediaType, "application/pdf", StringComparison.OrdinalIgnoreCase));
 
-    public virtual async Task<TextExtractionResult> ExtractAsync(
+    public override async Task<ExtractionDocument> ExtractAsync(
         Stream fileStream,
-        TextExtractionContext context,
+        string identifier,
+        string mediaType,
+        DocumentExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var bytes = await ParseStreams.ReadAllBytesAsync(fileStream, cancellationToken);
@@ -75,10 +77,10 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Corrupt / encrypted / not-actually-a-PDF: return empty Markdown so DefaultTextExtractor's
-            // whole-page OCR fallback (which fires when a PDF yields no meaningful text) can try instead.
+            // Corrupt / encrypted / not-actually-a-PDF: return an empty document so the router's whole-page OCR
+            // fallback (which fires when a PDF yields no meaningful text) can try instead.
             Logger.LogWarning(ex, "PdfPig could not open the PDF ({Bytes} bytes); deferring to OCR fallback.", bytes.Length);
-            return Empty();
+            return Empty(identifier);
         }
 
         using (document)
@@ -114,14 +116,14 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
             }
 
             // No digital text layer → scanned / image-only PDF. Do NOT OCR images here; return empty so
-            // DefaultTextExtractor's whole-page OCR fallback owns that path (avoids double OCR).
+            // the router's whole-page OCR fallback owns that path (avoids double OCR).
             if (!hasTextLayer)
             {
                 Logger.LogDebug("PDF has no digital text layer; deferring to whole-page OCR fallback.");
-                return Empty();
+                return Empty(identifier);
             }
 
-            var pageMarkdowns = new List<string>(pages.Count);
+            var extracted = new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
             var imageBudget = _options.MaxImagesPerPdf;
             var droppedByCap = 0;
             var undecodable = 0;
@@ -133,7 +135,7 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
             // the page's text was already extracted and is retained — only its images are skipped.
             var pagesWithSkippedImages = 0;
 
-            var languageHints = ResolveLanguageHints(context);
+            var languageHints = ResolveLanguageHints(options);
 
             // #383: detect running headers / footers + page numbers (content that repeats in the top/bottom
             // edge band across pages) once over all pages, so it does not pollute the Markdown body. Position
@@ -216,17 +218,15 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
 
                     imageBudget--;
 
-                    OcrResult ocr;
+                    ExtractionDocument ocr;
                     try
                     {
                         using var imageStream = new MemoryStream(payload.Value.Bytes, writable: false);
-                        ocr = await _ocrProvider.RecognizeAsync(
+                        ocr = await _ocr.ExtractAsync(
                             imageStream,
-                            new OcrOptions
-                            {
-                                ContentType = payload.Value.ContentType,
-                                LanguageHints = languageHints
-                            },
+                            identifier + "#figure",
+                            payload.Value.ContentType,
+                            ParseExtractionOptions.Create(fileName: null, languageHints),
                             cancellationToken);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -244,13 +244,13 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
                         continue;
                     }
 
-                    if (!ocr.IsComplete)
+                    if (!ocr.IsComplete())
                     {
                         // OCR truncated at the token limit or discarded by the repetition guard.
                         truncatedOcr++;
                     }
 
-                    var transcription = ocr.Markdown?.Trim() ?? string.Empty;
+                    var transcription = ExtractionDocumentMarkdown.Render(ocr).Trim();
                     if (transcription.Length > 0)
                     {
                         // Inline output (#301): woven into the page Markdown at the reading position, bracketed by
@@ -295,7 +295,7 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
                 latticeDroppedFragments += pageLatticeDropped;
                 if (!string.IsNullOrWhiteSpace(pageMarkdown))
                 {
-                    pageMarkdowns.Add(pageMarkdown);
+                    AddPage(extracted, pageContent.Page, pageMarkdown);
                 }
             }
 
@@ -311,17 +311,7 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
                 Logger.LogWarning("PDF extraction incomplete: {Reason}", incompleteReason);
             }
 
-            return new TextExtractionResult
-            {
-                Markdown = string.Join("\n\n", pageMarkdowns),
-                DetectedLanguage = null,
-                ProviderName = ProviderIdentifier,
-                IsComplete = complete,
-                IncompleteReason = incompleteReason,
-                // PdfPig text layer + per-image OCR has no single aggregated spatial payload to archive
-                // this round (#210). Left null deliberately.
-                NativePayload = null
-            };
+            return complete ? extracted : extracted.MarkIncomplete(incompleteReason!);
         }
     }
 
@@ -479,20 +469,38 @@ public class PdfExtractor : IMarkdownTextProvider, ITransientDependency
         return total == 0 ? 0.0 : (double)invisible / total;
     }
 
-    private static TextExtractionResult Empty()
-        => new() { Markdown = string.Empty, ProviderName = ProviderIdentifier };
+    private static ExtractionDocument Empty(string identifier) => new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
+
+    /// <summary>
+    /// A section for <paramref name="page"/> holding its content, read from the page's Markdown, every element referring
+    /// to the page in PdfPig's frame (points, origin bottom-left).
+    /// </summary>
+    protected virtual void AddPage(ExtractionDocument document, Page page, string pageMarkdown)
+    {
+        var source = new ExtractionDocumentSourcePage(
+            "page-" + page.Number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            page.Number,
+            page.Width > 0 && page.Height > 0 ? new ExtractionDocumentPageDimensions(page.Width, page.Height) : null,
+            ExtractionDocumentCoordinateUnit.Point,
+            ExtractionDocumentCoordinateOrigin.BottomLeft);
+        document.SourcePages.Add(source);
+        var section = new ExtractionDocumentSection();
+        section.Sources.Add(new ExtractionDocumentSourceReference(source));
+        document.Sections.Add(section);
+        MarkdownDocumentReader.ReadInto(document, section, pageMarkdown, source);
+    }
 
     private static bool HasLetterOrDigit(string? text)
         => !string.IsNullOrEmpty(text) && text.Any(char.IsLetterOrDigit);
 
     /// <summary>
     /// Resolves the OCR language hints for embedded-image transcription: the per-document hints from the
-    /// context, or empty. There is no central host default (#441 removed it); a provider that needs a
+    /// extraction options, or empty. There is no central host default (#441 removed it); a provider that needs a
     /// language default reads its own config (e.g. PaddleOcr:Languages). Kept <c>protected virtual</c> so a
     /// consumer can override to supply hints (e.g. from per-tenant config).
     /// </summary>
-    protected virtual IList<string> ResolveLanguageHints(TextExtractionContext context)
-        => context.LanguageHints ?? new List<string>();
+    protected virtual IReadOnlyList<string> ResolveLanguageHints(DocumentExtractionOptions? options)
+        => options.GetLanguageHints();
 
     /// <summary>
     /// Builds the #268 incompleteness reason from the loss counters, or returns <c>null</c> when nothing

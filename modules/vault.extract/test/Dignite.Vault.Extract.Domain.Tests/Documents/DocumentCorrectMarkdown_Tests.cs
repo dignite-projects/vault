@@ -45,7 +45,7 @@ public class DocumentCorrectMarkdown_Tests : VaultExtractDomainTestBase<VaultExt
         var run = await _manager.StartAsync(doc, VaultExtractPipelines.Parse);
         await _manager.CompleteParseAsync(
             doc, run, markdown: markdown, title: title, language: language,
-            extractionMetadata: new DocumentParseMetadata(providerName: "TestProvider", nativePayloadManifest: null));
+            extractionMetadata: new DocumentParseMetadata(providerName: "TestProvider"));
         return doc;
     }
 

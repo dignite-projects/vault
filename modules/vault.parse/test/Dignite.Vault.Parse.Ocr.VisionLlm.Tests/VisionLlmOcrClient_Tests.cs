@@ -10,17 +10,16 @@ using NSubstitute;
 using Shouldly;
 using SkiaSharp;
 using Xunit;
-using Dignite.Vault.Parse.Ocr;
 
 namespace Dignite.Vault.Parse.Ocr.VisionLlm;
 
-public class VisionLlmOcrProviderTests
+public class VisionLlmOcrClient_Tests
 {
     private readonly IChatClient _chatClient = Substitute.For<IChatClient>();
     private readonly IPdfRasterizer _rasterizer = Substitute.For<IPdfRasterizer>();
     private readonly VisionLlmOcrOptions _options = new();
 
-    private VisionLlmOcrProvider CreateProvider()
+    private VisionLlmOcrClient CreateProvider()
         => new(_chatClient, _rasterizer, Options.Create(_options));
 
     // Magic-byte prefixes so content-type-less detection also works; content type drives most tests.
@@ -39,16 +38,14 @@ public class VisionLlmOcrProviderTests
     {
         SetupSingleResponse("# Receipt\n\n| Item | Price |\n| --- | --- |\n| Tea | 100 |");
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakeJpeg()),
-            new OcrOptions { ContentType = "image/jpeg" });
+            "upload", "image/jpeg");
 
         result.Markdown.ShouldContain("Receipt");
         result.ProviderName.ShouldBe("VisionLlm");
-        // Markdown-first: a chat vision LLM has no out-of-band spatial model → native payload stays null.
-        result.NativePayloadContent.ShouldBeNull();
-        result.NativePayloadContentType.ShouldBeNull();
-        result.NativePayloadSchemaName.ShouldBeNull();
+        // A chat vision LLM has no out-of-band answer beyond its text.
+        result.Document.RawRepresentation.ShouldBeNull();
         result.DetectedLanguage.ShouldBeNull();
         // #268: a full transcription is complete.
         result.IsComplete.ShouldBeTrue();
@@ -76,9 +73,9 @@ public class VisionLlmOcrProviderTests
                 return new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"));
             });
 
-        await CreateProvider().RecognizeAsync(
+        await CreateProvider().ParseAsync(
             new MemoryStream(FakeJpeg()),
-            new OcrOptions { ContentType = "image/jpeg" });
+            "upload", "image/jpeg");
 
         capturedMaxTokens.ShouldBe(1234);
         capturedTemperature.ShouldBe(0.25f);
@@ -100,9 +97,9 @@ public class VisionLlmOcrProviderTests
         // the text is KEPT (with a warning), not discarded.
         SetupSingleResponse("dense transcription that hit the cap", ChatFinishReason.Length);
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakeJpeg()),
-            new OcrOptions { ContentType = "image/jpeg" });
+            "upload", "image/jpeg");
 
         result.Markdown.ShouldBe("dense transcription that hit the cap");
         // #268: truncated at the token cap → kept but flagged incomplete.
@@ -114,9 +111,9 @@ public class VisionLlmOcrProviderTests
     [Fact]
     public async Task Should_Return_Empty_And_Not_Call_Llm_For_Unsupported_Input()
     {
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04 }), // ZIP magic — neither image nor PDF
-            new OcrOptions { ContentType = "application/zip" });
+            "upload", "application/zip");
 
         result.Markdown.ShouldBeEmpty();
         // #268: an input this provider cannot handle is flagged incomplete (not a silent blank success).
@@ -131,9 +128,9 @@ public class VisionLlmOcrProviderTests
         var loop = string.Join("\n", Enumerable.Repeat("¥980 ポイント", 50));
         SetupSingleResponse(loop);
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakeJpeg()),
-            new OcrOptions { ContentType = "image/jpeg" });
+            "upload", "image/jpeg");
 
         result.Markdown.ShouldBeEmpty();
         // #268: a discarded loop is flagged incomplete (the content was unusable, not genuinely blank).
@@ -150,9 +147,9 @@ public class VisionLlmOcrProviderTests
         // image's real transcribed content.
         SetupSingleResponse("There is no readable text in the image to transcribe.");
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakeJpeg()),
-            new OcrOptions { ContentType = "image/jpeg" });
+            "upload", "image/jpeg");
 
         result.Markdown.ShouldBeEmpty();
         result.IsComplete.ShouldBeTrue();
@@ -171,9 +168,9 @@ public class VisionLlmOcrProviderTests
                 _ => new ChatResponse(new ChatMessage(ChatRole.Assistant, "page B")),
                 _ => new ChatResponse(new ChatMessage(ChatRole.Assistant, "page C")));
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakePdf()),
-            new OcrOptions { ContentType = "application/pdf" });
+            "upload", "application/pdf");
 
         result.Markdown.ShouldBe("page A\n\npage B\n\npage C");
         // #268: every page transcribed → complete.
@@ -195,9 +192,9 @@ public class VisionLlmOcrProviderTests
                 _ => new ChatResponse(new ChatMessage(ChatRole.Assistant, loop)),   // tripped → dropped
                 _ => new ChatResponse(new ChatMessage(ChatRole.Assistant, "page C")));
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakePdf()),
-            new OcrOptions { ContentType = "application/pdf" });
+            "upload", "application/pdf");
 
         result.Markdown.ShouldBe("page A\n\npage C");
         // #268: a dropped page → the document is flagged incomplete.
@@ -211,9 +208,9 @@ public class VisionLlmOcrProviderTests
         _rasterizer.GetPageCount(Arg.Any<byte[]>()).Returns(5);
 
         await Should.ThrowAsync<InvalidDataException>(() =>
-            CreateProvider().RecognizeAsync(
+            CreateProvider().ParseAsync(
                 new MemoryStream(FakePdf()),
-                new OcrOptions { ContentType = "application/pdf" }));
+                "upload", "application/pdf"));
 
         await _chatClient.DidNotReceive().GetResponseAsync(
             Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
@@ -234,9 +231,9 @@ public class VisionLlmOcrProviderTests
                 _ => new ChatResponse(new ChatMessage(ChatRole.Assistant, "page A")),
                 _ => new ChatResponse(new ChatMessage(ChatRole.Assistant, "page C")));
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakePdf()),
-            new OcrOptions { ContentType = "application/pdf" });
+            "upload", "application/pdf");
 
         result.Markdown.ShouldBe("page A\n\npage C");
         // #268: a dropped page → the document is flagged incomplete.
@@ -253,9 +250,9 @@ public class VisionLlmOcrProviderTests
         _rasterizer.RenderPageToPng(Arg.Any<byte[]>(), Arg.Any<int>()).Returns(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
         SetupSingleResponse("scanned page text");
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakePdf()),
-            new OcrOptions { ContentType = "" });
+            "upload", "");
 
         result.Markdown.ShouldBe("scanned page text");
         _rasterizer.Received(1).GetPageCount(Arg.Any<byte[]>());
@@ -271,9 +268,9 @@ public class VisionLlmOcrProviderTests
         _rasterizer.RenderPageToPng(Arg.Any<byte[]>(), Arg.Any<int>()).Returns(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
         SetupSingleResponse("scanned text");
 
-        var result = await CreateProvider().RecognizeAsync(
+        var result = await CreateProvider().ParseAsync(
             new MemoryStream(FakePdf()),
-            new OcrOptions { ContentType = "image/png" });
+            "upload", "image/png");
 
         result.Markdown.ShouldBe("scanned text");
         _rasterizer.Received(1).GetPageCount(Arg.Any<byte[]>());
@@ -321,7 +318,7 @@ public class VisionLlmOcrProviderTests
         var sent = CaptureSentImages();
         var original = SolidImage(3000, 2000, SKEncodedImageFormat.Jpeg);
 
-        await CreateProvider().RecognizeAsync(new MemoryStream(original), new OcrOptions { ContentType = "image/jpeg" });
+        await CreateProvider().ParseAsync(new MemoryStream(original), "upload", "image/jpeg");
 
         var (bytes, mediaType) = sent.ShouldHaveSingleItem();
         mediaType.ShouldBe("image/jpeg");
@@ -336,7 +333,7 @@ public class VisionLlmOcrProviderTests
         var sent = CaptureSentImages();
         var original = SolidImage(1000, 800, SKEncodedImageFormat.Jpeg);
 
-        await CreateProvider().RecognizeAsync(new MemoryStream(original), new OcrOptions { ContentType = "image/jpeg" });
+        await CreateProvider().ParseAsync(new MemoryStream(original), "upload", "image/jpeg");
 
         var (bytes, mediaType) = sent.ShouldHaveSingleItem();
         bytes.ShouldBe(original);
@@ -349,8 +346,8 @@ public class VisionLlmOcrProviderTests
         // The 6-byte FakeJpeg() has a JPEG signature but no image behind it: the shrink step must fail open.
         var sent = CaptureSentImages();
 
-        var result = await CreateProvider().RecognizeAsync(
-            new MemoryStream(FakeJpeg()), new OcrOptions { ContentType = "image/jpeg" });
+        var result = await CreateProvider().ParseAsync(
+            new MemoryStream(FakeJpeg()), "upload", "image/jpeg");
 
         var (bytes, mediaType) = sent.ShouldHaveSingleItem();
         bytes.ShouldBe(FakeJpeg());
@@ -365,7 +362,7 @@ public class VisionLlmOcrProviderTests
         var sent = CaptureSentImages();
         var original = SolidImage(3000, 2000, SKEncodedImageFormat.Jpeg);
 
-        await CreateProvider().RecognizeAsync(new MemoryStream(original), new OcrOptions { ContentType = "image/jpeg" });
+        await CreateProvider().ParseAsync(new MemoryStream(original), "upload", "image/jpeg");
 
         sent.ShouldHaveSingleItem().Bytes.ShouldBe(original);
     }
@@ -379,7 +376,7 @@ public class VisionLlmOcrProviderTests
         _rasterizer.GetPageCount(Arg.Any<byte[]>()).Returns(1);
         _rasterizer.RenderPageToPng(Arg.Any<byte[]>(), Arg.Any<int>()).Returns(page);
 
-        await CreateProvider().RecognizeAsync(new MemoryStream(FakePdf()), new OcrOptions { ContentType = "application/pdf" });
+        await CreateProvider().ParseAsync(new MemoryStream(FakePdf()), "upload", "application/pdf");
 
         var (bytes, mediaType) = sent.ShouldHaveSingleItem();
         mediaType.ShouldBe("image/png");

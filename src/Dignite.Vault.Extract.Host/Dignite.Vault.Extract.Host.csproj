@@ -117,17 +117,16 @@
     <ProjectReference Include="..\..\modules\vault.index\src\Dignite.Vault.Index.Mcp\Dignite.Vault.Index.Mcp.csproj" />
     <ProjectReference Include="..\..\modules\vault.index\src\Dignite.Vault.Index.Reranking.Http\Dignite.Vault.Index.Reranking.Http.csproj" />
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse\Dignite.Vault.Parse.csproj" />
-    <!-- PDF Markdown provider (PdfPig): digital-PDF text layer + embedded-image transcription via the
-         host-selected IOcrProvider (#301). Coexists with ElBruno; claims .pdf. Omit it and .pdf falls
-         back to ElBruno. -->
+    <!-- PDF engine (PdfPig): digital-PDF text layer + embedded-image transcription via the host-selected
+         OCR engine (#301). Coexists with ElBruno; claims .pdf. Omit it and .pdf falls back to ElBruno. -->
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.Pdf\Dignite.Vault.Parse.Pdf.csproj" />
-    <!-- OpenXML Markdown provider: PPTX slide text / charts / tables / speaker notes + embedded-image
-         transcription via the host-selected IOcrProvider (#307). Claims .pptx. REQUIRED for .pptx text:
-         ElBruno (catch-all) has no PresentationML converter, so without this module .pptx yields empty
-         Markdown (no OCR fallback). Shared stack for the later DOCX phase (#308). -->
+    <!-- OpenXML engines: PPTX slide text / charts / tables / speaker notes (#307) and DOCX (#308), with
+         embedded-image transcription via the host-selected OCR engine. Claim .pptx and .docx. REQUIRED for
+         .pptx text: ElBruno (catch-all) has no PresentationML converter, so without this module .pptx yields
+         an empty document (no OCR fallback). -->
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.OpenXml\Dignite.Vault.Parse.OpenXml.csproj" />
     <ProjectReference Include="..\..\modules\vault.parse\src\Dignite.Vault.Parse.ElBrunoMarkItDown\Dignite.Vault.Parse.ElBrunoMarkItDown.csproj" />
-    <!-- OCR provider — IOcrProvider implementations are mutually exclusive; enable only one.
+    <!-- OCR engine — ParseOcrClient implementations are mutually exclusive; enable only one.
          Current default: VisionLlm (photos / thermal receipts / image-only PDFs, #259).
          When switching back to local PaddleOCR or Azure, update both VaultExtractHostModule [DependsOn]
          and the ConfigureAI keyed client wiring. See docs/en/text-extraction/ocr-vision-llm.md. Linux containers also
