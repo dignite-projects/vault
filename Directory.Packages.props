@@ -122,6 +122,12 @@
         <PackageVersion Include="Dignite.NotificationCenter.EntityFrameworkCore" Version="10.7.6" />
     </ItemGroup>
 
+    <ItemGroup Label="Aspire">
+        <!-- Local orchestration only (src/Dignite.Vault.AppHost); keep in step with the Aspire.AppHost.Sdk version there. -->
+        <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.5" />
+        <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.5" />
+    </ItemGroup>
+
     <ItemGroup Label="OpenTelemetry">
         <!-- The host wires up the export pipeline so Microsoft.Extensions.AI's gen_ai.* spans and the
              project-owned Dignite.Vault.Extract.* Meters reach OTLP. -->

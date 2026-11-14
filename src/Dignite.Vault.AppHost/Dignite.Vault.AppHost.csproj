@@ -1,0 +1,24 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <UserSecretsId>dignite-vault-apphost</UserSecretsId>
+    <!-- Run with `dotnet run`: the dashboard and the orchestrator come from the SDK's NuGet packages, not from the
+         Aspire CLI bundle, which nothing here uses. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.SqlServer" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dignite.Vault.Extract.Host\Dignite.Vault.Extract.Host.csproj" />
+  </ItemGroup>
+
+</Project>

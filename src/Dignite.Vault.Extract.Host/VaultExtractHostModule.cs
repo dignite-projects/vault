@@ -1010,15 +1010,22 @@ public class VaultExtractHostModule : AbpModule
         }
 
         var endpointValue = section["Otlp:Endpoint"];
-        var useOtlp = !string.IsNullOrWhiteSpace(endpointValue);
+        var useOtlp = UsesStandardOtlpEnvironment() || !string.IsNullOrWhiteSpace(endpointValue);
         var useConsole = section.GetValue("ConsoleExporter", defaultValue: false);
 
         var serviceVersion = typeof(VaultExtractHostModule).Assembly.GetName().Version?.ToString() ?? "1.0.0";
 
         var otel = context.Services.AddOpenTelemetry();
 
+        // OTEL_SERVICE_NAME names the resource when it is set (the Aspire AppHost sets it, so the dashboard ties the
+        // signals to the resource it started); OTEL_RESOURCE_ATTRIBUTES then supplies the instance id.
         otel.ConfigureResource(resource => resource
-            .AddService(serviceName: "Dignite.Vault.Extract", serviceVersion: serviceVersion));
+            .AddService(
+                serviceName: Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") is { Length: > 0 } serviceName
+                    ? serviceName
+                    : "Dignite.Vault.Extract",
+                serviceVersion: serviceVersion,
+                autoGenerateServiceInstanceId: !UsesStandardOtlpEnvironment()));
 
         otel.WithTracing(tracing =>
         {
@@ -1061,10 +1068,23 @@ public class VaultExtractHostModule : AbpModule
         });
     }
 
+    /// <summary>
+    /// <c>true</c> when the standard <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set, as the Aspire AppHost and most collectors'
+    /// deployment tooling do. The exporter then reads the endpoint, protocol and headers (the dashboard's API key) from
+    /// the standard variables, and <c>OpenTelemetry:Otlp</c> is not applied over them.
+    /// </summary>
+    private static bool UsesStandardOtlpEnvironment()
+        => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"));
+
     private static void ConfigureOtlpExporter(
         OpenTelemetry.Exporter.OtlpExporterOptions options,
         IConfigurationSection section)
     {
+        if (UsesStandardOtlpEnvironment())
+        {
+            return;
+        }
+
         var endpoint = section["Otlp:Endpoint"];
         if (!string.IsNullOrWhiteSpace(endpoint))
         {

@@ -49,50 +49,17 @@ OpenTelemetry__Enabled=true
 OpenTelemetry__Otlp__Endpoint=http://otel-collector.internal:4317
 ```
 
-## Local Development with Aspire Dashboard
+## Local Development with the Aspire Dashboard
 
-For local dev we ship a profile-gated `aspire-dashboard` service in `docker-compose.yml`. It receives OTLP over gRPC and renders traces + metrics + logs at `http://localhost:18888`.
+Run the [Aspire AppHost](../get-started/local-development.md#running-everything-with-the-aspire-apphost) and open the dashboard at `https://localhost:17188` with the login link it prints. The AppHost sets the standard `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_SERVICE_NAME` variables on the host; when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the host's exporter reads them and ignores `OpenTelemetry:Otlp`. `OpenTelemetry:Enabled` must still be `true`, which the Development launch profile and `appsettings.Development.json` already set.
 
-**Why aspire-dashboard for dev**: single container, zero-config, runs on the developer's laptop. Use Jaeger / Datadog / Grafana Tempo / Azure Monitor in shared environments; OTLP is vendor-neutral so the same instrumentation hits any backend.
-
-### Bring It Up
-
-```powershell
-# From the repository root. Profile-gated so plain `docker compose up` doesn't pull a 300MB image
-docker compose --profile observability up -d aspire-dashboard
-```
-
-### Tell the host to send to it
-
-Pick one of three places to set `OpenTelemetry:Enabled = true`:
-
-| Where | Scope | Notes |
-|---|---|---|
-| `src/Dignite.Vault.Extract.Host/Properties/launchSettings.json` → `environmentVariables` | Per-launch-profile, **persisted in git** | Recommended for the project default. Already populated for both `IIS Express` and `Dignite.Vault.Extract.Host` profiles. |
-| `src/Dignite.Vault.Extract.Host/appsettings.Development.json` → `OpenTelemetry.Enabled = true` | Development environment, **persisted in git** | Equivalent effect to launchSettings; choose one or the other (both is harmless but redundant). |
-| Shell env vars (`$env:OpenTelemetry__Enabled = "true"` in PowerShell) | Current shell session only | For ad-hoc inspection without changing any tracked file. |
-
-The repo defaults to **launchSettings.json**: contributors who clone, `docker compose --profile observability up -d`, then F5 / `dotnet run` immediately see signals on the dashboard with no further config.
-
-### Verify
-
-```powershell
-# Start the host
-dotnet run --project src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj
-
-# Upload a document via the API or operator UI, then open the dashboard
-start http://localhost:18888
-```
+Running the host on its own, set `OpenTelemetry:Otlp:Endpoint` (and `Protocol`) to any OTLP backend, or set the standard `OTEL_EXPORTER_OTLP_*` variables.
 
 Expected sightings:
 
 - **Traces** tab — an ASP.NET Core request span (or background-job activity) containing nested `chat-client.GetResponseAsync` spans for classification / field extraction / title generation / slug suggestion. No `execute_tool` children — all LLM calls are tool-free.
 - **Metrics** tab — `Microsoft.Extensions.AI` token-usage counters tick on each LLM invocation.
-- **Structured Logs** tab — Serilog logs with `TraceId` correlations to the spans on the left.
-
-### First-start delay
-
-aspire-dashboard takes 30–60 seconds to become reachable after `Up` status. If `http://localhost:18888` refuses, wait and retry — or check `docker compose logs aspire-dashboard | tail` for `Now listening on:`.
+- **Console logs** — the host's Serilog console output. The host does not export logs over OTLP, so the **Structured logs** tab stays empty.
 
 ### Note: `gen_ai.usage.*` token counts are trustworthy here (no streaming)
 
@@ -114,7 +81,7 @@ The prefix will be dropped once the spec stabilizes. `VaultExtractHostModule.Con
 
 ## Pointing at a different OTLP backend
 
-OTLP is vendor-neutral. To switch from aspire-dashboard to anything else, change only the endpoint:
+OTLP is vendor-neutral. To send to anything other than the AppHost's dashboard, change only the endpoint:
 
 ```bash
 # Jaeger (OTLP-native since 1.35)
