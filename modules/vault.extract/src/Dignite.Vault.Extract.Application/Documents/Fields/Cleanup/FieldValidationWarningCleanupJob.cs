@@ -34,7 +34,6 @@ namespace Dignite.Vault.Extract.Documents.Fields.Cleanup;
 /// deleted schema element goes away (#528 acceptance criteria).
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.FieldValidationWarningCleanup")]
 public class FieldValidationWarningCleanupJob
     : AsyncBackgroundJob<FieldValidationWarningCleanupArgs>, ITransientDependency
 {
@@ -135,6 +134,7 @@ public class FieldValidationWarningCleanupJob
     }
 }
 
+[BackgroundJobName("VaultExtract.FieldValidationWarningCleanup")]
 public class FieldValidationWarningCleanupArgs
 {
     public Guid FieldDefinitionId { get; set; }

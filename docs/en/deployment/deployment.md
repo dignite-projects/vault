@@ -140,6 +140,23 @@ The keyed `IChatClient` registrations and model selection are described in [AI P
 
 The host configures ABP's transactional outbox and inbox on its `DbContext`, but references no message broker. Without one, distributed events are handled in process. To deliver [integration events](../egress/integration-events.md) to a separate consumer, add an ABP event bus provider (RabbitMQ, Kafka, Azure Service Bus, and so on) to the host.
 
+## Background Jobs
+
+The pipeline and Vault Index run as ABP background jobs stored in the database. The slow stages have workers of their own, so a scan's OCR or a long contract's field extraction never holds up the documents behind it in another stage:
+
+| Worker | Jobs |
+| --- | --- |
+| `VaultExtract:Parse` | Text extraction |
+| `VaultExtract:Classification` | Classification, sub-document segmentation, cabinet suggestion |
+| `VaultExtract:FieldExtraction` | Field extraction |
+| `VaultIndex:Documents` | Indexing and backfill |
+| `VaultIndex:Compile` | Summary compilation |
+| ABP's default worker | Everything else: reprocessing dispatchers, cleanups, other modules' jobs |
+
+Each worker runs up to `Vault:BackgroundJobs:MaxParallelJobExecutionCount` jobs at a time, 4 unless set. A worker takes its next jobs once the whole batch has finished, so a long job delays only the jobs behind it in its own worker. The model clients' concurrency limit and retries apply on top ([AI Provider](../configuration/ai-provider.md#retries-timeouts-and-throttling)).
+
+The workers and their jobs are locked with SQL Server application locks on the `Default` database, as are ABP's event outbox and inbox, so several host instances can share the databases and each job still runs on one of them. Jobs of one document can run at the same time (text extraction queues classification and the cabinet suggestion together), so each takes the lock `VaultExtract:Document:<id>` around its writes to the document, never around a model call. Every instance needs the same `MaxParallelJobExecutionCount`: at 1, ABP locks each worker as a whole, above 1 it locks each job, and the two do not exclude each other.
+
 ## Docker
 
 The repository builds two images: the host (`Dockerfile`, published by CI) and the SPA (`angular/Dockerfile.local`, an nginx image of the prebuilt bundle). `etc/build/build-images-locally.ps1` builds both locally. Run the host image once with `--migrate-database` against the databases before starting it.

@@ -29,7 +29,6 @@ using Volo.Abp.Uow;
 
 namespace Dignite.Vault.Extract.Documents.Pipelines.Parse;
 
-[BackgroundJobName("VaultExtract.DocumentParse")]
 public class DocumentParseBackgroundJob
     : DocumentPipelineBackgroundJobBase<DocumentParseJobArgs>, ITransientDependency
 {
@@ -86,8 +85,9 @@ public class DocumentParseBackgroundJob
         ICurrentTenant currentTenant,
         IDocumentTypeRepository documentTypeRepository,
         ManualClassificationApplier manualClassificationApplier,
-        SubDocumentRetractor subDocumentRetractor)
-        : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter)
+        SubDocumentRetractor subDocumentRetractor,
+        DocumentWriteLock documentWriteLock)
+        : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter, documentWriteLock)
     {
         _pipelineJobScheduler = pipelineJobScheduler;
         _backgroundJobManager = backgroundJobManager;
@@ -116,15 +116,21 @@ public class DocumentParseBackgroundJob
 
     private async Task ExecuteInTenantAsync(DocumentParseJobArgs args)
     {
-        ParseWorkItem workItem;
+        ParseWorkItem? begun;
         try
         {
-            workItem = await BeginRunAsync(args);
+            begun = await BeginRunAsync(args);
         }
         catch (EntityNotFoundException ex) when (IsDocumentGone(ex))
         {
             // #662: deleted while queued — end the job instead of letting ABP retry it until it abandons it.
             await EndForDeletedDocumentAsync(args.DocumentId, args.PipelineRunId, VaultExtractPipelines.Parse);
+            return;
+        }
+
+        if (begun is not { } workItem)
+        {
+            // The run has ended or a later attempt superseded it (DocumentPipelineRunAccessor.BeginIfCurrentAsync).
             return;
         }
 
@@ -195,14 +201,20 @@ public class DocumentParseBackgroundJob
         }
     }
 
-    private async Task<ParseWorkItem> BeginRunAsync(DocumentParseJobArgs args)
+    private async Task<ParseWorkItem?> BeginRunAsync(DocumentParseJobArgs args)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(args.DocumentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         var document = await DocumentRepository.GetAsync(args.DocumentId, includeDetails: false);
         var run = await PipelineRunAccessor.BeginOrStartAsync(
             document, args.PipelineRunId, VaultExtractPipelines.Parse);
         await DocumentRepository.UpdateAsync(document, autoSave: true);
+        if (run is null)
+        {
+            await uow.CompleteAsync();
+            return null;
+        }
 
         // A derived sub-document (OriginDocumentId set) seeds its Markdown from the source constituent rather than
         // re-extracting it (#371): the unified detection pass persisted that constituent as a DocumentSegment keyed
@@ -251,6 +263,7 @@ public class DocumentParseBackgroundJob
         // withdraws sub-documents, and several of those writes flush early (autoSave); without a transaction a failure
         // late in the phase would leave a classification run queued against the old Markdown. The first-parse path
         // keeps its non-transactional unit of work.
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(documentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: isReparse);
 
         var (document, run) = await LoadDocumentAndRunAsync(
@@ -543,6 +556,7 @@ public class DocumentParseBackgroundJob
         string? SeedMarkdown);
 }
 
+[BackgroundJobName("VaultExtract.DocumentParse")]
 public class DocumentParseJobArgs
 {
     public Guid DocumentId { get; set; }

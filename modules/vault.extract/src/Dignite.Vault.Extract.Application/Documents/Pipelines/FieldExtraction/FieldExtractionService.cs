@@ -76,6 +76,7 @@ public class FieldExtractionService : ITransientDependency
     private readonly VaultExtractBehaviorOptions _behaviorOptions;
     private readonly ILogger<FieldExtractionService> _logger;
     private readonly IVaultExtractFieldTypeRegistry _fieldTypeExtensionRegistry;
+    private readonly DocumentWriteLock _documentWriteLock;
 
     public FieldExtractionService(
         IDocumentRepository documentRepository,
@@ -90,7 +91,8 @@ public class FieldExtractionService : ITransientDependency
         ICancellationTokenProvider cancellationTokenProvider,
         IOptions<VaultExtractBehaviorOptions> behaviorOptions,
         ILogger<FieldExtractionService> logger,
-        IVaultExtractFieldTypeRegistry fieldTypeExtensionRegistry)
+        IVaultExtractFieldTypeRegistry fieldTypeExtensionRegistry,
+        DocumentWriteLock documentWriteLock)
     {
         _documentRepository = documentRepository;
         _documentTypeRepository = documentTypeRepository;
@@ -105,6 +107,7 @@ public class FieldExtractionService : ITransientDependency
         _behaviorOptions = behaviorOptions.Value;
         _logger = logger;
         _fieldTypeExtensionRegistry = fieldTypeExtensionRegistry;
+        _documentWriteLock = documentWriteLock;
     }
 
     /// <summary>
@@ -207,6 +210,7 @@ public class FieldExtractionService : ITransientDependency
             // Clear inside a short UoW.
             if (definitions.Count == 0)
             {
+                await using var clearLock = await _documentWriteLock.AcquireAsync(documentId);
                 using var clearUow = _unitOfWorkManager.Begin(requiresNew: true);
 
                 var blankDocument = await _documentRepository.FindWithFieldValuesAsync(documentId);
@@ -299,6 +303,7 @@ public class FieldExtractionService : ITransientDependency
             var extracted = extractionResult.Values;
 
             // Phase 3: short UoW writes Document with the extracted values.
+            await using var writeLock = await _documentWriteLock.AcquireAsync(documentId);
             using var writeUow = _unitOfWorkManager.Begin(requiresNew: true);
 
             var document = await _documentRepository.FindWithFieldValuesAsync(documentId);
@@ -492,6 +497,7 @@ public class FieldExtractionService : ITransientDependency
         Guid documentTypeId,
         int markdownLength)
     {
+        await using var documentLock = await _documentWriteLock.AcquireAsync(documentId);
         using var uow = _unitOfWorkManager.Begin(requiresNew: true);
 
         var document = await _documentRepository.FindAsync(documentId, includeDetails: false);

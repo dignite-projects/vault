@@ -47,7 +47,11 @@ using Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared;
 using Volo.Abp.AspNetCore.Serilog;
 using Volo.Abp.AuditLogging.EntityFrameworkCore;
 using Volo.Abp.Autofac;
+using Medallion.Threading;
+using Medallion.Threading.SqlServer;
+using Volo.Abp.BackgroundJobs;
 using Volo.Abp.BackgroundJobs.EntityFrameworkCore;
+using Volo.Abp.DistributedLocking;
 using Volo.Abp.BlobStoring;
 using Volo.Abp.BlobStoring.FileSystem;
 using Volo.Abp.Caching;
@@ -134,6 +138,7 @@ namespace Dignite.Vault.Extract.Host;
     typeof(AbpSettingManagementEntityFrameworkCoreModule),
     typeof(AbpTenantManagementEntityFrameworkCoreModule),
     typeof(AbpBackgroundJobsEntityFrameworkCoreModule),
+    typeof(AbpDistributedLockingModule),
     typeof(AbpBlobStoringFileSystemModule),
     typeof(AbpEntityFrameworkCoreSqlServerModule),
 
@@ -291,6 +296,7 @@ public class VaultExtractHostModule : AbpModule
         ConfigureVirtualFiles(hostingEnvironment);
         ConfigureEfCore(context);
         ConfigureDistributedEventBus();
+        ConfigureBackgroundJobs(context, configuration);
         ConfigureAI(context, configuration);
         ConfigureVaultIndexAI(context, configuration);
         ConfigureOpenTelemetry(context, configuration);
@@ -350,6 +356,23 @@ public class VaultExtractHostModule : AbpModule
     // - publish paths run inside the caller UoW, so events are written to AbpEventOutbox atomically with business changes
     // - a background worker scans the table and actually delivers to the message broker, guaranteeing at-least-once delivery
     // Downstream consumers handle redelivery idempotently by (DocumentId, EventType, EventTime).
+    /// <summary>
+    /// Background jobs run in parallel: each worker (the modules give their slow stages workers of their own) runs up to
+    /// <c>Vault:BackgroundJobs:MaxParallelJobExecutionCount</c> jobs at a time, 4 unless set. Every instance must use the
+    /// same value: ABP serializes a worker under one lock when it is 1 and claims each job under its own lock when it is
+    /// more, and the two do not exclude each other. The locks are SQL Server application locks on the Default database,
+    /// so host instances never run the same job, or send the same outbox batch, twice.
+    /// </summary>
+    private void ConfigureBackgroundJobs(ServiceConfigurationContext context, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? throw new AbpException("ConnectionStrings:Default is not set; the background job locks are taken on that database.");
+        context.Services.AddSingleton<IDistributedLockProvider>(_ => new SqlDistributedSynchronizationProvider(connectionString));
+
+        Configure<AbpBackgroundJobWorkerOptions>(options =>
+            options.MaxParallelJobExecutionCount = configuration.GetValue("Vault:BackgroundJobs:MaxParallelJobExecutionCount", 4));
+    }
+
     private void ConfigureDistributedEventBus()
     {
         Configure<AbpDistributedEventBusOptions>(options =>

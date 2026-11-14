@@ -143,6 +143,30 @@ public class DuplicateScope_Tests : VaultExtractApplicationTestBase<DuplicateSco
     /// <c>Uploader</c> that is no longer a duplicate, and left alone it is a false park the uploader cannot
     /// resolve (the panel returns nothing for them, and Review has no owner arm).
     /// </summary>
+    /// <summary>
+    /// A field extraction that saved the document between the projection and the load judged it under the current
+    /// scope with its new fingerprint. The target computed from the projected fingerprint must not replace that.
+    /// </summary>
+    [Fact]
+    public async Task A_Document_Re_Extracted_Since_The_Projection_Keeps_Its_Own_Verdict()
+    {
+        var alicesDoc = CreateFingerprintedDocument(creatorId: Alice);
+        alicesDoc.SetReviewReason(DocumentReviewReasons.DuplicateSuspected, present: true);
+
+        StubType(DuplicateDetectionScope.Uploader);
+        StubCollisions(
+            (new DuplicateCollisionKey(Fingerprint, Alice), 1),
+            (new DuplicateCollisionKey(Fingerprint, Bob), 1));
+        StubProjection(RowOf(alicesDoc));
+        alicesDoc.SetFieldFingerprint("fp-2");
+        StubLoad(alicesDoc);
+
+        await _job.ExecuteAsync(NewArgs());
+
+        (alicesDoc.ReviewReasons & DocumentReviewReasons.DuplicateSuspected).ShouldBe(DocumentReviewReasons.DuplicateSuspected);
+        await _documentRepository.DidNotReceive().UpdateAsync(alicesDoc, Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task Narrowing_Clears_A_Cross_Uploader_False_Park()
     {

@@ -28,6 +28,7 @@ Sections bound from `appsettings.json` (or any other configuration source; envir
 | `OpenTelemetry` | none (read by the host) | Host | Telemetry export. [Observability](../deployment/observability.md) |
 | `Vault:Index` | none (read by the host) | Host | Vault Index's embedding and rerank models. [AI Provider](ai-provider.md#embedding-model-index) |
 | `Vault:IndexIngestion` | `VaultIndexIngestionOptions` | `Dignite.Vault.Index.Application` | Size ceilings, retries and backfill paging of Index ingestion. [Deployment](../deployment/deployment.md#vault-index-ingestion) |
+| `Vault:BackgroundJobs` | none (read by the host) | Host | `MaxParallelJobExecutionCount`: how many jobs each background job worker runs at a time. [Deployment](../deployment/deployment.md#background-jobs) |
 | `Vault:IndexSearch` | `VaultIndexSearchOptions` | `Dignite.Vault.Index.Application` | Fusion weights of the two search legs and how many candidates the reranker reads. [AI Provider](ai-provider.md#rerank-model-index) |
 
 ## Options Set in Code

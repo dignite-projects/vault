@@ -32,7 +32,6 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 /// (<see cref="DocumentPipelineBackgroundJobBase{TArgs}.EndOnPermanentProviderFailure"/>), which ends the job.
 /// </para>
 /// </summary>
-[BackgroundJobName("VaultExtract.DocumentFieldExtraction")]
 public class DocumentFieldExtractionBackgroundJob
     : DocumentPipelineBackgroundJobBase<DocumentFieldExtractionJobArgs>, ITransientDependency
 {
@@ -47,8 +46,9 @@ public class DocumentFieldExtractionBackgroundJob
         IUnitOfWorkManager unitOfWorkManager,
         IDataFilter dataFilter,
         FieldExtractionService fieldExtractionService,
-        ICurrentTenant currentTenant)
-        : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter)
+        ICurrentTenant currentTenant,
+        DocumentWriteLock documentWriteLock)
+        : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter, documentWriteLock)
     {
         _fieldExtractionService = fieldExtractionService;
         _currentTenant = currentTenant;
@@ -64,16 +64,21 @@ public class DocumentFieldExtractionBackgroundJob
 
     private async Task ExecuteInTenantAsync(DocumentFieldExtractionJobArgs args)
     {
-        Guid documentId, runId;
-        Guid? tenantId;
+        (Guid DocumentId, Guid RunId, Guid? TenantId)? begun;
         try
         {
-            (documentId, runId, tenantId) = await BeginRunAsync(args);
+            begun = await BeginRunAsync(args);
         }
         catch (EntityNotFoundException ex) when (IsDocumentGone(ex))
         {
             // #662: deleted while queued — end the job instead of letting ABP retry it until it abandons it.
             await EndForDeletedDocumentAsync(args.DocumentId, args.PipelineRunId, VaultExtractPipelines.FieldExtraction);
+            return;
+        }
+
+        if (begun is not (var documentId, var runId, var tenantId))
+        {
+            // The run has ended or a later attempt superseded it (DocumentPipelineRunAccessor.BeginIfCurrentAsync).
             return;
         }
 
@@ -98,8 +103,9 @@ public class DocumentFieldExtractionBackgroundJob
         }
     }
 
-    private async Task<(Guid DocumentId, Guid RunId, Guid? TenantId)> BeginRunAsync(DocumentFieldExtractionJobArgs args)
+    private async Task<(Guid DocumentId, Guid RunId, Guid? TenantId)?> BeginRunAsync(DocumentFieldExtractionJobArgs args)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(args.DocumentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         var document = await DocumentRepository.GetAsync(args.DocumentId, includeDetails: false);
@@ -109,11 +115,12 @@ public class DocumentFieldExtractionBackgroundJob
 
         await uow.CompleteAsync();
 
-        return (document.Id, run.Id, document.TenantId);
+        return run is null ? null : (document.Id, run.Id, document.TenantId);
     }
 
     private async Task CompleteRunAsync(Guid documentId, Guid runId)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(documentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         var (document, run) = await LoadDocumentAndRunAsync(documentId, runId, VaultExtractPipelines.FieldExtraction);
@@ -124,6 +131,7 @@ public class DocumentFieldExtractionBackgroundJob
     }
 }
 
+[BackgroundJobName("VaultExtract.DocumentFieldExtraction")]
 public class DocumentFieldExtractionJobArgs
 {
     public Guid DocumentId { get; set; }

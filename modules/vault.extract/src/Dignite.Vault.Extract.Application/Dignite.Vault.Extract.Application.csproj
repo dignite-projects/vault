@@ -22,6 +22,7 @@
          VaultExtractNotificationConsts.SignalRChannelName. -->
     <PackageReference Include="Dignite.Abp.Notifications.Abstractions" />
     <PackageReference Include="Volo.Abp.BackgroundJobs" />
+    <PackageReference Include="Volo.Abp.DistributedLocking.Abstractions" />
     <PackageReference Include="Volo.Abp.BlobStoring" />
     <PackageReference Include="Volo.Abp.Auditing" />
     <!-- #698: only the event contract (GdprUserDataDeletionRequestedEto). The GDPR module that publishes it is the

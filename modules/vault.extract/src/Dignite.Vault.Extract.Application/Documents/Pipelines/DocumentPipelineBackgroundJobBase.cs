@@ -31,6 +31,7 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
     protected DocumentPipelineRunAccessor PipelineRunAccessor { get; }
     protected IUnitOfWorkManager UnitOfWorkManager { get; }
     protected IDataFilter DataFilter { get; }
+    protected DocumentWriteLock DocumentWriteLock { get; }
 
     /// <summary>
     /// #662: the status message of a run ended because its document was deleted while the job waited. Operators see
@@ -44,7 +45,8 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
         DocumentPipelineRunManager pipelineRunManager,
         DocumentPipelineRunAccessor pipelineRunAccessor,
         IUnitOfWorkManager unitOfWorkManager,
-        IDataFilter dataFilter)
+        IDataFilter dataFilter,
+        DocumentWriteLock documentWriteLock)
     {
         DocumentRepository = documentRepository;
         RunRepository = runRepository;
@@ -52,6 +54,7 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
         PipelineRunAccessor = pipelineRunAccessor;
         UnitOfWorkManager = unitOfWorkManager;
         DataFilter = dataFilter;
+        DocumentWriteLock = documentWriteLock;
     }
 
     /// <summary>
@@ -118,6 +121,7 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
     /// </summary>
     protected virtual async Task EndForDeletedDocumentAsync(Guid documentId, Guid? pipelineRunId, string pipelineCode)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(documentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         using (DataFilter.Disable<ISoftDelete>())
@@ -176,8 +180,10 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
             ? await DocumentRepository.FindWithFieldValuesAsync(documentId)
                 ?? throw new EntityNotFoundException(typeof(Document), documentId)
             : await DocumentRepository.GetAsync(documentId, includeDetails: false);
+        // A run that is not found is recreated under its id, so BeginOrStartAsync never answers null here.
         var run = await RunRepository.FindAsync(runId)
-            ?? await PipelineRunAccessor.BeginOrStartAsync(document, runId, pipelineCode);
+            ?? await PipelineRunAccessor.BeginOrStartAsync(document, runId, pipelineCode)
+            ?? throw new InvalidOperationException($"Pipeline run {runId} could not be recreated.");
         return (document, run);
     }
 
@@ -195,6 +201,7 @@ public abstract class DocumentPipelineBackgroundJobBase<TArgs> : AsyncBackground
         string errorMessage,
         string pipelineCode)
     {
+        await using var documentLock = await DocumentWriteLock.AcquireAsync(documentId);
         using var uow = UnitOfWorkManager.Begin(requiresNew: true);
 
         var (document, run) = await LoadDocumentAndRunAsync(documentId, runId, pipelineCode);
