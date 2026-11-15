@@ -13,6 +13,8 @@ using Microsoft.Extensions.AI.Evaluation;
 using Microsoft.Extensions.AI.Evaluation.Reporting;
 using Microsoft.Extensions.AI.Evaluation.Reporting.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Volo.Abp;
 using Xunit;
 
@@ -67,26 +69,26 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
         }
     }
 
-    /// <summary>The document parsed by the host's providers.</summary>
-    public async Task<TextExtractionResult> ParseAsync(CorpusDocument document)
+    /// <summary>The document parsed by the host's engines, the way Extract's parse job asks for it.</summary>
+    public async Task<ExtractionDocument> ParseAsync(CorpusDocument document)
     {
         using var scope = _application.ServiceProvider.CreateScope();
         await using var stream = File.OpenRead(document.Path);
-        return await scope.ServiceProvider.GetRequiredService<ITextExtractor>().ExtractAsync(
-            stream,
-            new TextExtractionContext { ContentType = document.MediaType, FileExtension = document.Extension });
+        return await scope.ServiceProvider.GetRequiredService<DocumentExtractionClient>().ExtractAsync(
+            stream, document.Id, document.MediaType, ParseExtractionOptions.Create(document.File));
     }
 
     public async Task<ParseOutcome> EvaluateAsync(CorpusDocument document)
     {
-        var result = await ParseAsync(document);
+        var extracted = await ParseAsync(document);
+        var markdown = ExtractionDocumentMarkdown.Render(extracted);
 
         EvaluationResult evaluation;
         await using (var run = await _reporting.CreateScenarioRunAsync($"Parse.{document.Id}"))
         {
             evaluation = await run.EvaluateAsync(
                 [new ChatMessage(ChatRole.User, document.File)],
-                new ChatResponse(new ChatMessage(ChatRole.Assistant, result.Markdown)),
+                new ChatResponse(new ChatMessage(ChatRole.Assistant, markdown)),
                 [new ParseTruthContext(document)]);
         }
 
@@ -99,7 +101,7 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
             }
         }
 
-        var outcome = new ParseOutcome(document, result.ProviderName, result.IsComplete, scores);
+        var outcome = new ParseOutcome(document, extracted.GetProvider(), extracted.IsComplete(), scores);
         _outcomes[document.Id] = outcome;
         return outcome;
     }

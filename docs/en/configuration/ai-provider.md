@@ -244,7 +244,7 @@ Every client is registered with `UseOpenTelemetry()` and `UseLogging()`. None us
 | `FieldPromptPolishAppService` | Structured | Admin helper: rewrites a field's extraction prompt |
 | `DocumentParseBackgroundJob` (title generation) | Title generator | Generates a short title from the extracted Markdown |
 | `SlugSuggestionAppService` | Title generator | Admin helper: suggests an English URL slug (schema-bound) |
-| `VisionLlmOcrProvider` | Vision | [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md) |
+| `VisionLlmOcrClient` | Vision | [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md) |
 | `IndexChunkEnricher` | Index chat model | Keywords and answerable questions per chunk, when a profile asks for them |
 | `DocumentSummaryCompiler` | Index chat model | Section and document summaries for the outline, when a profile asks for them |
 

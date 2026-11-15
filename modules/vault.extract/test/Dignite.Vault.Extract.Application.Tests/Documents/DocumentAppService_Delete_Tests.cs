@@ -286,7 +286,7 @@ public class DocumentAppService_Delete_Tests
     public async Task UploadAsync_Throws_UnsupportedFileType_When_Extension_Not_Allowed()
     {
         // #221: valid content-type but extension outside allowlist, which decides blob suffix and
-        // DefaultTextExtractor dispatch, means fail-closed.
+        // the Parse router's engine choice, means fail-closed.
         var input = CreateUploadInput([1, 2, 3], fileName: "A.exe", contentType: "application/pdf");
 
         var exception = await Should.ThrowAsync<BusinessException>(async () =>

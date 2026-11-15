@@ -1,5 +1,8 @@
 <Project>
     <PropertyGroup>
         <AbpProjectType>module</AbpProjectType>
+        <!-- The parse job consumes Parse through Microsoft.Extensions.DocumentExtraction and its document tree,
+             both experimental in dotnet/extensions 11 (EXTEXP0019, MEDE0001). -->
+        <NoWarn>$(NoWarn);EXTEXP0019;MEDE0001</NoWarn>
     </PropertyGroup>
 </Project>

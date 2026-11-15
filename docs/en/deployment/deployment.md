@@ -124,7 +124,7 @@ The shipped host runs with multi-tenancy enabled (`VaultExtractHostModule.IsMult
 
 ## OCR Provider
 
-The host enables exactly **one** OCR provider ([comparison](../text-extraction/text-extraction.md#ocr--choosing-a-provider)):
+The host enables exactly **one** OCR engine ([comparison](../text-extraction/text-extraction.md#ocr--choosing-an-engine)):
 
 - **Vision-LLM** (the shipped default): uses a vision-capable chat model through a keyed `IChatClient`; no sidecar. Strongest for phone photos, thermal receipts and image-only PDFs. See [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md).
 - **PaddleOCR**: a local Docker sidecar on CPU; data never leaves the network. See [PaddleOCR](../text-extraction/ocr-paddleocr.md).

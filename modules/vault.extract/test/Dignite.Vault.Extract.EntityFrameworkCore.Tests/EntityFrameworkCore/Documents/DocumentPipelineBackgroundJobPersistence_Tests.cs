@@ -14,6 +14,7 @@ using Dignite.Vault.Extract.Documents.Segments;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
@@ -34,7 +35,7 @@ public class DocumentPipelineBackgroundJobPersistenceTestModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        context.Services.AddSingleton(Substitute.For<ITextExtractor>());
+        context.Services.AddSingleton(Substitute.For<DocumentExtractionClient>());
         context.Services.AddSingleton(Substitute.For<IBlobContainer<VaultExtractDocumentContainer>>());
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
         context.Services.AddSingleton(Substitute.For<IChatClient>());
@@ -56,7 +57,7 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
     private readonly IDocumentPipelineRunRepository _runRepository;
     private readonly DocumentPipelineJobScheduler _pipelineJobScheduler;
     private readonly DocumentParseBackgroundJob _textExtractionJob;
-    private readonly ITextExtractor _textExtractor;
+    private readonly DocumentExtractionClient _extractionClient;
     private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly IGuidGenerator _guidGenerator;
@@ -72,7 +73,7 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
         _runRepository = GetRequiredService<IDocumentPipelineRunRepository>();
         _pipelineJobScheduler = GetRequiredService<DocumentPipelineJobScheduler>();
         _textExtractionJob = GetRequiredService<DocumentParseBackgroundJob>();
-        _textExtractor = GetRequiredService<ITextExtractor>();
+        _extractionClient = GetRequiredService<DocumentExtractionClient>();
         _blobContainer = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
         _backgroundJobManager = GetRequiredService<IBackgroundJobManager>();
         _guidGenerator = GetRequiredService<IGuidGenerator>();
@@ -259,12 +260,11 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
     }
 
     [Fact]
-    public async Task Text_Extraction_Job_Archives_Native_Payload_And_Persists_Provenance()
+    public async Task Text_Extraction_Job_Persists_Provenance_And_Archives_Nothing()
     {
         var documentId = _guidGenerator.Create();
         var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
-        var payload = new NativePayload(new byte[] { 10, 20, 30, 40, 50 }, "application/json", "PaddleOCR/PP-StructureV3");
-        StubExtraction("# Scan\n\nbody", usedOcr: true, nativePayload: payload);
+        StubExtraction("# Scan\n\nbody", usedOcr: true, incompleteReason: "Page 2 could not be transcribed.");
 
         await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
         {
@@ -272,161 +272,41 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
             PipelineRunId = textExtractionRunId
         });
 
-        // Archive into blob storage with a stable per-document key and overwrite semantics.
-        await _blobContainer.Received(1).SaveAsync(
-            $"extraction-native/{documentId}",
+        // The router is asked the way the host's engines expect: the document id, the stored media type, and the
+        // original file name (its extension picks the engine).
+        await _extractionClient.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            overrideExisting: true,
+            documentId.ToString(),
+            "application/pdf",
+            Arg.Is<DocumentExtractionOptions?>(o => o.GetFileName() == "test.pdf"),
             Arg.Any<CancellationToken>());
 
-        // Reload through an independent UoW and new DbContext, deserializing the JSON column from DB, to verify
-        // all three fields were written and the JSON round-trip is consistent.
+        // Nothing beside the Markdown is archived.
+        await _blobContainer.DidNotReceive().SaveAsync(
+            Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+
+        // Reload through an independent UoW and new DbContext, deserializing the JSON column from DB.
         await WithUnitOfWorkAsync(async () =>
         {
             var document = await _documentRepository.GetAsync(documentId, includeDetails: false);
 
+            document.Markdown.ShouldBe("# Scan\n\nbody");
             document.Language.ShouldBe("en");
-
             document.ExtractionMetadata.ShouldNotBeNull();
             document.ExtractionMetadata!.ProviderName.ShouldBe("PaddleOCR");
-
-            var manifest = document.ExtractionMetadata.NativePayloadManifest;
-            manifest.ShouldNotBeNull();
-            manifest!.BlobName.ShouldBe($"extraction-native/{documentId}");
-            manifest.ContentType.ShouldBe("application/json");
-            manifest.SizeBytes.ShouldBe(5);
-            manifest.SchemaName.ShouldBe("PaddleOCR/PP-StructureV3");
-            // SHA-256 of {10,20,30,40,50}
-            manifest.Sha256.ShouldBe(
-                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(new byte[] { 10, 20, 30, 40, 50 }))
-                    .ToLowerInvariant());
+            document.ExtractionMetadata.IsComplete.ShouldBeFalse();
+            document.ExtractionMetadata.IncompleteReason.ShouldBe("Page 2 could not be transcribed.");
         });
     }
 
     [Fact]
-    public async Task Text_Extraction_Job_Persists_Null_Manifest_When_No_Native_Payload()
+    public async Task PermanentDelete_Removes_The_Native_Payload_Blob_Of_An_Earlier_Parse()
     {
+        // Parses before the move to Microsoft.Extensions.DocumentExtraction archived the engine's native output under
+        // extraction-native/{id}; a permanent delete still removes it.
         var documentId = _guidGenerator.Create();
         var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
-        StubExtraction("# Digital\n\nbody", usedOcr: false, nativePayload: null);
-
-        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
-        {
-            DocumentId = documentId,
-            PipelineRunId = textExtractionRunId
-        });
-
-        // No payload -> do not write an archive blob. GetAsync still reads the original file blob, but SaveAsync
-        // should not be called.
-        await _blobContainer.DidNotReceive().SaveAsync(
-            Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
-
-        await WithUnitOfWorkAsync(async () =>
-        {
-            var document = await _documentRepository.GetAsync(documentId, includeDetails: false);
-            (await _runRepository.FindAsync(textExtractionRunId))!.Status.ShouldBe(PipelineRunStatus.Succeeded);
-            document.ExtractionMetadata.ShouldNotBeNull();
-            document.ExtractionMetadata!.NativePayloadManifest.ShouldBeNull();
-        });
-    }
-
-    [Fact]
-    public async Task Text_Extraction_Job_Skips_Archive_When_Payload_Exceeds_Limit()
-    {
-        var documentId = _guidGenerator.Create();
-        var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
-        // Payload exceeds the archive limit (DocumentConsts.MaxNativePayloadArchiveBytes) -> fail open: skip the
-        // archive, set manifest to null, and keep text extraction successful. Use a real over-limit size instead
-        // of changing global static state, avoiding mutable-state interference with parallel test classes.
-        var oversized = new byte[(int)DocumentConsts.MaxNativePayloadArchiveBytes + 1];
-        StubExtraction("# Scan\n\nbody", usedOcr: true,
-            nativePayload: new NativePayload(oversized, "application/json", "PaddleOCR/PP-StructureV3"));
-
-        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
-        {
-            DocumentId = documentId,
-            PipelineRunId = textExtractionRunId
-        });
-
-        // Over limit -> do not write an archive blob.
-        await _blobContainer.DidNotReceive().SaveAsync(
-            Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
-
-        await WithUnitOfWorkAsync(async () =>
-        {
-            var document = await _documentRepository.GetAsync(documentId, includeDetails: false);
-            (await _runRepository.FindAsync(textExtractionRunId))!.Status.ShouldBe(PipelineRunStatus.Succeeded);
-            document.ExtractionMetadata.ShouldNotBeNull();
-            document.ExtractionMetadata!.NativePayloadManifest.ShouldBeNull();
-        });
-    }
-
-    [Fact]
-    public async Task Text_Extraction_Job_Skips_Archive_When_Payload_Has_Blank_Schema()
-    {
-        var documentId = _guidGenerator.Create();
-        var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
-        // NativePayload contract does not require ContentType / SchemaName to be non-empty; future rich Markdown
-        // or third-party providers may partially fill them.
-        // Archiving must fail open: missing fields -> do not write blob, set manifest to null, and keep text
-        // extraction successful. Auxiliary audit data must never throw and fail the main pipeline.
-        StubExtraction("# Scan\n\nbody", usedOcr: true,
-            nativePayload: new NativePayload(new byte[] { 1, 2, 3 }, contentType: "", schemaName: ""));
-
-        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
-        {
-            DocumentId = documentId,
-            PipelineRunId = textExtractionRunId
-        });
-
-        await _blobContainer.DidNotReceive().SaveAsync(
-            Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
-
-        await WithUnitOfWorkAsync(async () =>
-        {
-            var document = await _documentRepository.GetAsync(documentId, includeDetails: false);
-            (await _runRepository.FindAsync(textExtractionRunId))!.Status.ShouldBe(PipelineRunStatus.Succeeded);
-            document.ExtractionMetadata.ShouldNotBeNull();
-            document.ExtractionMetadata!.NativePayloadManifest.ShouldBeNull();
-        });
-    }
-
-    [Fact]
-    public async Task Text_Extraction_Job_Fails_Open_When_Blob_Archive_Throws()
-    {
-        var documentId = _guidGenerator.Create();
-        var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
-        var payload = new NativePayload(new byte[] { 1, 2, 3 }, "application/json", "PaddleOCR/PP-StructureV3");
-        StubExtraction("# Scan\n\nbody", usedOcr: true, nativePayload: payload);
-
-        // Archive blob write failure -> fail open: set manifest to null and keep text extraction successful.
-        _blobContainer.SaveAsync(
-                Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("blob storage down"));
-
-        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
-        {
-            DocumentId = documentId,
-            PipelineRunId = textExtractionRunId
-        });
-
-        await WithUnitOfWorkAsync(async () =>
-        {
-            var document = await _documentRepository.GetAsync(documentId, includeDetails: false);
-            (await _runRepository.FindAsync(textExtractionRunId))!.Status.ShouldBe(PipelineRunStatus.Succeeded);
-            document.Markdown.ShouldBe("# Scan\n\nbody");
-            document.ExtractionMetadata.ShouldNotBeNull();
-            document.ExtractionMetadata!.NativePayloadManifest.ShouldBeNull();
-        });
-    }
-
-    [Fact]
-    public async Task PermanentDelete_Removes_Archived_Native_Payload_Blob()
-    {
-        var documentId = _guidGenerator.Create();
-        var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
-        var payload = new NativePayload(new byte[] { 7, 7, 7 }, "application/json", "PaddleOCR/PP-StructureV3");
-        StubExtraction("# Scan\n\nbody", usedOcr: true, nativePayload: payload);
+        StubExtraction("# Scan\n\nbody", usedOcr: true);
 
         await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
         {
@@ -436,7 +316,6 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
 
         await _documentAppService.PermanentDeleteAsync(documentId);
 
-        // Permanent delete removes the archive blob by the stable manifest key, alongside original-file blob deletion.
         await _blobContainer.Received(1).DeleteAsync(
             $"extraction-native/{documentId}", Arg.Any<CancellationToken>());
         await _blobContainer.Received(1).DeleteAsync(
@@ -499,8 +378,7 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
             segment.SegmentKey.ShouldBe(segmentKey);
         });
 
-        await _textExtractor.DidNotReceive().ExtractAsync(
-            Arg.Any<Stream>(), Arg.Any<TextExtractionContext>(), Arg.Any<CancellationToken>());
+        await _extractionClient.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     private async Task<Guid> ArrangeQueuedParseAsync(Guid documentId)
@@ -519,25 +397,19 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
 
     // Stub callback assertion that external extraction work runs outside the ambient UoW, matching the
     // background-jobs.md short-UoW rule.
-    private void StubExtraction(string markdown, bool usedOcr, NativePayload? nativePayload = null)
+    private void StubExtraction(string markdown, bool usedOcr, string? incompleteReason = null)
     {
         _blobContainer.GetAsync(Arg.Any<string>())
             .Returns(Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
-        _textExtractor.ExtractAsync(
-                Arg.Any<Stream>(),
-                Arg.Any<TextExtractionContext>(),
-                Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                _unitOfWorkManager.Current.ShouldBeNull();
-                return new TextExtractionResult
-                {
-                    Markdown = markdown,
-                    DetectedLanguage = "en",
-                    ProviderName = usedOcr ? "PaddleOCR" : "ElBruno.MarkItDotNet",
-                    NativePayload = nativePayload
-                };
-            });
+        _extractionClient.Answers(_ =>
+        {
+            _unitOfWorkManager.Current.ShouldBeNull();
+            return ExtractedDocuments.Of(
+                markdown,
+                usedOcr ? "PaddleOCR" : ExtractedDocuments.DefaultProvider,
+                language: "en",
+                incompleteReason: incompleteReason);
+        });
     }
 
     private static Document CreateDocument(Guid id)

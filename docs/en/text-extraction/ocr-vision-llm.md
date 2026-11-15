@@ -26,13 +26,13 @@ This provider is **vendor-agnostic**: it consumes a multimodal `IChatClient` (`M
 | Digital PDFs **with** a text layer | Handled by the [digital path](text-extraction.md); only their embedded images are sent here for transcription |
 | Anything else | Fail-open: empty Markdown + a logged warning (document still persists → review queue) |
 
-Output is Markdown, exactly like the other OCR providers — the Markdown-first channel contract is preserved. There is no out-of-band spatial payload (a chat LLM has no bbox/cell model), so `OcrResult` native-payload fields stay null.
+The model answers in Markdown, which is read into the document tree, one section per page, like the other OCR engines. There is no out-of-band spatial answer (a chat LLM has no bbox/cell model), so the document's `RawRepresentation` stays null.
 
 ## Enabling It
 
 The shipped host enables this provider: `VaultParseVisionLlmOcrModule` is in `VaultExtractHostModule`'s `[DependsOn]`, and `ConfigureAI` registers the keyed vision client. In a host of your own:
 
-1. Reference `Dignite.Vault.Parse.Ocr.VisionLlm` and add `VaultParseVisionLlmOcrModule` to the host module's `[DependsOn]`. `IOcrProvider` has a single registration, so remove any other OCR provider module.
+1. Reference `Dignite.Vault.Parse.Ocr.VisionLlm` and add `VaultParseVisionLlmOcrModule` to the host module's `[DependsOn]`. The digital engines inject a single `ParseOcrClient`, so remove any other OCR engine module.
 2. Register the keyed vision `IChatClient` in `ConfigureAI`, reusing the provider client but with a **vision-capable** model id. The vision model must not fall back to `ChatModelId`, because the main chat model may not be vision-capable:
 
 ```csharp

@@ -20,8 +20,10 @@ namespace Dignite.Vault.Parse;
 /// <para>
 /// Headings keep their level; a paragraph, a list item and a table cell keep their inline Markdown as written; a list
 /// item records its depth and marker; a pipe table and an HTML table become a table, the HTML one with its spans; an
-/// <see cref="ImageOcrMarkup"/> span becomes an image whose text is the transcription. Anything else (raw HTML, a rule)
-/// is kept as written under <see cref="ParseElementRoles.Markdown"/>.
+/// <see cref="ImageOcrMarkup"/> span becomes an image whose text is the transcription; a fenced block is code. Anything
+/// else (raw HTML, a rule, an indented block) is kept as written under <see cref="ParseElementRoles.Markdown"/>. An
+/// indented block in engine output is rarely code: it is the continuation of a construct CommonMark does not know, such
+/// as the second paragraph of a footnote definition, and read as code it would come back fenced.
 /// </para>
 /// </summary>
 public static partial class MarkdownDocumentReader
@@ -128,10 +130,6 @@ public static partial class MarkdownDocumentReader
                 into.Add(Sourced(Code(fenced.Lines.ToString(), fenced.Info), page));
                 return;
 
-            case CodeBlock code:
-                into.Add(Sourced(Code(code.Lines.ToString(), null), page));
-                return;
-
             case QuoteBlock quote:
                 into.Add(Sourced(new ExtractionDocumentTextElement(
                     new TextContent(string.Join('\n', Raw(source, quote).Split('\n').Select(line => QuotePrefix().Replace(line, string.Empty)))),
@@ -139,7 +137,7 @@ public static partial class MarkdownDocumentReader
                 return;
 
             default:
-                if (Raw(source, block) is { Length: > 0 } raw)
+                if (RawLines(source, block) is { Length: > 0 } raw)
                 {
                     into.Add(Sourced(new ExtractionDocumentTextElement(new TextContent(raw), ParseElementRoles.Markdown), page));
                 }
@@ -261,6 +259,19 @@ public static partial class MarkdownDocumentReader
 
     private static string Raw(string source, MarkdownObject block)
         => block.Span.IsEmpty || block.Span.Start < 0 ? string.Empty : source.Substring(block.Span.Start, Math.Min(block.Span.Length, source.Length - block.Span.Start)).TrimEnd();
+
+    /// <summary>The block's text from the start of its first line, so an indented block keeps its indentation.</summary>
+    private static string RawLines(string source, MarkdownObject block)
+    {
+        if (block.Span.IsEmpty || block.Span.Start < 0 || block.Span.Start > source.Length)
+        {
+            return string.Empty;
+        }
+
+        var lineStart = block.Span.Start == 0 ? 0 : source.LastIndexOf('\n', block.Span.Start - 1) + 1;
+        var end = Math.Min(block.Span.End + 1, source.Length);
+        return source[lineStart..end].TrimEnd();
+    }
 
     private static string HeadingText(HeadingBlock heading, string raw)
         => heading.IsSetext

@@ -14,6 +14,7 @@ using Dignite.Vault.Extract.Documents.Pipelines.Parse;
 using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp;
@@ -34,7 +35,7 @@ public class DocumentReparseTestModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        context.Services.AddSingleton(Substitute.For<ITextExtractor>());
+        context.Services.AddSingleton(Substitute.For<DocumentExtractionClient>());
         context.Services.AddSingleton(Substitute.For<IBlobContainer<VaultExtractDocumentContainer>>());
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
         context.Services.AddSingleton(Substitute.For<IDistributedEventBus>());
@@ -73,7 +74,7 @@ public class DocumentReparse_Tests : VaultExtractTestBase<DocumentReparseTestMod
     private readonly DocumentPipelineJobScheduler _scheduler;
     private readonly DocumentParseBackgroundJob _parseJob;
     private readonly DerivedDocumentSpawner _spawner;
-    private readonly ITextExtractor _textExtractor;
+    private readonly DocumentExtractionClient _extractionClient;
     private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly IDistributedEventBus _eventBus;
@@ -90,7 +91,7 @@ public class DocumentReparse_Tests : VaultExtractTestBase<DocumentReparseTestMod
         _scheduler = GetRequiredService<DocumentPipelineJobScheduler>();
         _parseJob = GetRequiredService<DocumentParseBackgroundJob>();
         _spawner = GetRequiredService<DerivedDocumentSpawner>();
-        _textExtractor = GetRequiredService<ITextExtractor>();
+        _extractionClient = GetRequiredService<DocumentExtractionClient>();
         _blobContainer = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
         _backgroundJobManager = GetRequiredService<IBackgroundJobManager>();
         _eventBus = GetRequiredService<IDistributedEventBus>();
@@ -443,13 +444,7 @@ public class DocumentReparse_Tests : VaultExtractTestBase<DocumentReparseTestMod
     {
         _blobContainer.GetAsync(Arg.Any<string>())
             .Returns(_ => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
-        _textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<TextExtractionContext>(), Arg.Any<CancellationToken>())
-            .Returns(new TextExtractionResult
-            {
-                Markdown = markdown,
-                DetectedLanguage = "en",
-                ProviderName = "ElBruno.MarkItDotNet"
-            });
+        _extractionClient.Answers(markdown, language: "en");
     }
 
     private T LastEnqueued<T>() where T : class

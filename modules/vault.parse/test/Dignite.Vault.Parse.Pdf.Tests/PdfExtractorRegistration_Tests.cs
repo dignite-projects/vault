@@ -1,4 +1,3 @@
-using Dignite.Vault.Parse.Ocr;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -8,44 +7,42 @@ using Xunit;
 namespace Dignite.Vault.Parse.Pdf;
 
 /// <summary>
-/// Guards the ABP conventional-registration metadata and the extension self-declaration for
-/// <see cref="PdfExtractor"/>. The behavior tests construct the extractor with <c>new(...)</c>, so they
-/// cannot catch a missing DI registration. <c>PdfExtractor</c> does not end with <c>MarkdownTextProvider</c>,
-/// so <see cref="IMarkdownTextProvider"/> is exposed only via the explicit <c>[ExposeServices]</c> — this
-/// asserts it stays exposed (otherwise DefaultTextExtractor would never see it for <c>.pdf</c> dispatch).
+/// Guards the ABP conventional-registration metadata and the file claim of <see cref="PdfExtractor"/>. The behavior tests
+/// construct the engine with <c>new(...)</c>, so they cannot catch a missing DI registration. The router finds engines
+/// as <see cref="ParseExtractionClient"/>, exposed only through the explicit <c>[ExposeServices]</c>; this asserts it
+/// stays exposed (otherwise the router would never see it and .pdf would fall back to ElBruno with no embedded-image OCR).
 /// </summary>
 public class PdfExtractorRegistration_Tests
 {
     [Fact]
-    public void Provider_Exposes_IMarkdownTextProvider()
+    public void Engine_is_exposed_as_a_ParseExtractionClient()
     {
         ExposedServiceExplorer.GetExposedServices(typeof(PdfExtractor))
-            .ShouldContain(typeof(IMarkdownTextProvider));
+            .ShouldContain(typeof(ParseExtractionClient));
     }
 
     [Fact]
-    public void Provider_Is_Conventionally_Registered_Via_ITransientDependency()
+    public void Engine_is_conventionally_registered_via_ITransientDependency()
     {
         // ABP derives the lifetime (and hence registration) from the ITransientDependency marker, NOT from
-        // [ExposeServices]. GetExposedServices above only checks the attribute, so without this a dropped
-        // marker would silently de-register PdfExtractor — DefaultTextExtractor would never see it and .pdf
-        // would fall back to ElBruno with no embedded-image OCR — while the attribute test stayed green.
+        // [ExposeServices]; a dropped marker would silently de-register the engine while the attribute test stayed green.
         typeof(ITransientDependency).IsAssignableFrom(typeof(PdfExtractor)).ShouldBeTrue();
     }
 
     [Fact]
-    public void Claims_only_the_pdf_extension_and_outranks_the_fallback()
+    public void Claims_only_its_files_and_outranks_the_fallback()
     {
-        var extractor = new PdfExtractor(
-            Substitute.For<IOcrProvider>(),
+        var engine = new PdfExtractor(
+            Substitute.ForPartsOf<ParseOcrClient>(),
             Options.Create(new PdfExtractorOptions()));
 
-        extractor.CanHandle(".pdf").ShouldBeTrue();
-        extractor.CanHandle(".PDF").ShouldBeTrue();
-        extractor.CanHandle(".png").ShouldBeFalse();
-        extractor.CanHandle(".docx").ShouldBeFalse();
-        extractor.CanHandle(string.Empty).ShouldBeFalse();
+        engine.CanExtract(".pdf", "").ShouldBeTrue();
+        engine.CanExtract("", "application/pdf").ShouldBeTrue();
+        engine.CanExtract(".png", "image/png").ShouldBeFalse();
+        engine.CanExtract(".docx", "").ShouldBeFalse();
+        engine.CanExtract(string.Empty, string.Empty).ShouldBeFalse();
 
-        extractor.Priority.ShouldBeGreaterThan(MarkdownProviderPriorities.Fallback);
+        engine.Priority.ShouldBeGreaterThan(ParseExtractionPriorities.Fallback);
+        engine.Priority.ShouldBeGreaterThan(ParseExtractionPriorities.Ocr);
     }
 }

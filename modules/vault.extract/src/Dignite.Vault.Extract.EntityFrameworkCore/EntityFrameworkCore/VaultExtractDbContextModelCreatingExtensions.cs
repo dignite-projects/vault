@@ -15,7 +15,7 @@ namespace Dignite.Vault.Extract.EntityFrameworkCore;
 
 public static class VaultExtractDbContextModelCreatingExtensions
 {
-    // Document.ExtractionMetadata (#210): a single typed value object (provider name + nullable archived manifest).
+    // Document.ExtractionMetadata (#210): a single typed value object (provider name + completeness).
     // It is read and written as a whole with no per-column query requirement, so it uses ABP's AbpJsonValueConverter<T>
     // to serialize into a large text column (SQL Server -> nvarchar(max); other providers choose their own mapping),
     // without binding to provider-specific native JSON. Contrast with the FlexFields value bag below: field values with

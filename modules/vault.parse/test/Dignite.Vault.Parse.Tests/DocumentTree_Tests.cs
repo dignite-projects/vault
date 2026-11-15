@@ -114,6 +114,19 @@ public class DocumentTree_Tests
     }
 
     [Fact]
+    public void An_indented_block_is_kept_as_written_not_read_as_code()
+    {
+        // The second paragraph of a footnote definition, as the DOCX engine writes it: CommonMark alone reads the
+        // indented line as code, which would come back fenced and detached from its definition.
+        const string markdown = "Body[^fn2]\n\n[^fn2]: First note paragraph.\n\n    Second note paragraph.";
+
+        var elements = Elements(markdown).Cast<ExtractionDocumentTextElement>().ToList();
+
+        elements[2].Role.ShouldBe(ParseElementRoles.Markdown);
+        Render(markdown).ShouldBe(markdown);
+    }
+
+    [Fact]
     public void Read_into_a_page_refers_every_element_to_it()
     {
         var document = new ExtractionDocument("doc");

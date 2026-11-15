@@ -5,13 +5,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using Azure;
 using Azure.AI.DocumentIntelligence;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Options;
 using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence;
 
-public class AzureDocumentIntelligenceOcrProvider : IOcrProvider, ITransientDependency
+[ExposeServices(typeof(ParseOcrClient), typeof(ParseExtractionClient), typeof(AzureDocumentIntelligenceOcrClient))]
+public class AzureDocumentIntelligenceOcrClient : ParseOcrClient, ITransientDependency
 {
     // The channel layer always uses prebuilt-layout because it outputs structured Markdown with
     // headings / tables and matches Markdown-first. This is intentionally not exposed as host
@@ -22,46 +24,35 @@ public class AzureDocumentIntelligenceOcrProvider : IOcrProvider, ITransientDepe
 
     private readonly AzureDocumentIntelligenceOptions _options;
 
-    public AzureDocumentIntelligenceOcrProvider(IOptions<AzureDocumentIntelligenceOptions> options)
+    public AzureDocumentIntelligenceOcrClient(IOptions<AzureDocumentIntelligenceOptions> options)
     {
         _options = options.Value;
     }
 
-    public virtual async Task<OcrResult> RecognizeAsync(
-        Stream fileStream,
-        OcrOptions options,
+    public override string ProviderName => "AzureDocumentIntelligence";
+
+    public override async Task<ExtractionDocument> ExtractAsync(
+        Stream document,
+        string identifier,
+        string mediaType,
+        DocumentExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var (analyzeResult, rawResponse) = await AnalyzeAsync(fileStream, ModelId, cancellationToken);
+        var analyzeResult = await AnalyzeAsync(document, ModelId, cancellationToken);
 
-        var markdown = BuildMarkdown(analyzeResult);
-
-        var ocrResult = new OcrResult
-        {
-            Markdown = markdown,
-            DetectedLanguage = analyzeResult.Languages?.FirstOrDefault()?.Locale,
-            ProviderName = "AzureDocumentIntelligence"
-        };
-        FillNativePayload(ocrResult, rawResponse);
-        return ocrResult;
-    }
-
-    private static void FillNativePayload(OcrResult ocrResult, BinaryData? rawResponse)
-    {
-        // #210: archive Azure DI's raw AnalyzeResult JSON response as native payload, including
-        // out-of-band spatial signals such as bbox / polygon / spans / table cells.
-        var bytes = rawResponse?.ToArray();
-        if (bytes is null || bytes.Length == 0) return;
-
-        ocrResult.NativePayloadContent = bytes;
-        ocrResult.NativePayloadContentType = "application/json";
-        ocrResult.NativePayloadSchemaName = "AzureDocumentIntelligence.AnalyzeResult";
+        // Read from the Markdown the service writes. Its layout (paragraph roles, regions, table cells) is in the
+        // AnalyzeResult, kept as the document's in-memory raw representation.
+        var extracted = MarkdownDocumentReader.Read(BuildMarkdown(analyzeResult), identifier)
+            .SetProvider(ProviderName)
+            .SetLanguage(analyzeResult.Languages?.FirstOrDefault()?.Locale);
+        extracted.RawRepresentation = analyzeResult;
+        return extracted;
     }
 
     // Test seam: lets a stubbed DocumentIntelligenceClient (e.g. one configured with a fake
     // HttpPipelineTransport) be substituted so the provider can be exercised without contacting Azure.
     // Production builds the real client from the configured endpoint + key. Kept protected virtual per the
-    // module-extensibility convention; it does not change the IOcrProvider contract or any egress boundary.
+    // module-extensibility convention; it does not change the engine's contract or any egress boundary.
     protected virtual DocumentIntelligenceClient CreateClient()
     {
         return new DocumentIntelligenceClient(
@@ -69,7 +60,7 @@ public class AzureDocumentIntelligenceOcrProvider : IOcrProvider, ITransientDepe
             new AzureKeyCredential(_options.ApiKey));
     }
 
-    private async Task<(AnalyzeResult Result, BinaryData RawResponse)> AnalyzeAsync(
+    private async Task<AnalyzeResult> AnalyzeAsync(
         Stream fileStream,
         string modelId,
         CancellationToken cancellationToken)
@@ -93,18 +84,13 @@ public class AzureDocumentIntelligenceOcrProvider : IOcrProvider, ITransientDepe
         };
 
         var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, analyzeOptions, cancellationToken);
-        // operation.GetRawResponse().Content is the raw JSON response body from the completed polling
-        // response, including the full analyzeResult (bbox / polygon / spans / cell). It is more
-        // faithful than reflection-serializing the model. The LRO completion response is buffered by
-        // default, so .Content is safe to read.
-        return (operation.Value, operation.GetRawResponse().Content);
+        return operation.Value;
     }
 
     private static string BuildMarkdown(AnalyzeResult analyzeResult)
     {
         // analyzeResult.Content is already Markdown. If Azure returns empty content, fall back to line
-        // text joined into flat Markdown paragraphs. The Provider fills this itself and does not leak
-        // plain-text-to-Markdown translation responsibility to the upstream orchestrator.
+        // text joined into flat Markdown paragraphs.
         var markdown = analyzeResult.Content;
         if (string.IsNullOrEmpty(markdown))
         {

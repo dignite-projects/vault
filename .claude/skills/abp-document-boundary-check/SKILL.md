@@ -35,7 +35,7 @@ Notes:
 
 - `DocumentTypeId` / `DocumentTypeCode` are generic document type identifiers, not business fields.
 - `Markdown` is the only text payload. A parallel text field such as `ExtractedText`, `Summary`, or `RawText` would put a second text payload on the egress.
-- `ExtractionMetadata` stores provenance only, such as provider name, native payload blob manifest, and integrity or quality signals. It is not a business-field bag.
+- `ExtractionMetadata` stores provenance only, such as the engine name and the completeness signal. It is not a business-field bag.
 
 ## Business-Specific Patterns To Look For
 

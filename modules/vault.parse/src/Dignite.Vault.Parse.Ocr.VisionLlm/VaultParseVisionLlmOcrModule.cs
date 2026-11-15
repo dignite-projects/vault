@@ -3,7 +3,7 @@ using Volo.Abp.Modularity;
 
 namespace Dignite.Vault.Parse.Ocr.VisionLlm;
 
-[DependsOn(typeof(VaultParseOcrModule))]
+[DependsOn(typeof(VaultParseModule))]
 public class VaultParseVisionLlmOcrModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)

@@ -4,7 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.DocumentExtraction;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -15,7 +15,7 @@ namespace Dignite.Vault.Parse.OpenXml;
 
 public class PptxExtractor_Tests
 {
-    private readonly IOcrProvider _ocr = Substitute.For<IOcrProvider>();
+    private readonly ParseOcrClient _ocr = Substitute.ForPartsOf<ParseOcrClient>();
 
     private PptxExtractor CreateExtractor(
         int minImagePixels = 0,
@@ -32,22 +32,10 @@ public class PptxExtractor_Tests
                 IncludeSpeakerNotes = includeNotes
             }));
 
-    private static TextExtractionContext PptxContext()
-        => new()
-        {
-            ContentType = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            FileExtension = ".pptx"
-        };
-
     private void StubOcr(string markdown, bool isComplete = true, string? reason = null)
-        => _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
-            .Returns(new OcrResult
-            {
-                Markdown = markdown,
-                ProviderName = "FakeOcr",
-                IsComplete = isComplete,
-                IncompleteReason = reason
-            });
+        => _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(call => ParseTestKit.OcrDocument(
+                call.ArgAt<string>(1), markdown, "FakeOcr", isComplete ? null : reason ?? "incomplete"));
 
     private static PptxFixtures.ImageSpec Png(string? alt, long x, long y, long extent = 914400)
         => new(TinyPng.CreateSolid(48, 48), "image/png", alt, x, y, extent, extent);
@@ -60,7 +48,7 @@ public class PptxExtractor_Tests
             .Text("# Roadmap", isTitle: true, x: 100, y: 100)
             .Text("- 50% *growth* in [Q1](http://x)", x: 100, y: 1_000_000));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("## \\# Roadmap");
         result.Markdown.ShouldContain("\\- 50% \\*growth\\* in \\[Q1\\](http://x)");
@@ -75,7 +63,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .Image(Png(alt: "See [details](http://evil.example)", x: 100, y: 100)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("See \\[details\\](http://evil.example)");
         result.Markdown.ShouldNotContain("**See");
@@ -92,7 +80,7 @@ public class PptxExtractor_Tests
             .Image(Png(alt: null, x: 100, y: 2_000_000))
             .Text("CHARLIE", y: 4_000_000));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         var alpha = result.Markdown.IndexOf("ALPHA", StringComparison.Ordinal);
         var bravo = result.Markdown.IndexOf("BRAVO", StringComparison.Ordinal);
@@ -116,11 +104,13 @@ public class PptxExtractor_Tests
             .Text("Body text")
             .Image(Png(alt: null, x: 100, y: 1_000_000)));
 
-        await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
-        await _ocr.Received(1).RecognizeAsync(
+        await _ocr.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o => o.ContentType.StartsWith("image/", StringComparison.Ordinal)),
+            Arg.Any<string>(),
+            Arg.Is<string>(t => t.StartsWith("image/", StringComparison.Ordinal)),
+            Arg.Any<DocumentExtractionOptions?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -136,7 +126,7 @@ public class PptxExtractor_Tests
             new PptxFixtures.SlideSpec().Text("Intro slide"),
             new PptxFixtures.SlideSpec().Image(Png(alt: null, x: 100, y: 1_000_000)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("*[Image OCR p:2]*");
         result.Markdown.ShouldContain("*[End OCR]*");
@@ -152,7 +142,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .Image(Png(alt: "Quarterly Revenue Diagram", x: 100, y: 1_000_000)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Quarterly Revenue Diagram");
         result.Markdown.ShouldNotContain("**Quarterly Revenue Diagram**");
@@ -173,7 +163,7 @@ public class PptxExtractor_Tests
             .Text("Body text")
             .Image(Png(alt: null, x: 100, y: 1_000_000)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNullOrEmpty();
@@ -190,13 +180,12 @@ public class PptxExtractor_Tests
             .Text("Body text")
             .Image(Png(alt: null, x: 100, y: 1_000_000, extent: 300_000)));
 
-        var result = await CreateExtractor(minImagePixels: 1000).ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor(minImagePixels: 1000).ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Body text");
         result.Markdown.ShouldNotContain("SHOULD_NOT_APPEAR");
         result.IsComplete.ShouldBeTrue();
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -209,26 +198,25 @@ public class PptxExtractor_Tests
             .Image(Png(alt: null, x: 100, y: 1_000_000))
             .Image(Png(alt: null, x: 100, y: 2_000_000)));
 
-        var result = await CreateExtractor(maxImages: 1).ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor(maxImages: 1).ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNull();
         result.IncompleteReason!.ShouldContain("cap");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Keeps_slide_text_when_an_embedded_image_OCR_throws()
     {
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("vision provider down"));
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .Text("SLIDEBODYTEXT")
             .Image(Png(alt: null, x: 100, y: 1_000_000)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("SLIDEBODYTEXT");
         result.IsComplete.ShouldBeFalse();
@@ -246,13 +234,12 @@ public class PptxExtractor_Tests
             .Text("Body text")
             .Image(emf));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Body text");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("decoded");
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -267,7 +254,7 @@ public class PptxExtractor_Tests
             .Text("Slide title", isTitle: true, y: 100)
             .Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Quarterly Revenue");
         result.Markdown.ShouldContain("| Category | Revenue |");
@@ -275,8 +262,7 @@ public class PptxExtractor_Tests
         result.Markdown.ShouldContain("| Q2 | 20 |");
         result.IsComplete.ShouldBeTrue();
         // Charts are pure structured extraction — no OCR call.
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -299,7 +285,7 @@ public class PptxExtractor_Tests
             .Text("Slide body")
             .Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Slide body");          // slide text retained
         result.Markdown.ShouldNotContain("Spring");           // the misaligned table is not emitted
@@ -323,7 +309,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("| Category | Revenue | Cost |");
         result.Markdown.ShouldContain("| Q1 | 10 | 3 |");
@@ -342,12 +328,11 @@ public class PptxExtractor_Tests
         var image = new PptxFixtures.ImageSpec(bytes, "image/png", null, 100, 1_000_000);
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Text("Body text").Image(image));
 
-        var result = await CreateExtractor(maxImageBytes: bytes.Length).ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor(maxImageBytes: bytes.Length).ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("FIGURE");
         result.IsComplete.ShouldBeTrue();
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -367,7 +352,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("| Q1 | 10 | 3 |");
         result.Markdown.ShouldContain("| Q2 | 20 | 4 |");
@@ -391,7 +376,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // The idx-2 row carries the real "Q3" label (a numeric fallback would label it "3") and series-2's
         // value 5.
@@ -409,7 +394,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // The newline in the title must collapse so the bold run / table header is not broken.
         result.Markdown.ShouldContain("**Revenue by Quarter**");
@@ -426,7 +411,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Table(table));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("| Name | Amount |");
         result.Markdown.ShouldContain("| Widget | 42 |");
@@ -446,7 +431,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Table(table));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // Separator row must have 3 columns (the widest), not 1 (the header row's count).
         result.Markdown.ShouldContain("| --- | --- | --- |");
@@ -461,7 +446,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .TextWithSoftBreak("123 Main St", "Suite 400"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // The a:br must not fuse the two runs into "123 Main StSuite 400".
         result.Markdown.ShouldNotContain("StSuite");
@@ -475,7 +460,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .Text("Revenue up 10%\nCosts flat\nHiring freeze"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // Paragraphs are joined with a blank line so they don't collapse into one rendered paragraph.
         result.Markdown.ShouldContain("Revenue up 10%\n\nCosts flat");
@@ -494,7 +479,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("| Q1 | 10 |");          // table still rendered
         result.Markdown.ShouldNotContain("**USD millions**");  // axis title not used as the chart caption
@@ -511,7 +496,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // The positional fallback keeps every point aligned even though no pt carries an idx attribute.
         result.Markdown.ShouldContain("| Jan | 7 |");
@@ -528,14 +513,13 @@ public class PptxExtractor_Tests
         var bogus = new PptxFixtures.ImageSpec(new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 }, "image/png", null, 100, 1_000_000);
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Text("Body text").Image(bogus));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Body text");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("decoded");
         // No OCR call wasted on garbage bytes.
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -544,7 +528,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .Text("Annual Report", isTitle: true, y: 100));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("## Annual Report");
     }
@@ -558,7 +542,7 @@ public class PptxExtractor_Tests
             .Text("Real slide content")
             .WithSlideNumberField("7"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Real slide content");
         result.Markdown.ShouldNotContain("7");
@@ -570,7 +554,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .Text("Annual Report\n2024", isTitle: true, y: 100));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // Paragraph breaks in a title collapse to a single space (no "## Annual Report  2024" double space).
         result.Markdown.ShouldContain("## Annual Report 2024");
@@ -584,7 +568,7 @@ public class PptxExtractor_Tests
             .Text("Visible content")
             .WithNotes("Remember to mention the Q3 numbers"));
 
-        var result = await CreateExtractor(includeNotes: true).ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor(includeNotes: true).ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("### Speaker notes");
         result.Markdown.ShouldContain("Remember to mention the Q3 numbers");
@@ -603,7 +587,7 @@ public class PptxExtractor_Tests
             .Text("Visible content")
             .WithNotes("Internal-only speaker note"));
 
-        var result = await extractor.ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await extractor.ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Visible content");
         result.Markdown.ShouldNotContain("Speaker notes");
@@ -621,13 +605,12 @@ public class PptxExtractor_Tests
             .Text("Body text")
             .Image(Png(alt: null, x: 100, y: 1_000_000)));
 
-        var result = await CreateExtractor(maxImageBytes: 50).ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor(maxImageBytes: 50).ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Body text");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("size cap");
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -637,7 +620,7 @@ public class PptxExtractor_Tests
             .Text("Visible content")
             .WithNotes("Hidden author note"));
 
-        var result = await CreateExtractor(includeNotes: false).ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor(includeNotes: false).ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Visible content");
         result.Markdown.ShouldNotContain("Speaker notes");
@@ -651,7 +634,7 @@ public class PptxExtractor_Tests
             new PptxFixtures.SlideSpec().Text("FIRST_SLIDE"),
             new PptxFixtures.SlideSpec().Text("SECOND_SLIDE"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         var first = result.Markdown.IndexOf("FIRST_SLIDE", StringComparison.Ordinal);
         var second = result.Markdown.IndexOf("SECOND_SLIDE", StringComparison.Ordinal);
@@ -664,7 +647,7 @@ public class PptxExtractor_Tests
     {
         var notPptx = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("this is not a pptx"));
 
-        var result = await CreateExtractor().ExtractAsync(notPptx, PptxContext());
+        var result = await CreateExtractor().ParseAsync(notPptx, "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         // No whole-page OCR fallback exists for PPTX, so an unopenable deck is reported as empty +
         // incomplete (the honest #268 signal), not a silent empty success.
@@ -672,8 +655,7 @@ public class PptxExtractor_Tests
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNullOrEmpty();
         result.ProviderName.ShouldBe(PptxExtractor.ProviderIdentifier);
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -686,13 +668,12 @@ public class PptxExtractor_Tests
             .Text("Slide body")
             .ImageInGroup(Png(alt: "Nested diagram", x: 100, y: 100)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("GROUPED_FIGURE_TEXT");
         result.Markdown.ShouldContain("Nested diagram");
         result.Markdown.ShouldNotContain("**Nested diagram**");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -709,7 +690,7 @@ public class PptxExtractor_Tests
             .Text("Slide body")
             .Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Slide body");
         result.IsComplete.ShouldBeFalse();
@@ -728,11 +709,13 @@ public class PptxExtractor_Tests
         // #441: no central host default. With no per-document hints, the figure path passes empty hints;
         // a provider that needs a default reads its own config (e.g. PaddleOcr:Languages).
         var extractor = CreateExtractor();
-        await extractor.ExtractAsync(new MemoryStream(pptx), PptxContext());
+        await extractor.ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
-        await _ocr.Received(1).RecognizeAsync(
+        await _ocr.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o => o.LanguageHints.Count == 0),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Is<DocumentExtractionOptions?>(o => ParseTestKit.HasLanguageHints(o, System.Array.Empty<string>())),
             Arg.Any<CancellationToken>());
     }
 
@@ -747,7 +730,7 @@ public class PptxExtractor_Tests
             .Text("Ordinary slide text")
             .McAlternateContentText("MC_WRAPPED_CONTENT"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("Ordinary slide text");
         result.Markdown.ShouldContain("MC_WRAPPED_CONTENT");
@@ -770,7 +753,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("| 2023 / Q1 | 10 |");
         result.Markdown.ShouldContain("| 2023 / Q2 | 20 |");
@@ -794,7 +777,7 @@ public class PptxExtractor_Tests
 
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec().Chart(chart));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         result.Markdown.ShouldContain("| 2023 / Q1 | 10 |");
         result.Markdown.ShouldContain("| 2023 / Q2 | 20 |");
@@ -814,7 +797,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .GroupedCaptionAndImage(caption: "GROUP_CAPTION", captionY: 3_000_000, image: Png(alt: null, x: 100, y: 100)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         var image = result.Markdown.IndexOf("GROUP_IMAGE", StringComparison.Ordinal);
         var caption = result.Markdown.IndexOf("GROUP_CAPTION", StringComparison.Ordinal);
@@ -833,7 +816,7 @@ public class PptxExtractor_Tests
             .Text("MANUAL_SHAPE", x: 100, y: 1_000_000)
             .WithLayoutInheritedBody("INHERITED_BODY", layoutBodyY: 5_000_000));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         var manual = result.Markdown.IndexOf("MANUAL_SHAPE", StringComparison.Ordinal);
         var body = result.Markdown.IndexOf("INHERITED_BODY", StringComparison.Ordinal);
@@ -852,7 +835,7 @@ public class PptxExtractor_Tests
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
             .ScaledGroupOrdering(inside: "INSIDE_GROUP", insideLocalY: 5_000_000, outside: "OUTSIDE_SHAPE", outsideY: 3_000_000));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(pptx), PptxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
         var inside = result.Markdown.IndexOf("INSIDE_GROUP", StringComparison.Ordinal);
         var outside = result.Markdown.IndexOf("OUTSIDE_SHAPE", StringComparison.Ordinal);

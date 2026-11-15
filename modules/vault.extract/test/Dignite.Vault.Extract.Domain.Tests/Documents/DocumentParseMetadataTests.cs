@@ -5,58 +5,35 @@ using Xunit;
 namespace Dignite.Vault.Extract.Documents;
 
 /// <summary>
-/// #218: after <see cref="DocumentParseMetadata"/> / <see cref="NativePayloadManifest"/> inherit
-/// ABP <c>ValueObject</c>, they get structural equality exposed through <c>ValueEquals</c>. ABP 10.x
-/// ValueObject does not override <c>Equals</c>/<c>GetHashCode</c>/<c>==</c>; structural comparison is the
-/// opt-in <c>ValueEquals</c>. This must not break System.Text.Json serialization round-trips, following
-/// the same pattern as ExportColumn. Pure unit test; no ABP host required.
+/// #218: <see cref="DocumentParseMetadata"/> inherits ABP <c>ValueObject</c> and gets structural equality through
+/// <c>ValueEquals</c> (ABP's ValueObject does not override <c>Equals</c>/<c>GetHashCode</c>/<c>==</c>). This must not
+/// break System.Text.Json round-trips, and JSON written by earlier versions must still read. Pure unit test; no ABP host
+/// required.
 /// </summary>
 public class DocumentParseMetadataTests
 {
-    private static NativePayloadManifest CreateManifest() =>
-        new("extraction-native/doc-1", "application/json", 1234, "abc123", "PaddleOCR/PP-StructureV3");
-
     [Fact]
-    public void Manifest_With_Same_Values_Should_Be_ValueEqual()
+    public void Metadata_With_Same_Values_Should_Be_ValueEqual()
     {
-        CreateManifest().ValueEquals(CreateManifest()).ShouldBeTrue();
-    }
-
-    [Fact]
-    public void Manifest_With_Different_Values_Should_Not_Be_ValueEqual()
-    {
-        var other = new NativePayloadManifest(
-            "extraction-native/doc-1", "application/json", 1234, "DIFFERENT", "PaddleOCR/PP-StructureV3");
-        CreateManifest().ValueEquals(other).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void Metadata_With_Same_Values_Including_Nested_Manifest_Should_Be_ValueEqual()
-    {
-        var a = new DocumentParseMetadata("PaddleOCR", CreateManifest());
-        var b = new DocumentParseMetadata("PaddleOCR", CreateManifest());
-
-        a.ValueEquals(b).ShouldBeTrue();
+        new DocumentParseMetadata("PaddleOCR").ValueEquals(new DocumentParseMetadata("PaddleOCR")).ShouldBeTrue();
     }
 
     [Fact]
     public void Metadata_With_Null_Members_Should_Be_ValueEqual_And_Differ_From_Populated()
     {
-        var emptyA = new DocumentParseMetadata(null, null);
-        var emptyB = new DocumentParseMetadata(null, null);
+        var emptyA = new DocumentParseMetadata(null);
+        var emptyB = new DocumentParseMetadata(null);
 
         emptyA.ValueEquals(emptyB).ShouldBeTrue();
-        emptyA.ValueEquals(new DocumentParseMetadata("PaddleOCR", null)).ShouldBeFalse();
-        emptyA.ValueEquals(new DocumentParseMetadata(null, CreateManifest())).ShouldBeFalse();
+        emptyA.ValueEquals(new DocumentParseMetadata("PaddleOCR")).ShouldBeFalse();
     }
 
     [Fact]
     public void Json_Roundtrip_Should_Preserve_Value_Equality()
     {
-        var original = new DocumentParseMetadata("PaddleOCR", CreateManifest());
+        var original = new DocumentParseMetadata("PaddleOCR");
 
-        var json = JsonSerializer.Serialize(original);
-        var roundtripped = JsonSerializer.Deserialize<DocumentParseMetadata>(json);
+        var roundtripped = JsonSerializer.Deserialize<DocumentParseMetadata>(JsonSerializer.Serialize(original));
 
         roundtripped.ShouldNotBeNull();
         roundtripped!.ValueEquals(original).ShouldBeTrue();
@@ -65,15 +42,13 @@ public class DocumentParseMetadataTests
     [Fact]
     public void Completeness_Participates_In_Value_Equality_And_Json_Roundtrip()
     {
-        var complete = new DocumentParseMetadata("VisionLlm", null);
+        var complete = new DocumentParseMetadata("VisionLlm");
         var incomplete = new DocumentParseMetadata(
-            "VisionLlm", null, isComplete: false, incompleteReason: "2 of 5 page(s) were not fully transcribed.");
+            "VisionLlm", isComplete: false, incompleteReason: "2 of 5 page(s) were not fully transcribed.");
 
-        // Completeness participates in structural equality, even when manifest is null.
         complete.ValueEquals(incomplete).ShouldBeFalse();
 
-        var roundtripped = JsonSerializer.Deserialize<DocumentParseMetadata>(
-            JsonSerializer.Serialize(incomplete));
+        var roundtripped = JsonSerializer.Deserialize<DocumentParseMetadata>(JsonSerializer.Serialize(incomplete));
         roundtripped.ShouldNotBeNull();
         roundtripped!.IsComplete.ShouldBeFalse();
         roundtripped.IncompleteReason.ShouldBe("2 of 5 page(s) were not fully transcribed.");
@@ -92,5 +67,21 @@ public class DocumentParseMetadataTests
         metadata.ShouldNotBeNull();
         metadata!.IsComplete.ShouldBeTrue();
         metadata.IncompleteReason.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Legacy_Json_With_A_Native_Payload_Manifest_Still_Reads()
+    {
+        // Rows written while the parse job archived native payloads carry the manifest; it is ignored on read.
+        var legacyJson = """
+            {"ProviderName":"PaddleOCR","NativePayloadManifest":{"BlobName":"extraction-native/doc-1","ContentType":"application/json","SizeBytes":1234,"Sha256":"abc123","SchemaName":"PaddleOCR/PP-StructureV3"},"IsComplete":false,"IncompleteReason":"truncated"}
+            """;
+
+        var metadata = JsonSerializer.Deserialize<DocumentParseMetadata>(legacyJson);
+
+        metadata.ShouldNotBeNull();
+        metadata!.ProviderName.ShouldBe("PaddleOCR");
+        metadata.IsComplete.ShouldBeFalse();
+        metadata.IncompleteReason.ShouldBe("truncated");
     }
 }

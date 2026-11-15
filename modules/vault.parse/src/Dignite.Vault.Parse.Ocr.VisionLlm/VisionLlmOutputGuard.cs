@@ -257,8 +257,8 @@ public static class VisionLlmOutputGuard
     /// "If the image contains no readable text, output nothing at all" / "no commentary, no explanations" rules
     /// — that it found no text, rather than actually transcribing any. Mirrors the reasoning behind
     /// <see cref="StripCodeFences"/> / <see cref="ConvertLatexTables"/>: prompt wording alone does not reliably
-    /// hold, so a deterministic guard normalizes the violation. <c>OcrResult.Markdown</c>'s contract is "empty
-    /// string when the provider recognizes no content" — left unnormalized, this sentence would instead be
+    /// hold, so a deterministic guard normalizes the violation. A transcription's contract is "empty
+    /// string when the engine recognizes no content" — left unnormalized, this sentence would instead be
     /// treated as real transcribed content: inlined into the document's Markdown as a figure's transcription,
     /// and handed to the sub-document segmentation pass as if it were a meaningful standalone span.
     /// </summary>

@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -13,28 +15,29 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Vault.Parse.Ocr.VisionLlm;
 
 /// <summary>
-/// Vendor-agnostic OCR provider built on a multimodal <see cref="IChatClient"/> (vision LLM).
+/// Vendor-agnostic OCR engine built on a multimodal <see cref="IChatClient"/> (vision LLM).
 /// Solves the "phone photo / thermal receipt" scenario where layout OCR (PP-StructureV3) fails outright
 /// (#259). Feeds the image to the host-registered keyed vision client + compile-time instructions and
 /// returns the transcription as Markdown — preserving the Markdown-first channel contract.
 /// <para>
 /// Scope (v1): images and scanned / image-only PDFs (rasterized page by page). Digital PDFs with a text
-/// layer never reach OCR — the Markdown provider handles them. Out-of-band spatial signals (bbox/cells)
-/// do not exist for a chat LLM, so <see cref="OcrResult"/> native-payload fields stay null.
+/// layer never reach OCR — the PDF engine reads them. An image is one page; a PDF gives one section per page, each
+/// referring to its page. A chat LLM has no regions, so no element carries a polygon.
 /// </para>
 /// </summary>
-public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
+[ExposeServices(typeof(ParseOcrClient), typeof(ParseExtractionClient), typeof(VisionLlmOcrClient))]
+public class VisionLlmOcrClient : ParseOcrClient, ITransientDependency
 {
-    /// <summary>Provider family name surfaced on <see cref="OcrResult.ProviderName"/> for auditability.</summary>
+    /// <summary>The engine name written to <see cref="ParseDocumentMetadata.Provider"/>.</summary>
     public const string ProviderFamilyName = "VisionLlm";
 
     private readonly IChatClient _chatClient;
     private readonly IPdfRasterizer _pdfRasterizer;
     private readonly VisionLlmOcrOptions _options;
 
-    public ILogger<VisionLlmOcrProvider> Logger { get; set; } = NullLogger<VisionLlmOcrProvider>.Instance;
+    public ILogger<VisionLlmOcrClient> Logger { get; set; } = NullLogger<VisionLlmOcrClient>.Instance;
 
-    public VisionLlmOcrProvider(
+    public VisionLlmOcrClient(
         [FromKeyedServices(VisionLlmOcrConsts.VisionChatClientKey)] IChatClient chatClient,
         IPdfRasterizer pdfRasterizer,
         IOptions<VisionLlmOcrOptions> options)
@@ -44,31 +47,53 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
         _options = options.Value;
     }
 
-    public virtual async Task<OcrResult> RecognizeAsync(
-        Stream fileStream,
-        OcrOptions options,
+    public override string ProviderName => ProviderFamilyName;
+
+    public override async Task<ExtractionDocument> ExtractAsync(
+        Stream document,
+        string identifier,
+        string mediaType,
+        DocumentExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var bytes = await ReadAllBytesAsync(fileStream, cancellationToken);
+        var bytes = await ReadAllBytesAsync(document, cancellationToken);
+        var extracted = new ExtractionDocument(identifier).SetProvider(ProviderFamilyName);
 
-        var outcome = DetectInputKind(options.ContentType, bytes) switch
+        switch (DetectInputKind(mediaType, bytes))
         {
-            InputKind.Image => await RecognizeImageAsync(
-                bytes, ResolveImageMediaType(options.ContentType, bytes), cancellationToken),
-            InputKind.Pdf => await RecognizePdfAsync(bytes, cancellationToken),
-            _ => HandleUnsupported(options.ContentType)
-        };
+            case InputKind.Image:
+                var image = await RecognizeImageAsync(bytes, ResolveImageMediaType(mediaType, bytes), cancellationToken);
+                AddPage(extracted, 1, image.Markdown);
+                if (!image.IsComplete)
+                {
+                    extracted.MarkIncomplete(image.IncompleteReason!);
+                }
 
-        return new OcrResult
-        {
-            Markdown = outcome.Markdown,
-            ProviderName = ProviderFamilyName,
-            // #268: surface whether the transcription is complete (truncation / dropped pages / discarded loop).
-            IsComplete = outcome.IsComplete,
-            IncompleteReason = outcome.IncompleteReason
-            // NativePayload* left null: a chat vision LLM has no out-of-band spatial model (bbox / cell).
-            // DetectedLanguage left null: language detection is not this provider's responsibility.
-        };
+                break;
+
+            case InputKind.Pdf:
+                await RecognizePdfAsync(bytes, extracted, cancellationToken);
+                break;
+
+            default:
+                extracted.MarkIncomplete(HandleUnsupported(mediaType).IncompleteReason!);
+                break;
+        }
+
+        // #268: whether the transcription is complete (truncation, dropped pages, a discarded loop) is in the metadata.
+        // Language detection is not this engine's responsibility.
+        return extracted;
+    }
+
+    /// <summary>A section for page <paramref name="pageNumber"/> holding its transcription, read from Markdown.</summary>
+    protected virtual void AddPage(ExtractionDocument document, int pageNumber, string markdown)
+    {
+        var page = new ExtractionDocumentSourcePage("page-" + pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture), pageNumber);
+        document.SourcePages.Add(page);
+        var section = new ExtractionDocumentSection();
+        section.Sources.Add(new ExtractionDocumentSourceReference(page));
+        document.Sections.Add(section);
+        MarkdownDocumentReader.ReadInto(document, section, markdown, page);
     }
 
     /// <summary>Single-image transcription: one vision-LLM call, guarded against repetition loops.</summary>
@@ -206,13 +231,14 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
     /// Scanned / image-only PDF: rasterize each page to PNG and transcribe it. A PDF exceeding
     /// <see cref="VisionLlmOcrOptions.MaxPdfPages"/> fails loudly rather than silently dropping pages.
     /// </summary>
-    protected virtual async Task<ImageTranscription> RecognizePdfAsync(byte[] pdfBytes, CancellationToken cancellationToken)
+    protected virtual async Task RecognizePdfAsync(byte[] pdfBytes, ExtractionDocument document, CancellationToken cancellationToken)
     {
         var pageCount = _pdfRasterizer.GetPageCount(pdfBytes);
         if (pageCount <= 0)
         {
             Logger.LogWarning("VisionLlm OCR: PDF reported {PageCount} pages; nothing to transcribe.", pageCount);
-            return ImageTranscription.Incomplete(string.Empty, "PDF reported no pages.");
+            document.MarkIncomplete("PDF reported no pages.");
+            return;
         }
 
         if (pageCount > _options.MaxPdfPages)
@@ -226,7 +252,6 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
                 "or route large scanned PDFs to a different OCR provider.");
         }
 
-        var pages = new List<string>(pageCount);
         var incompletePages = 0;
         for (var i = 0; i < pageCount; i++)
         {
@@ -254,7 +279,7 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
             var page = await RecognizeImageAsync(png, "image/png", cancellationToken);
             if (!string.IsNullOrWhiteSpace(page.Markdown))
             {
-                pages.Add(page.Markdown);
+                AddPage(document, i + 1, page.Markdown);
                 if (!page.IsComplete)
                 {
                     // Kept but truncated at the token limit — content tail may be missing.
@@ -272,11 +297,10 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
             }
         }
 
-        var combined = string.Join("\n\n", pages);
-        return incompletePages == 0
-            ? ImageTranscription.Complete(combined)
-            : ImageTranscription.Incomplete(
-                combined, $"{incompletePages} of {pageCount} page(s) were not fully transcribed.");
+        if (incompletePages > 0)
+        {
+            document.MarkIncomplete($"{incompletePages} of {pageCount} page(s) were not fully transcribed.");
+        }
     }
 
     /// <summary>Non-image, non-PDF input: fail open with empty Markdown + a warning (document still persists).</summary>
@@ -289,9 +313,8 @@ public class VisionLlmOcrProvider : IOcrProvider, ITransientDependency
     }
 
     /// <summary>
-    /// Outcome of transcribing one image (or an aggregated PDF): the Markdown plus whether it captured the
-    /// complete content. Carried out of the per-image / per-page methods so <see cref="RecognizeAsync"/> can
-    /// populate <see cref="OcrResult.IsComplete"/> / <see cref="OcrResult.IncompleteReason"/> (#268).
+    /// Outcome of transcribing one image: the Markdown plus whether it captured the complete content, which
+    /// <see cref="ExtractAsync"/> records in the document's metadata (#268).
     /// </summary>
     protected readonly record struct ImageTranscription(string Markdown, bool IsComplete, string? IncompleteReason)
     {

@@ -34,7 +34,7 @@ The OCR providers are mutually exclusive, and the shipped host enables [Vision-L
 | --- | --- | --- |
 | `Endpoint` | `http://localhost:8866` | PaddleOCR sidecar REST endpoint |
 | `ModelName` | `PP-StructureV3` | One of: `PP-StructureV3` (CPU, native Markdown), `PP-OCRv4` (lightest, no Markdown structure), `PaddleOCR-VL-1.5` (highest quality; needs a GPU and a ~2 GB model download; native Markdown) |
-| `Languages` | `["ja", "en"]` | Default recognition languages (BCP 47); a call's `OcrOptions.LanguageHints` overrides them |
+| `Languages` | `["ja", "en"]` | Default recognition languages (BCP 47); language hints in a call's extraction options override them |
 | `TimeoutSeconds` | `600` | Timeout of the HTTP client that calls the sidecar |
 
 ## Running the Sidecar

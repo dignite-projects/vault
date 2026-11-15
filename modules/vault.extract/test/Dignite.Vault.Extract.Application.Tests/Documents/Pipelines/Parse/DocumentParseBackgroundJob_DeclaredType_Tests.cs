@@ -12,6 +12,7 @@ using Dignite.Vault.Extract.Documents.Pipelines.Parse;
 using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DocumentExtraction;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -38,7 +39,7 @@ public class DocumentParseDeclaredTypeJobTestModule : AbpModule
         // #216: Manager + background-job BeginRun / CompleteRun / FailRun all use IDocumentPipelineRunRepository.
         context.Services.AddSingleton(PipelineRunRepositoryFake.Create());
 
-        context.Services.AddSingleton(Substitute.For<ITextExtractor>());
+        context.Services.AddSingleton(Substitute.For<DocumentExtractionClient>());
         context.Services.AddSingleton(Substitute.For<IBlobContainer<VaultExtractDocumentContainer>>());
         context.Services.AddSingleton(Substitute.For<IPromptProvider>());
         context.Services.AddKeyedSingleton(
@@ -74,7 +75,7 @@ public class DocumentParseBackgroundJob_DeclaredType_Tests
     private readonly IDocumentPipelineRunRepository _runRepository;
     private readonly IDistributedEventBus _eventBus;
     private readonly IBackgroundJobManager _backgroundJobManager;
-    private readonly ITextExtractor _textExtractor;
+    private readonly DocumentExtractionClient _extractionClient;
     private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
 
     public DocumentParseBackgroundJob_DeclaredType_Tests()
@@ -86,7 +87,7 @@ public class DocumentParseBackgroundJob_DeclaredType_Tests
         _runRepository = GetRequiredService<IDocumentPipelineRunRepository>();
         _eventBus = GetRequiredService<IDistributedEventBus>();
         _backgroundJobManager = GetRequiredService<IBackgroundJobManager>();
-        _textExtractor = GetRequiredService<ITextExtractor>();
+        _extractionClient = GetRequiredService<DocumentExtractionClient>();
         _blobContainer = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
     }
 
@@ -199,16 +200,7 @@ public class DocumentParseBackgroundJob_DeclaredType_Tests
     {
         _blobContainer.GetAsync(Arg.Any<string>())
             .Returns(Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
-        _textExtractor.ExtractAsync(
-                Arg.Any<Stream>(),
-                Arg.Any<TextExtractionContext>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new TextExtractionResult
-            {
-                Markdown = markdown,
-                DetectedLanguage = "en",
-                ProviderName = "ElBruno.MarkItDotNet"
-            });
+        _extractionClient.Answers(markdown, language: "en");
     }
 
     private static Document CreateDocument()

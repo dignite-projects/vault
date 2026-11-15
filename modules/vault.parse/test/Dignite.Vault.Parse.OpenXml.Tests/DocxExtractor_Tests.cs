@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -15,7 +18,7 @@ namespace Dignite.Vault.Parse.OpenXml;
 
 public class DocxExtractor_Tests
 {
-    private readonly IOcrProvider _ocr = Substitute.For<IOcrProvider>();
+    private readonly ParseOcrClient _ocr = Substitute.ForPartsOf<ParseOcrClient>();
 
     private DocxExtractor CreateExtractor(
         int minImagePixels = 0,
@@ -30,22 +33,10 @@ public class DocxExtractor_Tests
                 MaxImageBytesPerImage = maxImageBytes
             }));
 
-    private static TextExtractionContext DocxContext()
-        => new()
-        {
-            ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            FileExtension = ".docx"
-        };
-
     private void StubOcr(string markdown, bool isComplete = true, string? reason = null)
-        => _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
-            .Returns(new OcrResult
-            {
-                Markdown = markdown,
-                ProviderName = "FakeOcr",
-                IsComplete = isComplete,
-                IncompleteReason = reason
-            });
+        => _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(call => ParseTestKit.OcrDocument(
+                call.ArgAt<string>(1), markdown, "FakeOcr", isComplete ? null : reason ?? "incomplete"));
 
     private static DocxFixtures.ImageSpec Png(string? alt, long extent = 914400)
         => new(TinyPng.CreateSolid(48, 48), "image/png", alt, extent, extent);
@@ -56,7 +47,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Paragraph("The quick brown fox."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("The quick brown fox.");
         result.ProviderName.ShouldBe(DocxExtractor.ProviderIdentifier);
@@ -72,7 +63,7 @@ public class DocxExtractor_Tests
             .Heading("Financials", 2)
             .Paragraph("Body text."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("# Annual Report");
         result.Markdown.ShouldContain("## Financials");
@@ -85,7 +76,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .StyledParagraph("Document Title", "Title"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("# Document Title");
     }
@@ -96,7 +87,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Heading("Annual Report\n2024", 1));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("# Annual Report 2024");
         result.Markdown.ShouldNotContain("Annual Report  2024");
@@ -113,7 +104,7 @@ public class DocxExtractor_Tests
             .Paragraph("> Not a quote")
             .Paragraph("1. Not ordered"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("\\# Not a heading");
         result.Markdown.ShouldContain("\\- Not a list");
@@ -128,7 +119,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .SoftBreak("Intro line", "- looks like a sub-item"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Intro line\n\\- looks like a sub-item");
     }
@@ -140,7 +131,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Runs(new DocxFixtures.RunSpec("a*b", Bold: true)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("**a\\*b**");
     }
@@ -151,7 +142,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Paragraph("See [the site](http://evil.example) now"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("See \\[the site\\](http://evil.example) now");
     }
@@ -163,7 +154,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Heading("Clause [9](http://x)", 1));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("# Clause \\[9\\](http://x)");
     }
@@ -174,7 +165,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Paragraph("The fee is 3.14 per unit - a fair price."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("The fee is 3.14 per unit - a fair price.");
     }
@@ -189,7 +180,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Image(Png(alt: "See [details](http://evil.example)")));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("See \\[details\\](http://evil.example)");
         result.Markdown.ShouldNotContain("**See");
@@ -202,7 +193,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .HyperlinkParagraph("click *now*", "http://example.com/page"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[click \\*now\\*](http://example.com/page)");
     }
@@ -217,7 +208,7 @@ public class DocxExtractor_Tests
             .Image(Png(alt: null))
             .Paragraph("CHARLIE"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         var alpha = result.Markdown.IndexOf("ALPHA", StringComparison.Ordinal);
         var bravo = result.Markdown.IndexOf("BRAVO", StringComparison.Ordinal);
@@ -238,11 +229,13 @@ public class DocxExtractor_Tests
             .Paragraph("Body text")
             .Image(Png(alt: null)));
 
-        await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        await _ocr.Received(1).RecognizeAsync(
+        await _ocr.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o => o.ContentType.StartsWith("image/", StringComparison.Ordinal)),
+            Arg.Any<string>(),
+            Arg.Is<string>(t => t.StartsWith("image/", StringComparison.Ordinal)),
+            Arg.Any<DocumentExtractionOptions?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -254,7 +247,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Image(Png(alt: "Quarterly Revenue Diagram")));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Quarterly Revenue Diagram");
         result.Markdown.ShouldNotContain("**Quarterly Revenue Diagram**");
@@ -280,7 +273,7 @@ public class DocxExtractor_Tests
             .Paragraph("Cover letter")
             .Image(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("*[Image OCR]*");
         result.Markdown.ShouldContain("*[End OCR]*");
@@ -296,7 +289,7 @@ public class DocxExtractor_Tests
             .Paragraph("Body text")
             .Image(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNullOrEmpty();
@@ -313,13 +306,12 @@ public class DocxExtractor_Tests
             .Paragraph("Body text")
             .Image(Png(alt: null, extent: 300_000)));
 
-        var result = await CreateExtractor(minImagePixels: 1000).ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor(minImagePixels: 1000).ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Body text");
         result.Markdown.ShouldNotContain("SHOULD_NOT_APPEAR");
         result.IsComplete.ShouldBeTrue();
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -332,26 +324,25 @@ public class DocxExtractor_Tests
             .Image(Png(alt: null))
             .Image(Png(alt: null)));
 
-        var result = await CreateExtractor(maxImages: 1).ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor(maxImages: 1).ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNull();
         result.IncompleteReason!.ShouldContain("cap");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Keeps_document_text_when_an_embedded_image_OCR_throws()
     {
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("vision provider down"));
 
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Paragraph("DOCBODYTEXT")
             .Image(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("DOCBODYTEXT");
         result.IsComplete.ShouldBeFalse();
@@ -363,14 +354,14 @@ public class DocxExtractor_Tests
     public async Task Keeps_document_text_when_an_embedded_image_OCR_times_out()
     {
         // A provider timeout surfaces as TaskCanceledException while the caller's token is NOT cancelled.
-        _ocr.RecognizeAsync(Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>())
+        _ocr.ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>())
             .Throws(new TaskCanceledException());
 
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Paragraph("DOCBODYTEXT")
             .Image(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("DOCBODYTEXT");
         result.IsComplete.ShouldBeFalse();
@@ -388,13 +379,12 @@ public class DocxExtractor_Tests
             .Paragraph("Body text")
             .Image(emf));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Body text");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("decoded");
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -406,13 +396,12 @@ public class DocxExtractor_Tests
         var bogus = new DocxFixtures.ImageSpec(new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 }, "image/png", null);
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec().Paragraph("Body text").Image(bogus));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Body text");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("decoded");
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -426,13 +415,12 @@ public class DocxExtractor_Tests
             .Paragraph("Body text")
             .Image(Png(alt: null)));
 
-        var result = await CreateExtractor(maxImageBytes: 50).ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor(maxImageBytes: 50).ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Body text");
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason!.ShouldContain("size cap");
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -441,7 +429,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .SoftBreak("123 Main St", "Suite 400"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         // The w:br must not fuse the two runs into "123 Main StSuite 400".
         result.Markdown.ShouldNotContain("StSuite");
@@ -456,7 +444,7 @@ public class DocxExtractor_Tests
             .Paragraph("Revenue up 10%")
             .Paragraph("Costs flat"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         // Paragraphs are joined with a blank line so they don't collapse into one rendered paragraph.
         result.Markdown.ShouldContain("Revenue up 10%\n\nCosts flat");
@@ -474,11 +462,13 @@ public class DocxExtractor_Tests
         // #441: no central host default. With no per-document hints, the figure path passes empty hints;
         // a provider that needs a default reads its own config (e.g. PaddleOcr:Languages).
         var extractor = CreateExtractor();
-        await extractor.ExtractAsync(new MemoryStream(docx), DocxContext());
+        await extractor.ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        await _ocr.Received(1).RecognizeAsync(
+        await _ocr.Received(1).ExtractAsync(
             Arg.Any<Stream>(),
-            Arg.Is<OcrOptions>(o => o.LanguageHints.Count == 0),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Is<DocumentExtractionOptions?>(o => ParseTestKit.HasLanguageHints(o, System.Array.Empty<string>())),
             Arg.Any<CancellationToken>());
     }
 
@@ -487,7 +477,7 @@ public class DocxExtractor_Tests
     {
         var notDocx = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("this is not a docx"));
 
-        var result = await CreateExtractor().ExtractAsync(notDocx, DocxContext());
+        var result = await CreateExtractor().ParseAsync(notDocx, "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         // At runtime this provider owns .docx and the orchestrator does not fall through to ElBruno, so an
         // unopenable file is reported as empty + incomplete (the honest #268 signal), not a silent success.
@@ -495,8 +485,7 @@ public class DocxExtractor_Tests
         result.IsComplete.ShouldBeFalse();
         result.IncompleteReason.ShouldNotBeNullOrEmpty();
         result.ProviderName.ShouldBe(DocxExtractor.ProviderIdentifier);
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -508,7 +497,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .AlternateContentTextBox("TEXTBOX_CONTENT"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         CountOccurrences(result.Markdown, "TEXTBOX_CONTENT").ShouldBe(1);
     }
@@ -525,11 +514,10 @@ public class DocxExtractor_Tests
             .Paragraph("Body text")
             .AlternateContentImage(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         CountOccurrences(result.Markdown, "FIGURE_ONCE").ShouldBe(1);
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -542,7 +530,7 @@ public class DocxExtractor_Tests
                 new[] { "Widget", "42" }
             }));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("| Name | Amount |");
         result.Markdown.ShouldContain("| --- | --- |");
@@ -559,7 +547,7 @@ public class DocxExtractor_Tests
                 new[] { "NESTED-C", "NESTED-D" }
             }));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("NESTED-A");
         result.Markdown.ShouldContain("NESTED-B");
@@ -588,7 +576,7 @@ public class DocxExtractor_Tests
                 new[] { "NESTED-C", "NESTED-D" }
             }, deepestText: "DEEPEST"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         CountOccurrences(result.Markdown, "DEEPEST").ShouldBe(1);
     }
@@ -606,7 +594,7 @@ public class DocxExtractor_Tests
                 new[] { "1", "2", "3" }
             }));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("| --- | --- | --- |");
         result.Markdown.ShouldContain("| Summary |  |  |");
@@ -623,7 +611,7 @@ public class DocxExtractor_Tests
                 new DocxFixtures.RunSpec(" and "),
                 new DocxFixtures.RunSpec("italic", Italic: true)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("normal **bold** and *italic*");
     }
@@ -637,7 +625,7 @@ public class DocxExtractor_Tests
                 new DocxFixtures.RunSpec("Hel", Bold: true),
                 new DocxFixtures.RunSpec("lo", Bold: true)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("**Hello**");
         result.Markdown.ShouldNotContain("****");
@@ -649,7 +637,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Runs(new DocxFixtures.RunSpec("both", Bold: true, Italic: true)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("***both***");
     }
@@ -664,7 +652,7 @@ public class DocxExtractor_Tests
                 new DocxFixtures.RunSpec(" mid ", Bold: true),
                 new DocxFixtures.RunSpec("b")));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("a **mid** b");
     }
@@ -675,7 +663,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .HyperlinkParagraph("Anthropic", "https://www.anthropic.com/"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[Anthropic](https://www.anthropic.com/)");
     }
@@ -688,7 +676,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .HyperlinkParagraph("docs", "https://e.com/a b"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[docs](<https://e.com/a b>)");
     }
@@ -700,7 +688,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .TrackedChangesParagraph(before: "Kept ", inserted: "added", deleted: "removed"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Kept");
         result.Markdown.ShouldContain("added");
@@ -716,7 +704,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .HeadingWithTextBox("HEAD_TITLE", "TB_CONTENT"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("# HEAD_TITLE");
         result.Markdown.ShouldNotContain("HEAD_TITLETB_CONTENT");
@@ -729,7 +717,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Chart("Quarterly Revenue", new[] { "Q1", "Q2" }, "Revenue", new[] { "10", "20" }));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Quarterly Revenue");
         result.Markdown.ShouldContain("| Category | Revenue |");
@@ -737,8 +725,7 @@ public class DocxExtractor_Tests
         result.Markdown.ShouldContain("| Q2 | 20 |");
         result.IsComplete.ShouldBeTrue();
         // Charts are pure structured extraction from the format — no OCR call.
-        await _ocr.DidNotReceive().RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -748,7 +735,7 @@ public class DocxExtractor_Tests
             .BulletItem("First")
             .BulletItem("Second"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("- First");
         result.Markdown.ShouldContain("- Second");
@@ -761,7 +748,7 @@ public class DocxExtractor_Tests
             .OrderedItem("Step one")
             .OrderedItem("Step two"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("1. Step one");
         result.Markdown.ShouldContain("1. Step two");
@@ -775,12 +762,17 @@ public class DocxExtractor_Tests
             .BulletItem("Nested", level: 1)
             .BulletItem("Deeper", level: 2));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        // Three spaces of indentation per nesting level (>= the widest marker "1. ", so ordered nesting works too).
+        // Each level is indented to its parent's content (the width of "- "), which CommonMark reads as nested; the
+        // ordered case is Indents_a_child_under_an_ordered_parent_enough_to_nest.
         result.Markdown.ShouldContain("- Top");
-        result.Markdown.ShouldContain("   - Nested");
-        result.Markdown.ShouldContain("      - Deeper");
+        result.Markdown.ShouldContain("\n  - Nested");
+        result.Markdown.ShouldContain("\n    - Deeper");
+        result.Document.EnumerateContent().OfType<ExtractionDocumentTextElement>()
+            .Select(element => element.Content is TextContent { AdditionalProperties: { } properties }
+                && properties.TryGetValue(ParseContentProperties.ListLevel, out var level) ? Convert.ToInt32(level) : -1)
+            .ShouldBe(new[] { 0, 1, 2 });
     }
 
     [Fact]
@@ -793,7 +785,7 @@ public class DocxExtractor_Tests
             .BulletItem("sub", level: 1)
             .OrderedItem("Second", level: 0));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("1. First");
         result.Markdown.ShouldContain("   - sub");
@@ -810,11 +802,10 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .TableWithImageInCell(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("CELL_FIGURE");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -825,7 +816,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .ContentControl("FORM_FIELD_TEXT"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("FORM_FIELD_TEXT");
         result.IsComplete.ShouldBeTrue();
@@ -837,16 +828,15 @@ public class DocxExtractor_Tests
         StubOcr("VML_FIGURE");
 
         // A compatibility-mode / legacy DOCX can carry a PNG/JPEG via VML (w:pict/v:imagedata) instead of
-        // DrawingML; it must still be OCR'd through the IOcrProvider, not silently dropped.
+        // DrawingML; it must still be OCR'd through the OCR engine, not silently dropped.
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Paragraph("Body text")
             .VmlImage(Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("VML_FIGURE");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -858,7 +848,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .DanglingLevelItem("Orphan", level: 1));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("- Orphan");
         result.Markdown.ShouldNotContain("1. Orphan");
@@ -872,7 +862,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .TableWithContentControlCell("CELL_FORM_FIELD"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("CELL_FORM_FIELD");
     }
@@ -885,7 +875,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .DeeplyNestedContentControl(depth: 40, text: "DEEP"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.ShouldNotBeNull();
         result.IsComplete.ShouldBeFalse();
@@ -902,12 +892,11 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .TextBoxWithImage("box text", Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         CountOccurrences(result.Markdown, "BOX_FIGURE").ShouldBe(1);
         result.Markdown.ShouldContain("box text");
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -918,7 +907,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .BulletItem("Item", level: int.MaxValue));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("- Item");
         result.IsComplete.ShouldBeTrue();
@@ -932,7 +921,7 @@ public class DocxExtractor_Tests
             .Footnote("Body with a footnote", 2, "The footnote text.")
             .Endnote("Body with an endnote", 3, "The endnote text."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         // Markers sit at the reference's reading position (right after the run text).
         result.Markdown.ShouldContain("Body with a footnote[^fn2]");
@@ -956,7 +945,7 @@ public class DocxExtractor_Tests
             .Paragraph("Intro")
             .Footnote("Body with a footnote", 2, "First note paragraph.\n\nSecond note paragraph."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[^fn2]: First note paragraph.");
         // The continuation paragraph is indented four spaces (attached to the definition), never flush-left.
@@ -973,7 +962,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .HeadingFootnote("Chapter One", 2, "Heading note body.", level: 1));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("# Chapter One[^fn2]");
         result.Markdown.ShouldContain("[^fn2]: Heading note body.");
@@ -988,7 +977,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .FootnoteInTableCell("Cell value", 2, "Cell note body."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Cell value[^fn2]");
         result.Markdown.ShouldContain("[^fn2]: Cell note body.");
@@ -1000,7 +989,7 @@ public class DocxExtractor_Tests
     {
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec().Paragraph("Plain body, no notes."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Plain body, no notes.");
         result.Markdown.ShouldNotContain("[^");
@@ -1015,7 +1004,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .Footnote("See note", 2, "Author footnote."));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[^fn2]: Author footnote.");
         result.Markdown.ShouldNotContain("SEP_SENTINEL");
@@ -1032,7 +1021,7 @@ public class DocxExtractor_Tests
             .Footnote("Real", 2, "Real note.")
             .DanglingFootnote("Dangling", 99));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[^fn2]: Real note.");
         result.IsComplete.ShouldBeFalse();
@@ -1047,7 +1036,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .DanglingFootnote("Orphan ref", 2));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("Orphan ref[^fn2]");
         result.IsComplete.ShouldBeFalse();
@@ -1074,7 +1063,7 @@ public class DocxExtractor_Tests
             docx = stream.ToArray();
         }
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("BODYTEXT");
         result.IsComplete.ShouldBeFalse();
@@ -1091,7 +1080,7 @@ public class DocxExtractor_Tests
             .Paragraph("Intro")
             .FootnoteWithBodyLink("See note", 2, "Reference: ", "the source", "https://notes.example/fn-source"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[^fn2]: Reference: [the source](https://notes.example/fn-source)");
         result.IsComplete.ShouldBeTrue();
@@ -1110,7 +1099,7 @@ public class DocxExtractor_Tests
                 linkUrl: "https://notes.example/en-archive",
                 mainDecoyUrl: "https://main.example/decoy"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("[^en3]: Cited at [the archive](https://notes.example/en-archive)");
         result.Markdown.ShouldNotContain("https://main.example/decoy");
@@ -1127,10 +1116,9 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .GroupedImages(Png(alt: null), Png(alt: null)));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        await _ocr.Received(2).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(2).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         CountOccurrences(result.Markdown, "GROUPED_FIG").ShouldBe(2);
         result.IsComplete.ShouldBeTrue();
     }
@@ -1146,10 +1134,9 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .ShapeFillImage(Png(alt: null), altText: "FILL_ALT"));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        await _ocr.Received(1).RecognizeAsync(
-            Arg.Any<Stream>(), Arg.Any<OcrOptions>(), Arg.Any<CancellationToken>());
+        await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
         result.Markdown.ShouldContain("FILL_FIG");
         result.Markdown.ShouldContain("FILL_ALT");          // #480: caption present, no longer bolded
         result.Markdown.ShouldNotContain("**FILL_ALT**");
@@ -1166,7 +1153,7 @@ public class DocxExtractor_Tests
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
             .TextBoxWithImage("box text", Png(alt: "IMAGE_ALT")));
 
-        var result = await CreateExtractor().ExtractAsync(new MemoryStream(docx), DocxContext());
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         result.Markdown.ShouldContain("IMAGE_ALT");         // #480: caption present, no longer bolded
         result.Markdown.ShouldNotContain("**IMAGE_ALT**");

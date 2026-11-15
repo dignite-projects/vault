@@ -20,7 +20,7 @@ public class PaddleOcrOptions
     /// </summary>
     public string ModelName { get; set; } = "PP-StructureV3";
 
-    /// <summary>Default recognition language list (BCP 47), overridden by OcrOptions.LanguageHints.</summary>
+    /// <summary>Default recognition language list (BCP 47), overridden by the language hints of an extraction (<c>ParseExtractionOptions.LanguageHints</c>).</summary>
     public IList<string> Languages { get; set; } = new List<string> { "ja", "en" };
 
     /// <summary>

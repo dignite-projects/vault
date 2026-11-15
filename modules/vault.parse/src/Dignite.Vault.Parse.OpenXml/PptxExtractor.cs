@@ -5,8 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
-using Dignite.Vault.Parse.Ocr;
 using DocumentFormat.OpenXml.Packaging;
+using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -18,15 +19,15 @@ using P = DocumentFormat.OpenXml.Presentation;
 namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
-/// OpenXML-based Markdown provider for PowerPoint decks (#307, Phase 2 of #299). Owns the full
+/// OpenXML-based engine for PowerPoint decks (#307, Phase 2 of #299). Owns the full
 /// <c>.pptx</c> parsing pass so it can extract slide text (with native heading/table structure and
 /// speaker notes) <b>and</b> the embedded raster images, transcribe each image through the host-selected
-/// <see cref="IOcrProvider"/>, render <c>ChartPart</c> backing data as Markdown tables, and inline
+/// <see cref="ParseOcrClient"/>, render <c>ChartPart</c> backing data as Markdown tables, and inline
 /// everything into the Markdown at its slide/shape reading position. This closes the silent-image-loss
 /// gap where embedded figures in decks never reached the channel output — the exact inline-only
 /// mechanism proven by <c>PdfExtractor</c> in #301.
 /// <para>
-/// <b>Image → text uses <see cref="IOcrProvider"/> only</b> (no keyed Vision <c>IChatClient</c> here, no
+/// <b>Image → text uses <see cref="ParseOcrClient"/> only</b> (no keyed Vision <c>IChatClient</c> here, no
 /// new LLM call site). Semantics are transcription only; the figure's bytes are the OCR input, so there
 /// is no user free-text entering a prompt and no <c>PromptBoundary</c> concern. Charts and tables are
 /// pure structured extraction from the OpenXML format (no OCR / no vision / no LLM).
@@ -37,53 +38,54 @@ namespace Dignite.Vault.Parse.OpenXml;
 /// </para>
 /// <para>
 /// <b>Difference from <c>PdfExtractor</c>.</b> A PDF with no text layer returns empty so the
-/// orchestrator's whole-page OCR fallback owns it. There is <b>no</b> such fallback for PPTX
-/// (it is PDF-only in <c>DefaultTextExtractor</c>), and once this module is installed it owns
+/// router's whole-page OCR fallback owns it. There is <b>no</b> such fallback for PPTX
+/// (it is PDF-only in the router), and once this module is installed it owns
 /// <c>.pptx</c> outright. So an unopenable deck does not silently return empty Markdown — it returns
-/// empty + <see cref="TextExtractionResult.IsComplete"/> <c>= false</c> with a reason (#268), the honest
+/// empty + incomplete with a reason (#268), the honest
 /// escape hatch.
 /// </para>
 /// <para>
-/// <b>This module is required for <c>.pptx</c> text.</b> The catch-all ElBruno provider does <b>not</b>
+/// <b>This module is required for <c>.pptx</c> text.</b> The catch-all ElBruno engine does <b>not</b>
 /// support <c>.pptx</c> (its converter set covers PDF/Word/HTML/CSV/RTF/EPUB but not PresentationML), so
 /// omitting this module makes <c>.pptx</c> fall through to ElBruno, which returns empty Markdown — and
-/// because <c>.pptx</c> is not <c>.pdf</c>, the orchestrator's whole-page OCR fallback does not fire
+/// because <c>.pptx</c> is not <c>.pdf</c>, the router's whole-page OCR fallback does not fire
 /// either. So this is <b>not</b> a "graceful degradation preserving prior behavior": there was no prior
 /// <c>.pptx</c> capability; this module is what gives <c>.pptx</c> any text at all.
 /// </para>
 /// </summary>
-[ExposeServices(typeof(IMarkdownTextProvider))]
-public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
+[ExposeServices(typeof(ParseExtractionClient), typeof(PptxExtractor))]
+public class PptxExtractor : ParseExtractionClient, ITransientDependency
 {
-    /// <summary>Provider family name surfaced on <see cref="TextExtractionResult.ProviderName"/> for auditability.</summary>
+    /// <summary>The engine name written to <see cref="ParseDocumentMetadata.Provider"/>.</summary>
     public const string ProviderIdentifier = "OpenXmlPptx";
 
     /// <summary>EMU per pixel at 96 DPI (914400 EMU/inch ÷ 96). Used to size images for the decorative threshold.</summary>
     private const long EmuPerPixel96 = 9525;
 
-    private readonly IOcrProvider _ocrProvider;
+    private readonly ParseOcrClient _ocr;
     private readonly OpenXmlExtractorOptions _options;
 
     public ILogger<PptxExtractor> Logger { get; set; } = NullLogger<PptxExtractor>.Instance;
 
     public PptxExtractor(
-        IOcrProvider ocrProvider,
+        ParseOcrClient ocr,
         IOptions<OpenXmlExtractorOptions> options)
     {
-        _ocrProvider = ocrProvider;
+        _ocr = ocr;
         _options = options.Value;
     }
 
-    /// <inheritdoc/>
-    public virtual bool CanHandle(string fileExtension)
-        => string.Equals(fileExtension, ".pptx", StringComparison.OrdinalIgnoreCase);
+    public override string ProviderName => ProviderIdentifier;
 
-    /// <inheritdoc/>
-    public virtual int Priority => MarkdownProviderPriorities.Specialized;
+    public override bool CanExtract(string fileExtension, string mediaType)
+        => fileExtension == ".pptx"
+            || (fileExtension.Length == 0 && string.Equals(mediaType, "application/vnd.openxmlformats-officedocument.presentationml.presentation", StringComparison.OrdinalIgnoreCase));
 
-    public virtual async Task<TextExtractionResult> ExtractAsync(
+    public override async Task<ExtractionDocument> ExtractAsync(
         Stream fileStream,
-        TextExtractionContext context,
+        string identifier,
+        string mediaType,
+        DocumentExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var bytes = await ParseStreams.ReadAllBytesAsync(fileStream, cancellationToken);
@@ -102,18 +104,13 @@ public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
             // this provider already owns .pptx, so returning bare empty would silently drop the document.
             // Report empty + incomplete instead — the honest #268 escape hatch.
             Logger.LogWarning(ex, "Could not open the PPTX ({Bytes} bytes); reporting empty + incomplete.", bytes.Length);
-            return new TextExtractionResult
-            {
-                Markdown = string.Empty,
-                ProviderName = ProviderIdentifier,
-                IsComplete = false,
-                IncompleteReason = "The presentation could not be opened (corrupt or unsupported file)."
-            };
+            return Unreadable(identifier);
         }
 
         using (document)
         {
             List<P.SlideId> slideIds;
+            ExtractionDocumentPageDimensions? slideSize = null;
             try
             {
                 // presentation.xml parses lazily, so markup-compatibility processing (mc:AlternateContent
@@ -123,26 +120,25 @@ public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
                 // letting it escape ExtractAsync, mirroring the Open failure path above.
                 var presentation = document.PresentationPart?.Presentation;
                 slideIds = presentation?.SlideIdList?.Elements<P.SlideId>().ToList() ?? new List<P.SlideId>();
+                if (presentation?.SlideSize is { Cx.Value: > 0, Cy.Value: > 0 } size)
+                {
+                    // EMU to points: 12,700 EMU per point.
+                    slideSize = new ExtractionDocumentPageDimensions(size.Cx.Value / 12700.0, size.Cy.Value / 12700.0);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Logger.LogWarning(ex, "Could not read the presentation part; reporting empty + incomplete.");
-                return new TextExtractionResult
-                {
-                    Markdown = string.Empty,
-                    ProviderName = ProviderIdentifier,
-                    IsComplete = false,
-                    IncompleteReason = "The presentation could not be opened (corrupt or unsupported file)."
-                };
+                return Unreadable(identifier);
             }
 
             var state = new PptxExtractionState
             {
                 ImageBudget = _options.MaxImagesPerFile,
-                LanguageHints = ResolveLanguageHints(context)
+                LanguageHints = ResolveLanguageHints(options)
             };
 
-            var slideMarkdowns = new List<string>(slideIds.Count);
+            var extracted = new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
 
             foreach (var slideId in slideIds)
             {
@@ -186,7 +182,7 @@ public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
 
                 if (!string.IsNullOrWhiteSpace(slideMarkdown))
                 {
-                    slideMarkdowns.Add(slideMarkdown);
+                    AddSlide(extracted, state.CurrentSlideNumber, slideSize, slideMarkdown);
                 }
             }
 
@@ -201,17 +197,29 @@ public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
                 Logger.LogWarning("PPTX extraction incomplete: {Reason}", incompleteReason);
             }
 
-            return new TextExtractionResult
-            {
-                Markdown = string.Join("\n\n", slideMarkdowns),
-                DetectedLanguage = null,
-                ProviderName = ProviderIdentifier,
-                IsComplete = complete,
-                IncompleteReason = incompleteReason,
-                // PPTX text + per-image OCR has no single aggregated spatial payload to archive (#210).
-                NativePayload = null
-            };
+            return complete ? extracted : extracted.MarkIncomplete(incompleteReason!);
         }
+    }
+
+    private static ExtractionDocument Unreadable(string identifier)
+        => new ExtractionDocument(identifier)
+            .SetProvider(ProviderIdentifier)
+            .MarkIncomplete("The presentation could not be opened (corrupt or unsupported file).");
+
+    /// <summary>A section for slide <paramref name="number"/>, read from its Markdown, every element referring to the slide.</summary>
+    protected virtual void AddSlide(ExtractionDocument document, int number, ExtractionDocumentPageDimensions? size, string slideMarkdown)
+    {
+        var page = new ExtractionDocumentSourcePage(
+            "slide-" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            number,
+            size,
+            size is null ? null : ExtractionDocumentCoordinateUnit.Point,
+            size is null ? null : ExtractionDocumentCoordinateOrigin.TopLeft);
+        document.SourcePages.Add(page);
+        var section = new ExtractionDocumentSection();
+        section.Sources.Add(new ExtractionDocumentSourceReference(page));
+        document.Sections.Add(section);
+        MarkdownDocumentReader.ReadInto(document, section, slideMarkdown, page);
     }
 
     /// <summary>Builds one slide's Markdown: ordered shape blocks, then the optional speaker-notes block.</summary>
@@ -328,7 +336,7 @@ public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
         // truncation → caption, #317) returns the finished block; PPTX sinks it as a positioned SlideBlock so
         // reading-order sorting can place it by shape offset (state.Sequence breaks ties in document order).
         var block = await OpenXmlFigureTranscriber.TranscribeAsync(
-            slidePart, embed, AltTextOf(picture), state.CurrentSlideNumber, state, _options, _ocrProvider, Logger, cancellationToken);
+            slidePart, embed, AltTextOf(picture), state.CurrentSlideNumber, state, _options, _ocr, Logger, cancellationToken);
         if (block is not null)
         {
             blocks.Add(new SlideReadingOrder.SlideBlock(y, x, state.Sequence++, block));
@@ -694,8 +702,8 @@ public class PptxExtractor : IMarkdownTextProvider, ITransientDependency
     /// language default reads its own config (e.g. PaddleOcr:Languages). Kept <c>protected virtual</c> so a
     /// consumer can override to supply hints (e.g. from per-tenant config).
     /// </summary>
-    protected virtual IList<string> ResolveLanguageHints(TextExtractionContext context)
-        => OpenXmlExtractionState.ResolveLanguageHints(context);
+    protected virtual IReadOnlyList<string> ResolveLanguageHints(DocumentExtractionOptions? options)
+        => OpenXmlExtractionState.ResolveLanguageHints(options);
 
     /// <summary>
     /// Builds the #268 incompleteness reason from the loss counters, or returns <c>null</c> when nothing

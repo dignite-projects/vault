@@ -14,8 +14,8 @@ namespace Dignite.Vault.Parse.Ocr.VisionLlm;
 /// </summary>
 // [ExposeServices] is REQUIRED: the class name does not end with "PdfRasterizer", so ABP's default
 // conventional registration (which exposes IFoo only when the class name ends with "Foo") would register
-// the concrete type but NOT the IPdfRasterizer interface — and VisionLlmOcrProvider injects the interface.
-// Without this, resolving IOcrProvider throws at runtime once the VisionLlm module is enabled.
+// the concrete type but NOT the IPdfRasterizer interface — and VisionLlmOcrClient injects the interface.
+// Without this, resolving the OCR engine throws at runtime once the VisionLlm module is enabled.
 [ExposeServices(typeof(IPdfRasterizer))]
 public class PdfToImageRasterizer : IPdfRasterizer, ITransientDependency
 {

@@ -23,7 +23,7 @@ content requiring IDP: scans / photos / PDF images / Office files / digital-born
 ```
 vault/
 ├── modules/
-│   ├── vault.parse/     # Vault Parse — the text-extraction library: OCR + Markdown providers behind ITextExtractor
+│   ├── vault.parse/     # Vault Parse — the text-extraction library: OCR and digital engines on Microsoft.Extensions.DocumentExtraction
 │   └── vault.extract/   # Channel implementation — ABP layers (Abstractions / Domain.Shared / Domain / Application / EntityFrameworkCore / HttpApi / Mcp)
 │                        # and angular/ (the @dignite/ng.vault-extract library)
 ├── src/                 # Host application — provider wiring (OCR + AI) and middleware (ASP.NET Core API)

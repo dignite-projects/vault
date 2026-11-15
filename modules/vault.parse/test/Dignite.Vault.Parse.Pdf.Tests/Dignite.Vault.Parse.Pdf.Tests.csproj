@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Pure unit tests: NSubstitute the IOcrProvider, build PDF fixtures in-code with PdfPig's
+    <!-- Pure unit tests: NSubstitute the OCR engine, build PDF fixtures in-code with PdfPig's
          PdfDocumentBuilder (no on-disk assets), and generate embedded PNGs with a tiny pure-managed
          encoder (no SkiaSharp / native dependency). No ABP TestBase, no DB. -->
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -21,6 +21,10 @@
     <PackageReference Include="PdfPig" />
     <!-- For ExposedServiceExplorer in the DI-registration regression test. -->
     <PackageReference Include="Volo.Abp.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\ParseTestKit.cs" Link="ParseTestKit.cs" />
   </ItemGroup>
 
   <ItemGroup>

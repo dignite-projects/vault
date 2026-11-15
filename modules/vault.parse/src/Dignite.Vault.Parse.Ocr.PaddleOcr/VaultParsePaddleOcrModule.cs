@@ -5,7 +5,7 @@ using Volo.Abp.Modularity;
 
 namespace Dignite.Vault.Parse.Ocr.PaddleOcr;
 
-[DependsOn(typeof(VaultParseOcrModule))]
+[DependsOn(typeof(VaultParseModule))]
 public class VaultParsePaddleOcrModule : AbpModule
 {
     internal const string HttpClientName = "PaddleOcr";

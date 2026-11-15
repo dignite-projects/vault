@@ -3,7 +3,6 @@
         <Project Path="src/Dignite.Vault.Parse.Abstractions/Dignite.Vault.Parse.Abstractions.csproj" />
         <Project Path="src/Dignite.Vault.Parse/Dignite.Vault.Parse.csproj" />
         <Project Path="src/Dignite.Vault.Parse.ElBrunoMarkItDown/Dignite.Vault.Parse.ElBrunoMarkItDown.csproj" />
-        <Project Path="src/Dignite.Vault.Parse.Ocr/Dignite.Vault.Parse.Ocr.csproj" />
         <Project Path="src/Dignite.Vault.Parse.OpenXml/Dignite.Vault.Parse.OpenXml.csproj" />
         <Project Path="src/Dignite.Vault.Parse.Pdf/Dignite.Vault.Parse.Pdf.csproj" />
         <Project Path="src/Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence/Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence.csproj" />

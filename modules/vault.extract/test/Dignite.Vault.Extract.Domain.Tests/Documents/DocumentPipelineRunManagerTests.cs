@@ -532,9 +532,7 @@ public class DocumentPipelineRunManagerTests : VaultExtractDomainTestBase<VaultE
         var doc = CreateDocument();
         var run = await _manager.StartAsync(doc, VaultExtractPipelines.Parse);
 
-        var metadata = new DocumentParseMetadata(
-            "PaddleOCR",
-            new NativePayloadManifest("extraction-native/" + doc.Id, "application/json", 42, "abc123", "PaddleOCR/PP-StructureV3"));
+        var metadata = new DocumentParseMetadata("PaddleOCR", isComplete: false, incompleteReason: "truncated");
 
         await _manager.CompleteParseAsync(
             doc, run, markdown: "# Scan\n\nbody", title: "Scan",
@@ -543,9 +541,8 @@ public class DocumentPipelineRunManagerTests : VaultExtractDomainTestBase<VaultE
         doc.Language.ShouldBe("ja");
         doc.ExtractionMetadata.ShouldNotBeNull();
         doc.ExtractionMetadata!.ProviderName.ShouldBe("PaddleOCR");
-        doc.ExtractionMetadata.NativePayloadManifest.ShouldNotBeNull();
-        doc.ExtractionMetadata.NativePayloadManifest!.BlobName.ShouldBe("extraction-native/" + doc.Id);
-        doc.ExtractionMetadata.NativePayloadManifest.Sha256.ShouldBe("abc123");
+        doc.ExtractionMetadata.IsComplete.ShouldBeFalse();
+        doc.ExtractionMetadata.IncompleteReason.ShouldBe("truncated");
     }
 
     [Fact]

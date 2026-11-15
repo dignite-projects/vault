@@ -417,7 +417,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // Fail-closed file validation (#221 / #471): exact extension/content-type allow-list. Any accepted file is stored as a blob
         // and triggers text extraction / classification jobs, consuming compute and creating uncertain behavior for unsupported formats.
         // Therefore unsupported channel formats loud-fail immediately: no blob write and no enqueue.
-        // Content-type is client-spoofable, while extension determines blob suffix + DefaultTextExtractor dispatch. Requiring
+        // Content-type is client-spoofable, while extension determines blob suffix + the Parse router's engine choice. Requiring
         // an approved pair prevents a valid MIME from one format being combined with another format's valid extension.
         if (!DocumentConsts.IsAllowedUploadType(extension, contentType))
         {
@@ -681,21 +681,18 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
             }
         }
 
-        // #210: permanently delete archived native payload blobs together, using stable keys from the manifest and no prefix cleanup.
-        // Like the original file blob, this is best-effort: failures are logged but do not block the main permanent-delete flow.
-        var nativePayloadBlobName = document.ExtractionMetadata?.NativePayloadManifest?.BlobName;
-        if (!string.IsNullOrEmpty(nativePayloadBlobName))
+        // Parses before the move to Microsoft.Extensions.DocumentExtraction archived the engine's native output under
+        // this key. Remove it with the document; a missing blob is not an error. Best-effort like the file blob.
+        var nativePayloadBlobName = $"extraction-native/{document.Id}";
+        try
         {
-            try
-            {
-                await _blobContainer.DeleteAsync(nativePayloadBlobName);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex,
-                    "Failed to delete native payload blob {BlobName} for document {DocumentId}.",
-                    nativePayloadBlobName, id);
-            }
+            await _blobContainer.DeleteAsync(nativePayloadBlobName);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "Failed to delete native payload blob {BlobName} for document {DocumentId}.",
+                nativePayloadBlobName, id);
         }
 
         // Notify downstream consumers: the Document is unrecoverable, so derived data should be physically deleted.

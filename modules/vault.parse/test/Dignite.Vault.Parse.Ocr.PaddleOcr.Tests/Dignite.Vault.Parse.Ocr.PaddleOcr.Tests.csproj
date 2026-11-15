@@ -23,6 +23,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\ParseTestKit.cs" Link="ParseTestKit.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Dignite.Vault.Parse.Ocr.PaddleOcr\Dignite.Vault.Parse.Ocr.PaddleOcr.csproj" />
   </ItemGroup>
 

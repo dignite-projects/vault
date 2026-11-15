@@ -43,25 +43,25 @@ Every package ID is the project name. Install each package into the project of t
 These packages come along as dependencies and need no direct reference:
 
 - `Dignite.Vault.Extract.Abstractions`: the [integration event](../egress/integration-events.md) ETOs. A downstream consumer references this package alone.
-- `Dignite.Vault.Parse.Abstractions`: the `ITextExtractor` contract and its result types, from the Vault Parse text-extraction library.
+- `Dignite.Vault.Parse.Abstractions`: the Parse contracts on `Microsoft.Extensions.DocumentExtraction` (the engine base classes, the options and metadata conventions, the Markdown rendering of a document), from the Vault Parse text-extraction library.
 - `Dignite.Vault.Extract.FlexFields`: Vault Extract's `Tags` field type for the `Dignite.Abp.FlexFields` kernel.
 - `Dignite.Abp.FlexFields.*`, `Dignite.Abp.Notifications.Abstractions` and `Volo.Abp.Gdpr.Abstractions`, from the [abp-modules](https://github.com/dignite-projects/abp-modules) repository and ABP.
 
 ### Text Extraction
 
-The Application layer turns an upload into Markdown through `ITextExtractor`, but does **not** depend on an implementation: the host chooses one. The implementations are the **Vault Parse** packages (`Dignite.Vault.Parse*`; before 0.7.0 they were `Dignite.Vault.Extract.Parse*` / `Dignite.Vault.Extract.Ocr*`, see the CHANGELOG). Add the orchestrator, the digital-document providers you need, and **exactly one** OCR provider:
+The Application layer turns an upload into Markdown through `Microsoft.Extensions.DocumentExtraction`'s `DocumentExtractionClient`, but does **not** depend on an implementation: the host chooses one. The implementations are the **Vault Parse** packages (`Dignite.Vault.Parse*`; before 0.7.0 they were `Dignite.Vault.Extract.Parse*` / `Dignite.Vault.Extract.Ocr*`, see the CHANGELOG). Add the router, the digital engines you need, and **exactly one** OCR engine:
 
 | Package | Module class | Role |
 | --- | --- | --- |
-| `Dignite.Vault.Parse` | `VaultParseModule` | Required. The `ITextExtractor` implementation that dispatches by file type |
+| `Dignite.Vault.Parse` | `VaultParseModule` | Required. The router registered as `DocumentExtractionClient`, which sends each file to the engine that reads it |
 | `Dignite.Vault.Parse.Pdf` | `VaultParsePdfModule` | Digital PDFs |
-| `Dignite.Vault.Parse.OpenXml` | `VaultParseOpenXmlModule` | Word, Excel and PowerPoint files, including their embedded images |
+| `Dignite.Vault.Parse.OpenXml` | `VaultParseOpenXmlModule` | Word and PowerPoint files, including their embedded images |
 | `Dignite.Vault.Parse.ElBrunoMarkItDown` | `VaultParseElBrunoMarkItDownModule` | Catch-all for other digital formats |
 | `Dignite.Vault.Parse.Ocr.VisionLlm` | `VaultParseVisionLlmOcrModule` | OCR through a vision-capable chat model (the shipped default) |
 | `Dignite.Vault.Parse.Ocr.PaddleOcr` | `VaultParsePaddleOcrModule` | OCR through a local PaddleOCR sidecar |
 | `Dignite.Vault.Parse.Ocr.AzureDocumentIntelligence` | `VaultParseAzureDocumentIntelligenceModule` | OCR through Azure Document Intelligence |
 
-The OCR providers are mutually exclusive. See [Text Extraction](../text-extraction/text-extraction.md) for how to choose and configure them.
+The OCR engines are mutually exclusive. See [Text Extraction](../text-extraction/text-extraction.md) for how to choose and configure them.
 
 ### Module Dependencies
 

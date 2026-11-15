@@ -7,7 +7,7 @@ This file describes the current design and the rules whose violation breaks some
 ## Layout
 
 - `modules/vault.extract/`: the channel (ABP module stack in `src/`, tests in `test/`) and its Angular library in `angular/` (`@dignite/ng.vault-extract`)
-- `modules/vault.parse/`: the text-extraction library (OCR and Markdown providers behind `ITextExtractor`)
+- `modules/vault.parse/`: the text-extraction library (OCR and digital engines as `Microsoft.Extensions.DocumentExtraction` clients, behind one routing client)
 - `modules/vault.index/`: Vault Index, the retrieval module (P0 in progress), and its Angular library in `angular/` (`@dignite/ng.vault-index`, the index status page). Its design record is the Claude Doc "Vault Index 架构方案"; it has its own `VaultIndex` connection string and its migrations live in the host under `Migrations/VaultIndex/`
 - `src/Dignite.Vault.Extract.Host/`: the host application
 - `src/Dignite.Vault.AppHost/`: the Aspire AppHost for local development (SQL Server 2025 with full-text search, migrations, host, SPA, dashboard)
@@ -29,7 +29,7 @@ Things that fail in CI or at runtime if ignored:
 
 - All channel capability lives in `Application`: background jobs, workflows, pipeline runs, document reads and writes. `HttpApi` and `Mcp` are thin adapters over application services.
 - `Abstractions` holds the integration-event ETOs and references no other project in this repo.
-- `Application` sees text extraction only through `Dignite.Vault.Parse.Abstractions`. The host picks the providers.
+- `Application` sees text extraction only through `Dignite.Vault.Parse.Abstractions` (it injects `DocumentExtractionClient`). The host picks the engines.
 - The host is a container: it wires modules and providers and registers the keyed AI clients: Extract's `IChatClient`s (`TitleGenerator`, `Structured`, `Vision`), and Index's `VaultIndex.Chat` chat client and `VaultIndex.Embedding` / `VaultIndex.Embedding.Previous` embedding generators. **Middleware is configured only in the host.** LLM and OCR providers and their API keys are host deployment configuration; end customers never see them.
 - Extract does no vectorization or retrieval and registers no `IEmbeddingGenerator`. That belongs to the `vault.index` module. Business modules (contracts, invoices, HR) are built by downstream consumers in their own repos.
 

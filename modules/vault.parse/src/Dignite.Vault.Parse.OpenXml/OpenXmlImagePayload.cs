@@ -1,12 +1,11 @@
 using System.IO;
-using Dignite.Vault.Parse.Ocr;
 using DocumentFormat.OpenXml.Packaging;
 
 namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
 /// Resolves an embedded <see cref="ImagePart"/> into image-file bytes + MIME type suitable for feeding
-/// to <c>IOcrProvider.RecognizeAsync</c>. An OOXML package (PPTX/DOCX) stores each image as a
+/// to the OCR engine. An OOXML package (PPTX/DOCX) stores each image as a
 /// self-contained image file (PNG/JPEG/GIF/BMP/TIFF/WebP), so the bytes pass straight through with no
 /// re-encoding (unlike the PDF path, which reconstructs an image from raw samples).
 /// <para>
