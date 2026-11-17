@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Where each field value was found.** Field extraction now also asks the model to quote, per field, the passages it
+  read the value from (up to three, verbatim), and locates them in the Markdown: exactly, or ignoring width, case,
+  spacing and Markdown/table markup (the approach of google/langextract). `DocumentDto.fieldSources` gives the ranges
+  (`{ "<field>": [{ "offset", "length" }] }`), and the layout endpoint's new `fields` places them on the page as the
+  regions of the paragraphs and table cells they cover. A Markdown correction clears the ranges; a re-extraction
+  writes them again. New column `VaultDocuments.FieldSources` (migration `DocumentFieldSources`, default `{}`); the
+  extraction response schema gains a required `sources` object. See
+  [REST API](docs/en/egress/rest-api.md#reading-a-document).
+
 - **Layout view of a PDF** (`@dignite/ng.vault-extract`). The file preview of a PDF has a **Layout** switch that draws
   the pages with pdf.js (`pdfjs-dist`, a new dependency of the library, loaded only when the switch is turned on) and
   outlines every region the parse read, coloured by kind; pointing at one shows its text. Its worker runs on the main

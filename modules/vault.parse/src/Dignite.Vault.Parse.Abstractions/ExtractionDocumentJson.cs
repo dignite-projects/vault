@@ -191,7 +191,8 @@ public static class ExtractionDocumentJson
         }
     }
 
-    private static JsonArray WriteSources(IEnumerable<ExtractionDocumentSourceReference> sources)
+    /// <summary>Source references in this format: <c>[{ "page": id, "polygon": [[x, y], ...] }]</c>, the page an id of <c>pages</c>.</summary>
+    public static JsonArray WriteSources(IEnumerable<ExtractionDocumentSourceReference> sources)
         => new(sources.Select(source => (JsonNode?)new JsonObject
         {
             ["page"] = source.Page.Identifier,

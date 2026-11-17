@@ -557,7 +557,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // The layout is the document's own content read another way: the same Read rule as GetAsync and GetBlobAsync.
         await _documentAccess.CheckAsync(DocumentAccessRule.Read, DocumentAccessSubject.Of(document));
 
-        var layout = await LazyServiceProvider.LazyGetRequiredService<DocumentLayoutStore>().GetAsync(id, document.Markdown)
+        var layout = await LazyServiceProvider.LazyGetRequiredService<DocumentLayoutStore>().GetAsync(id, document.Markdown, document.FieldSources)
             ?? throw new BusinessException(VaultExtractErrorCodes.Document.NoLayout).WithData("DocumentId", id);
 
         return new RemoteStreamContent(
@@ -1640,6 +1640,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         var (typeCodes, fieldsByType) = await ResolveReferenceMapsAsync(new[] { document });
         dto.DocumentTypeCode = ResolveTypeCode(document.DocumentTypeId, typeCodes);
         dto.ExtractedFields = AssembleExtractedFields(document, fieldsByType);
+        dto.FieldSources = AssembleFieldSources(document, dto.ExtractedFields);
         // #268: expose extraction integrity quality signal, not provenance. Null metadata (historical / digital-native / not extracted) is treated as complete.
         dto.ExtractionIsComplete = document.ExtractionMetadata?.IsComplete ?? true;
         dto.ExtractionIncompleteReason = document.ExtractionMetadata?.IncompleteReason;
@@ -1999,6 +2000,24 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         Document document,
         IReadOnlyDictionary<Guid, Dictionary<string, Field>> fieldsByType)
         => ReferenceMaps.AssembleExtractedFields(document, fieldsByType);
+
+    /// <summary>The <c>FieldSources</c> of the egress: the stored ranges of the fields <paramref name="extractedFields"/> shows.</summary>
+    protected virtual Dictionary<string, List<DocumentTextSpanDto>>? AssembleFieldSources(
+        Document document,
+        Dictionary<string, JsonElement>? extractedFields)
+    {
+        if (extractedFields is null || document.FieldSources.Count == 0)
+        {
+            return null;
+        }
+
+        var sources = document.FieldSources
+            .Where(pair => extractedFields.ContainsKey(pair.Key))
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.Select(span => new DocumentTextSpanDto { Offset = span.Offset, Length = span.Length }).ToList());
+        return sources.Count == 0 ? null : sources;
+    }
 
     /// <summary>Resolves one document's DocumentTypeId -> TypeCode, traversing soft-delete, for DocumentTypeCode carried by export ETOs.</summary>
     protected virtual async Task<string?> ResolveTypeCodeAsync(Guid? documentTypeId)

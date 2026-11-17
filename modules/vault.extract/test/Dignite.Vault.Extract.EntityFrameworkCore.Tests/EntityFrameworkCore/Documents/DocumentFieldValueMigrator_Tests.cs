@@ -131,6 +131,28 @@ public class DocumentFieldValueMigrator_Tests : VaultExtractEntityFrameworkCoreT
             (await _documentRepository.FindAsync(contract))!.GetField("contract_no").ShouldBe("C-003"));
     }
 
+    /// <summary>The source of a value is stored with it and moves to the new key with it.</summary>
+    [Fact]
+    public async Task A_values_source_is_stored_and_follows_the_rename()
+    {
+        var id = _guidGenerator.Create();
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await SeedTypesAsync();
+            await SeedDocumentAsync(id, ContractType, SharedFieldName, "C-003",
+                markdown: "請求番号 C-003", source: new DocumentTextSpan(5, 5));
+        });
+
+        await WithMigrationAsync(ContractType, SharedFieldName, "contract_no");
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var document = (await _documentRepository.FindAsync(id))!;
+            document.FieldSources.Keys.ShouldBe(["contract_no"]);
+            document.FieldSources["contract_no"].ShouldBe([new DocumentTextSpan(5, 5)]);
+        });
+    }
+
     private Task<int> WithMigrationAsync(string typeCode, string oldName, string newName)
     {
         var result = 0;
@@ -149,7 +171,8 @@ public class DocumentFieldValueMigrator_Tests : VaultExtractEntityFrameworkCoreT
             new DocumentType(TypeId(ReceiptType), null, ReceiptType, ReceiptType), autoSave: true);
     }
 
-    private async Task SeedDocumentAsync(Guid id, string typeCode, string fieldName, string value)
+    private async Task SeedDocumentAsync(
+        Guid id, string typeCode, string fieldName, string value, string? markdown = null, DocumentTextSpan? source = null)
     {
         var document = new Document(
             id,
@@ -159,6 +182,15 @@ public class DocumentFieldValueMigrator_Tests : VaultExtractEntityFrameworkCoreT
         typeof(Document).GetProperty(nameof(Document.DocumentTypeId))!.SetValue(document, TypeId(typeCode));
 
         document.SetFlexFields(new System.Collections.Generic.Dictionary<string, object?> { [fieldName] = value });
+        if (markdown is not null && source is not null)
+        {
+            typeof(Document).GetMethod("SetMarkdown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .Invoke(document, [markdown]);
+            document.SetFieldSources(new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IReadOnlyList<DocumentTextSpan>>
+            {
+                [fieldName] = [source]
+            });
+        }
 
         await _documentRepository.InsertAsync(document, autoSave: true);
     }

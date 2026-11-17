@@ -574,4 +574,58 @@ public class FieldExtractionWorkflow_Tests
 
         result.Values["amount"].ShouldBeNull();
     }
+
+    // ─── sources: the passages the model quotes as where it found each value ───
+
+    [Fact]
+    public async Task Sources_are_kept_per_declared_field_within_their_bounds()
+    {
+        var longPassage = new string('長', FieldExtractionWorkflow.MaxSourceLength + 50);
+        var workflow = CreateWorkflow($$"""
+            {
+              "values": { "amount": 12000, "vendor": "株式会社サンプル", "memo": null },
+              "sources": {
+                "amount": ["合計 12,000円", "  ", 7, "{{longPassage}}", "小計 12,000円", "4つ目"],
+                "vendor": [],
+                "memo": ["何か"],
+                "undeclared": ["x"]
+              },
+              "validationWarnings": []
+            }
+            """);
+
+        var result = await workflow.ExtractAsync(
+            new[] { Field("amount", "Number"), Field("vendor", "Text"), Field("memo", "Text") }, "# doc");
+
+        result.Sources.Keys.ShouldBe(["amount", "memo"], ignoreOrder: true);
+        result.Sources["amount"].ShouldBe(["合計 12,000円", longPassage[..FieldExtractionWorkflow.MaxSourceLength], "小計 12,000円"]);
+    }
+
+    [Fact]
+    public async Task A_response_without_sources_still_yields_its_values()
+    {
+        var workflow = CreateWorkflow("""{ "values": { "amount": 1 }, "validationWarnings": [] }""");
+
+        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
+
+        result.Values["amount"]!.Value.GetDecimal().ShouldBe(1m);
+        result.Sources.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_schema_asks_for_bounded_sources_for_every_field()
+    {
+        var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "amount": 1, "vendor": "x" }, "sources": {}, "validationWarnings": [] }""");
+
+        await workflow.ExtractAsync(new[] { Field("amount", "Number"), Field("vendor", "Text") }, "# doc");
+
+        var schema = ((ChatResponseFormatJson)capturedOptions()!.ResponseFormat!).Schema!.Value;
+        schema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldContain("sources");
+        var sources = schema.GetProperty("properties").GetProperty("sources");
+        sources.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldBe(["amount", "vendor"]);
+        var amount = sources.GetProperty("properties").GetProperty("amount");
+        amount.GetProperty("maxItems").GetInt32().ShouldBe(FieldExtractionWorkflow.MaxSourcesPerField);
+        amount.GetProperty("items").GetProperty("maxLength").GetInt32().ShouldBe(FieldExtractionWorkflow.MaxSourceLength);
+    }
 }

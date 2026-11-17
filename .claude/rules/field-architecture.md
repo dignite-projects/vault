@@ -60,6 +60,7 @@ Five call sites behave differently per type: `FlexFieldValueReader` (read and va
 - **`DocumentFlexFieldIndex`** is derived and never authoritative. A type or searchability change is repaired by `RebuildAsync`. `NumberValue` is mapped `decimal(38,6)`, because EF's default `decimal(18,2)` would round silently.
 - **Every write of the bag owes the index an `IFlexFieldIndexManager<Document>.SynchronizeAsync` in the same unit of work.** Miss one and the document stops matching its own field filters, while every read through the bag still looks right. There are four such sites: the extraction write and the no-definitions clearing path in `FieldExtractionService`, `DocumentAppService.UpdateExtractedFieldsAsync`, and `DocumentClassificationBackgroundJob.CompleteRunAsync` (the retraction paths that clear the bag).
 - `IsSearchable` decides whether a field's values enter the index at all.
+- **`Document.FieldSources`** (a JSON column) holds, per bag key, the ranges of `Markdown` the extraction quoted the value from. The aggregate keeps it valid: any Markdown change (`CorrectMarkdown`, `ReplaceParseOutput`) clears it, `SetFlexFields` drops the sources of keys that lost their value, `SetFieldSources` drops ranges outside the Markdown, and `Document.RenameField` (an instance method that hides the kernel's extension) moves a source with its value. A rename that calls the kernel's `FlexFieldDictionaryExtensions.RenameField` directly leaves the source under the old key.
 
 ## Extraction
 
@@ -70,7 +71,10 @@ Classification schedules one field-extraction run in the same transaction as its
 3. makes one LLM call;
 4. re-reads the definitions and discards any value whose field was deleted, renamed or retyped while the call was in flight (the guards compare both `FieldTypeName` and `Name`);
 5. validates and converts each value with `FlexFieldValueReader`;
-6. writes the whole set and synchronizes the index. No event is published here: egress is `DocumentReadyEto`.
+6. writes the whole set and synchronizes the index. No event is published here: egress is `DocumentReadyEto`;
+7. locates the passages the model quoted per field (`sources` in the response, LangExtract's approach) in the Markdown with `FieldSourceLocator` and stores them as `FieldSources`, unless the Markdown changed during the call.
+
+The layout endpoint turns those ranges into page regions through `ExtractionDocumentMarkdown.Map`, which renders the tree and records where each element and table cell landed in the Markdown.
 
 `FlexFieldValueReader` is the single validation gate, shared with the operator edit. The extraction workflow passes the raw `JsonElement` through and does not validate, because a second gate could only diverge from the first.
 

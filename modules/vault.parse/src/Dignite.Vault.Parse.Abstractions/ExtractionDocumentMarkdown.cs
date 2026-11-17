@@ -22,25 +22,32 @@ namespace Dignite.Vault.Parse;
 /// </summary>
 public static class ExtractionDocumentMarkdown
 {
-    public static string Render(ExtractionDocument document)
+    public static string Render(ExtractionDocument document) => Map(document).Markdown;
+
+    /// <summary>
+    /// Renders <paramref name="document"/> and records where each element landed: one span per paragraph, heading, list
+    /// item, image and table, and one per table cell, each with the element's (or cell's) source references. A range of
+    /// the Markdown leads back to the page regions it was read from through the spans that overlap it.
+    /// </summary>
+    public static ExtractionDocumentMarkdownMap Map(ExtractionDocument document)
     {
-        var blocks = new List<string>();
+        var writer = new Writer();
         foreach (var section in document.Sections)
         {
-            Collect(section, blocks);
+            Collect(section, writer);
         }
 
-        return string.Join("\n\n", blocks);
+        return new ExtractionDocumentMarkdownMap(writer.Text.ToString(), writer.Spans);
     }
 
-    private static void Collect(ExtractionDocumentElement element, List<string> blocks)
+    private static void Collect(ExtractionDocumentElement element, Writer writer)
     {
         switch (element)
         {
             case ExtractionDocumentSection section:
                 if (section.Content is TextContent { Text.Length: > 0 } payload)
                 {
-                    blocks.Add(payload.Text.TrimEnd());
+                    writer.Block(payload.Text.TrimEnd(), section.Sources);
                 }
 
                 var items = new List<ExtractionDocumentTextElement>();
@@ -54,16 +61,16 @@ public static class ExtractionDocumentMarkdown
 
                     if (items.Count > 0)
                     {
-                        blocks.Add(RenderList(items));
+                        WriteList(items, writer);
                         items.Clear();
                     }
 
-                    Collect(child, blocks);
+                    Collect(child, writer);
                 }
 
                 if (items.Count > 0)
                 {
-                    blocks.Add(RenderList(items));
+                    WriteList(items, writer);
                 }
 
                 break;
@@ -71,17 +78,29 @@ public static class ExtractionDocumentMarkdown
             case ExtractionDocumentTextElement text:
                 if (RenderText(text) is { Length: > 0 } rendered)
                 {
-                    blocks.Add(rendered);
+                    writer.Block(rendered, text.Sources);
                 }
 
                 break;
 
             case ExtractionDocumentTableElement table when table.Cells.RowCount > 0 && table.Cells.ColumnCount > 0:
-                blocks.Add(RenderTable(table));
+                writer.BeginBlock();
+                var tableStart = writer.Position;
+                var cells = table.Cells;
+                if (cells.Any(cell => cell is not null && (cell.RowSpan > 1 || cell.ColumnSpan > 1)))
+                {
+                    WriteHtmlTable(table, writer);
+                }
+                else
+                {
+                    WritePipeTable(table, writer);
+                }
+
+                writer.Span(tableStart, table.Sources);
                 break;
 
             case ExtractionDocumentImageElement image when !string.IsNullOrWhiteSpace(image.Text):
-                blocks.Add(ImageOcrMarkup.Wrap(image.Text.Trim('\n'), image.Sources.FirstOrDefault()?.Page.PageNumber));
+                writer.Block(ImageOcrMarkup.Wrap(image.Text.Trim('\n'), image.Sources.FirstOrDefault()?.Page.PageNumber), image.Sources);
                 break;
         }
     }
@@ -114,12 +133,13 @@ public static class ExtractionDocumentMarkdown
     /// Consecutive list items as one list. A nested item is indented to its parent's text, which depends on the parent's
     /// marker: <c>- </c> indents two columns, <c>10. </c> four.
     /// </summary>
-    private static string RenderList(List<ExtractionDocumentTextElement> items)
+    private static void WriteList(List<ExtractionDocumentTextElement> items, Writer writer)
     {
-        var lines = new List<string>();
+        writer.BeginBlock();
         var parents = new Stack<(int Level, int ContentColumn)>();
-        foreach (var item in items)
+        for (var index = 0; index < items.Count; index++)
         {
+            var item = items[index];
             var level = Math.Max(0, Property<int?>(item, ParseContentProperties.ListLevel) ?? 0);
             var marker = Property<string>(item, ParseContentProperties.ListMarker) is { Length: > 0 } written ? written : "-";
             while (parents.Count > 0 && parents.Peek().Level >= level)
@@ -130,50 +150,62 @@ public static class ExtractionDocumentMarkdown
             var indent = parents.Count > 0 ? parents.Peek().ContentColumn : 0;
             var contentColumn = indent + marker.Length + 1;
             var text = ((TextContent)item.Content!).Text.TrimEnd().Split('\n');
-            lines.Add(new string(' ', indent) + marker + " " + text[0]);
-            lines.AddRange(text.Skip(1).Select(line => line.Length == 0 ? string.Empty : new string(' ', contentColumn) + line));
+            if (index > 0)
+            {
+                writer.Append("\n");
+            }
+
+            var start = writer.Position;
+            writer.Append(new string(' ', indent) + marker + " " + text[0]);
+            foreach (var line in text.Skip(1))
+            {
+                writer.Append("\n" + (line.Length == 0 ? string.Empty : new string(' ', contentColumn) + line));
+            }
+
+            writer.Span(start, item.Sources);
             parents.Push((level, contentColumn));
         }
-
-        return string.Join('\n', lines);
     }
 
-    private static string RenderTable(ExtractionDocumentTableElement table)
+    private static void WritePipeTable(ExtractionDocumentTableElement table, Writer writer)
     {
         var cells = table.Cells;
-        var spans = cells.Any(cell => cell is not null && (cell.RowSpan > 1 || cell.ColumnSpan > 1));
-        return spans ? RenderHtmlTable(table) : RenderPipeTable(table);
-    }
-
-    private static string RenderPipeTable(ExtractionDocumentTableElement table)
-    {
-        var cells = table.Cells;
-        var lines = new List<string>(cells.RowCount + 1);
         for (var row = 0; row < cells.RowCount; row++)
         {
-            var values = new string[cells.ColumnCount];
+            if (row > 0)
+            {
+                writer.Append("\n");
+            }
+
+            writer.Append("| ");
             for (var column = 0; column < cells.ColumnCount; column++)
             {
-                values[column] = CellText(cells[row, column]).Replace("|", "\\|").Replace("\n", "<br>");
+                if (column > 0)
+                {
+                    writer.Append(" | ");
+                }
+
+                var cell = cells[row, column];
+                var start = writer.Position;
+                writer.Append(CellText(cell).Replace("|", "\\|").Replace("\n", "<br>"));
+                writer.Span(start, CellSources(cell));
             }
 
-            lines.Add("| " + string.Join(" | ", values) + " |");
+            writer.Append(" |");
             if (row == 0)
             {
-                lines.Add("|" + string.Concat(Enumerable.Repeat(" --- |", cells.ColumnCount)));
+                writer.Append("\n|" + string.Concat(Enumerable.Repeat(" --- |", cells.ColumnCount)));
             }
         }
-
-        return string.Join('\n', lines);
     }
 
-    private static string RenderHtmlTable(ExtractionDocumentTableElement table)
+    private static void WriteHtmlTable(ExtractionDocumentTableElement table, Writer writer)
     {
         var cells = table.Cells;
-        var html = new StringBuilder("<table>\n");
+        writer.Append("<table>\n");
         for (var row = 0; row < cells.RowCount; row++)
         {
-            html.Append("<tr>");
+            writer.Append("<tr>");
             for (var column = 0; column < cells.ColumnCount; column++)
             {
                 if (cells[row, column] is not { } cell)
@@ -182,27 +214,33 @@ public static class ExtractionDocumentMarkdown
                 }
 
                 var tag = cell.Role == ParseElementRoles.ColumnHeader ? "th" : "td";
-                html.Append('<').Append(tag);
+                var open = new StringBuilder("<").Append(tag);
                 if (cell.RowSpan > 1)
                 {
-                    html.Append(" rowspan=\"").Append(cell.RowSpan.ToString(CultureInfo.InvariantCulture)).Append('"');
+                    open.Append(" rowspan=\"").Append(cell.RowSpan.ToString(CultureInfo.InvariantCulture)).Append('"');
                 }
 
                 if (cell.ColumnSpan > 1)
                 {
-                    html.Append(" colspan=\"").Append(cell.ColumnSpan.ToString(CultureInfo.InvariantCulture)).Append('"');
+                    open.Append(" colspan=\"").Append(cell.ColumnSpan.ToString(CultureInfo.InvariantCulture)).Append('"');
                 }
 
-                html.Append('>')
-                    .Append(WebUtility.HtmlEncode(CellText(cell)).Replace("\n", "<br>"))
-                    .Append("</").Append(tag).Append('>');
+                writer.Append(open.Append('>').ToString());
+                var start = writer.Position;
+                writer.Append(WebUtility.HtmlEncode(CellText(cell)).Replace("\n", "<br>"));
+                writer.Span(start, CellSources(cell));
+                writer.Append("</" + tag + ">");
             }
 
-            html.Append("</tr>\n");
+            writer.Append("</tr>\n");
         }
 
-        return html.Append("</table>").ToString();
+        writer.Append("</table>");
     }
+
+    /// <summary>A cell's own region, or its content's when the engine put the region there.</summary>
+    private static IEnumerable<ExtractionDocumentSourceReference> CellSources(ExtractionDocumentTableCell? cell)
+        => cell is null ? [] : cell.Sources.Any() ? cell.Sources : cell.Content?.Sources ?? [];
 
     private static string CellText(ExtractionDocumentTableCell? cell) => cell?.Content switch
     {
@@ -235,4 +273,82 @@ public static class ExtractionDocumentMarkdown
             _ => default
         };
     }
+
+    /// <summary>Appends blocks a blank line apart and records element spans as it goes.</summary>
+    private sealed class Writer
+    {
+        private bool _started;
+
+        public StringBuilder Text { get; } = new();
+
+        public List<ExtractionDocumentMarkdownSpan> Spans { get; } = [];
+
+        public int Position => Text.Length;
+
+        public void BeginBlock()
+        {
+            if (_started)
+            {
+                Text.Append("\n\n");
+            }
+
+            _started = true;
+        }
+
+        public void Block(string text, IEnumerable<ExtractionDocumentSourceReference> sources)
+        {
+            BeginBlock();
+            var start = Position;
+            Text.Append(text);
+            Span(start, sources);
+        }
+
+        public void Append(string text) => Text.Append(text);
+
+        /// <summary>Records <c>[start, Position)</c>; an empty range or one without a source leads nowhere and is skipped.</summary>
+        public void Span(int start, IEnumerable<ExtractionDocumentSourceReference> sources)
+        {
+            var list = sources.ToList();
+            if (Position > start && list.Count > 0)
+            {
+                Spans.Add(new ExtractionDocumentMarkdownSpan(start, Position - start, list));
+            }
+        }
+    }
 }
+
+/// <summary>The Markdown <see cref="ExtractionDocumentMarkdown.Map"/> rendered and where each element landed in it.</summary>
+public sealed class ExtractionDocumentMarkdownMap
+{
+    public ExtractionDocumentMarkdownMap(string markdown, IReadOnlyList<ExtractionDocumentMarkdownSpan> spans)
+    {
+        Markdown = markdown;
+        Spans = spans;
+    }
+
+    public string Markdown { get; }
+
+    /// <summary>In document order; a table's span contains its cells' spans.</summary>
+    public IReadOnlyList<ExtractionDocumentMarkdownSpan> Spans { get; }
+
+    /// <summary>
+    /// The page regions <c>[offset, offset + length)</c> was read from: the sources of the narrowest spans that overlap
+    /// it — a table cell rather than its table. Empty when no rendered element with a source overlaps it.
+    /// </summary>
+    public IReadOnlyList<ExtractionDocumentSourceReference> SourcesOf(int offset, int length)
+    {
+        var end = offset + Math.Max(length, 1);
+        var overlapping = Spans.Where(span => span.Offset < end && offset < span.Offset + span.Length).ToList();
+
+        // A span that contains another overlapping span (a table around its cells) is the coarser answer: drop it.
+        var narrowest = overlapping.Where(outer => !overlapping.Any(inner =>
+            inner.Length < outer.Length
+            && inner.Offset >= outer.Offset
+            && inner.Offset + inner.Length <= outer.Offset + outer.Length));
+
+        return narrowest.SelectMany(span => span.Sources).Distinct().ToList();
+    }
+}
+
+/// <summary>One element's (or table cell's) place in the rendered Markdown, with where on the page it was read.</summary>
+public sealed record ExtractionDocumentMarkdownSpan(int Offset, int Length, IReadOnlyList<ExtractionDocumentSourceReference> Sources);
