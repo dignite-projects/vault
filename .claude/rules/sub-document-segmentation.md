@@ -21,8 +21,9 @@ What follows from that:
 
 - **Ledger rows are not deleted after spawn.** They go only together with the children they route, through `SubDocumentRetractor`. A Spawned row's `SegmentKey` is the only barrier against spawning the same child twice, and a Pending row is a constituent whose spawn has not happened yet. A cleanup that deletes rows out of band breaks both.
 - **The ledger is on no egress** (REST / MCP / ETO). Downstream sees a sub-document only as a `Document` row with `OriginDocumentId` set.
-- **Copies made at spawn**: `SegmentKey → OriginConstituentKey`, `SourceDocumentId → OriginDocumentId`, `SliceText → Document.Markdown` (a one-way seed), `TenantId`.
-- **A sub-document has no `FileOrigin`.** The parse job seeds its Markdown from `SliceText` and never touches a blob. Its source is the parent's blob, reached through `OriginDocumentId`.
+- **Copies made at spawn**: `SegmentKey → OriginConstituentKey`, `SourceDocumentId → OriginDocumentId`, `TenantId`, and the seed: `SliceText → Document.Markdown`, or the page range below.
+- **Two shapes of child.** A Text row with `FirstPage`/`LastPage` (set in Phase A when the source is a file a `ParsePageCopier` cuts, its layout is current, and the slice owns those pages: ≥ 80% of each page's text and ≥ 80% of its own text on them) is spawned with **its own file**, the pages cut out of the source, blob name `{segmentId:N}{ext}` so a retry overwrites. Its parse reads those pages from the source's layout (`ExtractionDocumentPages.Select`, renumbered from 1) and saves them as its own layout; it falls back to `SliceText` if the source's layout is gone. Every other row's child has **no `FileOrigin`**: the parse seeds `SliceText` and never touches a blob, and its source is the parent's blob, reached through `OriginDocumentId`.
+- A page-range child's file is its own: permanent delete removes it like any document's. A spawn that did not claim its segment deletes the cut, unless a concurrent run spawned the segment with the same blob name.
 - **So the parent outlives its children.** `DeleteAsync` throws `Extract:DocumentHasSubDocuments` while a live child exists. `PermanentDeleteAsync` throws `Extract:DocumentHasSubDocumentsPermanentDelete` while any child exists, recycle-bin ones included, because a hard delete reclaims the blob and a soft-deleted child can be restored. The retraction paths soft-delete children through `IDocumentRepository` directly and do not pass these guards.
 
 ## Re-parse regenerates the sub-documents
@@ -31,7 +32,7 @@ A document's sub-documents derive from its current Markdown. A re-parse replaces
 
 - **Restore follows the ledger.** `RestoreAsync` refuses a sub-document whose ledger row no longer exists (`IsRoutedBySourceLedgerAsync`, `Extract:DocumentRestoreSuperseded`).
 - **A detection pass over replaced Markdown drops its result.** `DocumentSegmentationJob` re-checks in each write unit of work that the source still carries the Markdown it sent to the LLM (`IsDetectedMarkdownCurrent`). Without that, a pass started before the re-parse would insert slices of the old text.
-- **A sub-document cannot be re-parsed itself** (`Extract:DocumentReparseSubDocument`). It has no file; re-parse the parent.
+- **A sub-document cannot be re-parsed itself** (`Extract:DocumentReparseSubDocument`), even one with a file of its own: its content belongs to the parent's split. Re-parse the parent.
 
 ## The subsystem assumes exactly two Kinds {Text, Figure}
 

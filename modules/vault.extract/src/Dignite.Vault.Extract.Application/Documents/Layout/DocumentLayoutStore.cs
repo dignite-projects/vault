@@ -115,6 +115,30 @@ public class DocumentLayoutStore : ITransientDependency
         return fields;
     }
 
+    /// <summary>
+    /// The stored tree, while <paramref name="markdown"/> (the document's Markdown now) is still the one it rendered;
+    /// <c>null</c> when the document has no layout or its Markdown was corrected since.
+    /// </summary>
+    public virtual async Task<ExtractionDocument?> GetCurrentTreeAsync(
+        Guid documentId, string? markdown, CancellationToken cancellationToken = default)
+    {
+        if (markdown is null)
+        {
+            return null;
+        }
+
+        await using var stream = await _blobContainer.GetOrNullAsync(BlobName(documentId), cancellationToken);
+        if (stream is null)
+        {
+            return null;
+        }
+
+        var root = (await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken))!.AsObject();
+        return root["markdownSha256"]?.GetValue<string>() == Hash(markdown) && root["document"] is JsonObject tree
+            ? ExtractionDocumentJson.Read(tree)
+            : null;
+    }
+
     public virtual Task<bool> DeleteAsync(Guid documentId, CancellationToken cancellationToken = default)
         => _blobContainer.DeleteAsync(BlobName(documentId), cancellationToken);
 

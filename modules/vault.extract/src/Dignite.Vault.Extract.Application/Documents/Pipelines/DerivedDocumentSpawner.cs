@@ -86,8 +86,8 @@ public class DerivedDocumentSpawner : ITransientDependency
     /// <param name="tenantId">The source/derived tenant; the UoW and the delegates run under this tenant.</param>
     /// <param name="constituentKey">The content-derived key (the derived doc's <c>OriginConstituentKey</c>): SHA-256 of the clean slice text.</param>
     /// <param name="fileOrigin">
-    /// The derived document's file origin — always <c>null</c>: a derived sub-document has no file of its own to
-    /// parse or download.
+    /// The derived document's own file — the pages of a page-range constituent, already written by the caller — or
+    /// <c>null</c> for a constituent seeded from its slice, which has no file of its own.
     /// </param>
     /// <param name="ownerId">
     /// The source document's <c>CreatorId</c> (#635), copied onto the derived document. This job runs with no

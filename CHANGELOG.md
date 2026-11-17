@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sub-documents of a PDF bundle get their pages as a file of their own.** When a container is a PDF with a current
+  layout, each part that owns its pages (at least 80% of each page's text, and at least 80% of its own text on them)
+  is cut out of the bundle into its own PDF (`bundle (p2-3).pdf`): it downloads, previews, has a layout and field
+  sources like an uploaded document, and its pages are read from the bundle's parse (no second OCR). Parts sharing a
+  page, embedded documents and non-PDF bundles keep the slice seed and no file. New columns
+  `VaultDocumentSegments.FirstPage` / `LastPage` (migration `DocumentSegmentPages`); new `ParsePageCopier` in
+  `Dignite.Vault.Parse.Abstractions`, implemented by `Dignite.Vault.Parse.Pdf`. This reverses the #487 follow-up's
+  "the slice split stays the permanent design" for the case where the cut is cheap now: the layout already holds
+  every page's parse. See [Sub-Documents](docs/en/documents/sub-documents.md#what-a-sub-document-is).
+
 - **Where each field value was found.** Field extraction now also asks the model to quote, per field, the passages it
   read the value from (up to three, verbatim), and locates them in the Markdown: exactly, or ignoring width, case,
   spacing and Markdown/table markup (the approach of google/langextract). `DocumentDto.fieldSources` gives the ranges

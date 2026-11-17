@@ -9,12 +9,14 @@ using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Parse;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Extract.Documents.Layout;
 using Dignite.Vault.Extract.Documents.Pipelines;
 using Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 using Dignite.Vault.Extract.Documents.Pipelines.Parse;
 using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -37,6 +39,10 @@ public class DocumentSegmentationJobTestModule : AbpModule
         context.Services.AddSingleton(Substitute.For<IBlobContainer<VaultExtractDocumentContainer>>());
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
         context.Services.AddSingleton(Substitute.For<IDistributedEventBus>());
+
+        // A page copier, so a container with a current layout can be cut by page (R5b). Without a layout in the blob
+        // substitute, every other test still takes the slice path.
+        context.Services.AddSingleton<ParsePageCopier>(new DocumentSegmentationJob_Tests.FakePageCopier());
 
         // Split seam: a partial substitute of the segmentation workflow whose RunAsync each test stubs to a chosen
         // boundary set — no real LLM call (mirrors the figure routing test's classification-workflow seam).
@@ -1042,5 +1048,137 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
 
         _workflow.RunAsync(Arg.Any<string>(), Arg.Any<SubDocumentDetectionContext>(), Arg.Any<CancellationToken>())
             .Returns(outcome);
+    }
+
+    // ─── R5b: page-range sub-documents ───
+
+    [Fact]
+    public async Task Constituents_on_pages_of_their_own_are_spawned_as_files_of_those_pages()
+    {
+        var tree = Bundle(["Invoice A"], ["Invoice B"], ["B total"]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        StubSplit(("Invoice A", true), ("Invoice B", true));
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        string? secondBlob = null;
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = (await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId))
+                .OrderBy(s => s.Ordinal).ToList();
+            segments.Select(s => (s.FirstPage, s.LastPage)).ShouldBe([(1, 1), (2, 3)]);
+
+            var derived = await _documentRepository.GetListAsync(d => d.OriginDocumentId == containerId);
+            var first = derived.Single(d => d.Id == segments[0].RoutedDocumentId);
+            var second = derived.Single(d => d.Id == segments[1].RoutedDocumentId);
+            first.FileOrigin!.OriginalFileName.ShouldBe("bundle (p1).pdf");
+            second.FileOrigin!.OriginalFileName.ShouldBe("bundle (p2-3).pdf");
+            second.FileOrigin.ContentType.ShouldBe("application/pdf");
+            second.FileOrigin.BlobName.ShouldBe(segments[1].Id.ToString("N") + ".pdf");
+            second.FileOrigin.FileSize.ShouldBe(FakePageCopier.Cut(2, 3).Length);
+            secondBlob = second.FileOrigin.BlobName;
+        });
+
+        await GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>().Received(1).SaveAsync(
+            secondBlob!, Arg.Any<System.IO.Stream>(), true, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The model's boundary sits under a stamp line at the top of the contract's first page, so that line lands in the
+    /// invoice's slice. The page still belongs to the contract, which holds nearly all of its text.
+    /// </summary>
+    [Fact]
+    public async Task A_stamp_line_above_a_documents_title_does_not_cost_either_document_its_pages()
+    {
+        var tree = Bundle(["Invoice A total 100"], ["Copy", "Contract B article one"], ["Contract end"]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        StubSplit(("Invoice A", true), ("Contract B", true));
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = (await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId))
+                .OrderBy(s => s.Ordinal).ToList();
+            segments.Select(s => (s.FirstPage, s.LastPage)).ShouldBe([(1, 1), (2, 3)]);
+        });
+    }
+
+    [Fact]
+    public async Task Constituents_sharing_a_page_keep_the_slice_and_carry_no_file()
+    {
+        var tree = Bundle(["Invoice A", "Invoice B"], ["B total"]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        StubSplit(("Invoice A", true), ("Invoice B", true));
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId);
+            segments.Count.ShouldBe(2);
+            segments.ShouldAllBe(s => s.FirstPage == null && s.LastPage == null);
+            (await _documentRepository.GetListAsync(d => d.OriginDocumentId == containerId))
+                .ShouldAllBe(d => d.FileOrigin == null);
+        });
+    }
+
+    /// <summary>A parsed PDF bundle: one section per page, each paragraph with a region on its page.</summary>
+    private static ExtractionDocument Bundle(params string[][] pages)
+    {
+        var document = new ExtractionDocument("bundle");
+        for (var number = 1; number <= pages.Length; number++)
+        {
+            var page = new ExtractionDocumentSourcePage("page-" + number, number);
+            document.SourcePages.Add(page);
+            var section = new ExtractionDocumentSection();
+            section.Sources.Add(new ExtractionDocumentSourceReference(page));
+            foreach (var text in pages[number - 1])
+            {
+                var paragraph = new ExtractionDocumentTextElement(new TextContent(text));
+                paragraph.Sources.Add(new ExtractionDocumentSourceReference(page,
+                [
+                    new ExtractionDocumentPoint(50, 700), new ExtractionDocumentPoint(300, 700),
+                    new ExtractionDocumentPoint(300, 680), new ExtractionDocumentPoint(50, 680)
+                ]));
+                section.Elements.Add(paragraph);
+            }
+
+            document.Sections.Add(section);
+        }
+
+        return document;
+    }
+
+    /// <summary>Stores the container's layout and its file in the blob substitute, the way a parse leaves them.</summary>
+    private async Task StoreLayoutAsync(Guid containerId, ExtractionDocument tree)
+    {
+        var blobs = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
+        byte[]? stored = null;
+        await blobs.SaveAsync(DocumentLayoutStore.BlobName(containerId), Arg.Do<System.IO.Stream>(stream =>
+        {
+            using var copy = new System.IO.MemoryStream();
+            stream.CopyTo(copy);
+            stored = copy.ToArray();
+        }), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await GetRequiredService<DocumentLayoutStore>().SaveAsync(containerId, tree, ExtractionDocumentMarkdown.Render(tree));
+        blobs.GetOrNullAsync(DocumentLayoutStore.BlobName(containerId), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<System.IO.Stream?>(new System.IO.MemoryStream(stored!)));
+        blobs.GetAsync($"blobs/{containerId:N}.pdf", Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<System.IO.Stream>(new System.IO.MemoryStream(Encoding.UTF8.GetBytes("%PDF bundle"))));
+    }
+
+    /// <summary>Cuts nothing real: the "file" it returns names the range, so a test can tell which pages were asked for.</summary>
+    internal sealed class FakePageCopier : ParsePageCopier
+    {
+        public static byte[] Cut(int first, int last) => Encoding.UTF8.GetBytes($"pages {first}-{last}");
+
+        public override bool CanCopy(string extension, string? mediaType) => extension == ".pdf";
+
+        public override Task<byte[]> CopyPagesAsync(System.IO.Stream source, int firstPage, int lastPage, CancellationToken cancellationToken = default)
+            => Task.FromResult(Cut(firstPage, lastPage));
     }
 }

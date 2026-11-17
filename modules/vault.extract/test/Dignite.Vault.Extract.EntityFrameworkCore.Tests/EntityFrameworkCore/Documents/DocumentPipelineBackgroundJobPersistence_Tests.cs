@@ -15,6 +15,7 @@ using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
@@ -430,6 +431,114 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
         });
 
         await _extractionClient.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_page_range_sub_document_reads_its_pages_from_the_source_layout()
+    {
+        var (sourceId, derivedId, runId) = await ArrangePageRangeChildAsync(storeSourceLayout: true);
+        byte[]? childLayout = null;
+        _blobContainer.SaveAsync($"layout/{derivedId}", Arg.Do<Stream>(stream =>
+        {
+            using var copy = new MemoryStream();
+            stream.CopyTo(copy);
+            childLayout = copy.ToArray();
+        }), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+
+        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs { DocumentId = derivedId, PipelineRunId = runId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var derived = await _documentRepository.GetAsync(derivedId, includeDetails: false);
+            derived.Markdown.ShouldBe("納品書\n\n契約書");
+            derived.ExtractionMetadata!.ProviderName.ShouldBe("pdf");
+        });
+
+        // Its own layout: the source's pages 2 and 3, numbered 1 and 2 like the pages of its own file.
+        var layout = System.Text.Json.Nodes.JsonNode.Parse(childLayout!)!["document"]!.AsObject();
+        var tree = ExtractionDocumentJson.Read(layout);
+        tree.SourcePages.Select(page => page.PageNumber).ShouldBe([1, 2]);
+        ExtractionDocumentMarkdown.Render(tree).ShouldBe("納品書\n\n契約書");
+
+        await _extractionClient.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_page_range_sub_document_whose_source_has_no_layout_is_seeded_from_its_slice()
+    {
+        var (_, derivedId, runId) = await ArrangePageRangeChildAsync(storeSourceLayout: false);
+
+        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs { DocumentId = derivedId, PipelineRunId = runId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var derived = await _documentRepository.GetAsync(derivedId, includeDetails: false);
+            derived.Markdown.ShouldBe("納品書 契約書");
+        });
+    }
+
+    /// <summary>
+    /// A parsed three-page bundle (invoice, delivery note, contract) and the sub-document cut from its pages 2-3, with
+    /// its own file and a queued parse.
+    /// </summary>
+    private async Task<(Guid SourceId, Guid DerivedId, Guid RunId)> ArrangePageRangeChildAsync(bool storeSourceLayout)
+    {
+        var tree = new ExtractionDocument("bundle");
+        tree.SetProvider("pdf");
+        foreach (var (number, text) in new[] { (1, "請求書"), (2, "納品書"), (3, "契約書") })
+        {
+            var page = new ExtractionDocumentSourcePage("page-" + number, number);
+            tree.SourcePages.Add(page);
+            var section = new ExtractionDocumentSection();
+            section.Sources.Add(new ExtractionDocumentSourceReference(page));
+            var paragraph = new ExtractionDocumentTextElement(new TextContent(text));
+            paragraph.Sources.Add(new ExtractionDocumentSourceReference(page,
+                [new ExtractionDocumentPoint(50, 700), new ExtractionDocumentPoint(300, 700), new ExtractionDocumentPoint(300, 680), new ExtractionDocumentPoint(50, 680)]));
+            section.Elements.Add(paragraph);
+            tree.Sections.Add(section);
+        }
+
+        var sourceMarkdown = ExtractionDocumentMarkdown.Render(tree);
+        var sourceId = _guidGenerator.Create();
+        var derivedId = _guidGenerator.Create();
+        var segmentKey = $"{Guid.NewGuid():N}{Guid.NewGuid():N}"[..64];
+
+        if (storeSourceLayout)
+        {
+            byte[]? stored = null;
+            _blobContainer.SaveAsync($"layout/{sourceId}", Arg.Do<Stream>(stream =>
+            {
+                using var copy = new MemoryStream();
+                stream.CopyTo(copy);
+                stored = copy.ToArray();
+            }), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            await GetRequiredService<Dignite.Vault.Extract.Documents.Layout.DocumentLayoutStore>().SaveAsync(sourceId, tree, sourceMarkdown);
+            _blobContainer.GetOrNullAsync($"layout/{sourceId}", Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromResult<Stream?>(new MemoryStream(stored!)));
+        }
+
+        Guid runId = default;
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var source = CreateDocument(sourceId);
+            typeof(Document).GetProperty(nameof(Document.Markdown))!.GetSetMethod(nonPublic: true)!.Invoke(source, [sourceMarkdown]);
+            await _documentRepository.InsertAsync(source, autoSave: true);
+
+            await _segmentRepository.InsertAsync(new DocumentSegment(
+                _guidGenerator.Create(), tenantId: null, sourceDocumentId: sourceId,
+                segmentKey: segmentKey, sliceText: "納品書 契約書", ordinal: 1,
+                kind: DocumentSegmentKind.Text, firstPage: 2, lastPage: 3), autoSave: true);
+
+            var derived = Document.CreateDerived(
+                derivedId, tenantId: null,
+                fileOrigin: new FileOrigin("cut.pdf", "test-user", "application/pdf", $"{Guid.NewGuid():N}{Guid.NewGuid():N}", 512, "bundle (p2-3).pdf"),
+                originDocumentId: sourceId, originConstituentKey: segmentKey, creatorId: null);
+            await _documentRepository.InsertAsync(derived, autoSave: true);
+
+            runId = (await _pipelineJobScheduler.QueueAsync(derived, VaultExtractPipelines.Parse)).Id;
+        });
+
+        return (sourceId, derivedId, runId);
     }
 
     private async Task<Guid> ArrangeQueuedParseAsync(Guid documentId)
