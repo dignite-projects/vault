@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Index as an Agent Framework knowledge source.** `Dignite.Vault.Index.AgentFramework` provides
+  `VaultIndexTextSearch`, the search behind Agent Framework's `TextSearchProvider` (before every run or as a
+  `vault_search_passages` tool), with passages wrapped as untrusted document data, an optional rerank-score floor, and
+  long conversations cut to their latest text. `Dignite.Vault.Index.HttpApi.Client` adds dynamic HTTP client proxies
+  (`RemoteServices:VaultIndex`), so the same search works against a remote host. See
+  [Index Search](docs/en/egress/index-search.md#agent-framework-agents).
+
 - **Search can say it has no answer.** The Index evaluation set (version 5) gains 20 questions no document answers, and
   a new abstention measurement compares their top scores with the answerable ones'
   (`Evaluation/abstention-2026-11-17.md`): with `BAAI/bge-reranker-v2-m3` the best hit scores a median 0.98 for an

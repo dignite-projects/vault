@@ -56,6 +56,8 @@
         <Project Path="modules/vault.index/src/Dignite.Vault.Index.EntityFrameworkCore/Dignite.Vault.Index.EntityFrameworkCore.csproj" />
         <Project Path="modules/vault.index/src/Dignite.Vault.Index.EntityFrameworkCore.SqlServer/Dignite.Vault.Index.EntityFrameworkCore.SqlServer.csproj" />
         <Project Path="modules/vault.index/src/Dignite.Vault.Index.HttpApi/Dignite.Vault.Index.HttpApi.csproj" />
+        <Project Path="modules/vault.index/src/Dignite.Vault.Index.HttpApi.Client/Dignite.Vault.Index.HttpApi.Client.csproj" />
+        <Project Path="modules/vault.index/src/Dignite.Vault.Index.AgentFramework/Dignite.Vault.Index.AgentFramework.csproj" />
         <Project Path="modules/vault.index/src/Dignite.Vault.Index.Mcp/Dignite.Vault.Index.Mcp.csproj" />
         <Project Path="modules/vault.index/src/Dignite.Vault.Index.Reranking.Http/Dignite.Vault.Index.Reranking.Http.csproj" />
     </Folder>
