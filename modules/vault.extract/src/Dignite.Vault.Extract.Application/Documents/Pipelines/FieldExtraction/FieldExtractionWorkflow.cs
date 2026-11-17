@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.FlexFields.CKEditor;
+using Dignite.Abp.FlexFields.Date;
 using Dignite.Abp.FlexFields.Select;
 using Dignite.Abp.FlexFields.Text;
 using Dignite.Vault.Extract.Ai;
@@ -272,6 +273,7 @@ public class FieldExtractionWorkflow : ITransientDependency
         "use '.' as the decimal point and '-' for negatives); " +
         "Date as an ISO-8601 \"YYYY-MM-DD\" JSON string; " +
         "DateTime as an offset-free ISO-8601 \"YYYY-MM-DDThh:mm:ss\" JSON string (local wall-clock time, no timezone offset or trailing Z); " +
+        "Month as an ISO-8601 \"YYYY-MM\" JSON string, with no day; " +
         "Boolean as JSON true or false; " +
         "Text as the original text. " +
         "When a value cannot be normalized to its declared data type, set that field to null. " +
@@ -298,10 +300,9 @@ public class FieldExtractionWorkflow : ITransientDependency
             // f.Name has already been allow-list regex validated in the FieldDefinition entity layer and contains only [A-Za-z0-9_-].
             // f.Prompt comes from Host compile-time constants or tenant user input. PromptBoundary.WrapField explicitly marks it as data,
             // and BoundaryRule tells the model to treat it as non-instruction content.
-            // #212: multi-value fields append "[]" after the type label, such as "Text[]", to tell the model to return an array.
-            // The field type's registration key is a system-controlled value from a fixed set, never user
-            // input, so it goes into the prompt raw - same standing as v2's DataType enum name.
-            var typeLabel = f.FieldTypeName;
+            // A multi-value field is told apart by its schema (an array), not by its label. The label is a
+            // system-controlled value from a fixed set, never user input, so it goes into the prompt raw.
+            var typeLabel = PromptTypeLabel(f);
             var header = $"- \"{f.Name}\" ({typeLabel}, {(f.IsRequired ? "required" : "optional")})";
             // Prompt is optional. When empty, provide only "field name + type" and let the model infer what to extract from Name semantics.
             // Never output an empty PromptBoundary-wrapped block: WrapField("") would produce an empty data boundary marker,
@@ -311,6 +312,27 @@ public class FieldExtractionWorkflow : ITransientDependency
                 : $"{header}: {PromptBoundary.WrapField(f.Prompt)}");
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The type the instructions name for <paramref name="field"/>: its field type's key, except for a <c>DateTime</c>
+    /// field, which is one type with three formats and is named by its input mode (<c>Date</c>, <c>DateTime</c> or
+    /// <c>Month</c>). Labelled <c>DateTime</c>, a date field was answered in the date-time format, which the date reader
+    /// rejects; the schema's pattern says otherwise, but not every provider enforces a pattern.
+    /// </summary>
+    protected static string PromptTypeLabel(FieldExtractionDescriptor field)
+    {
+        if (!string.Equals(field.FieldTypeName, DateTimeFieldType.ControlName, StringComparison.Ordinal))
+        {
+            return field.FieldTypeName;
+        }
+
+        return new DateTimeConfiguration(field.Configuration).InputMode switch
+        {
+            DateTimeInputMode.DateTime => "DateTime",
+            DateTimeInputMode.Month => "Month",
+            _ => "Date"
+        };
     }
 
     private ChatResponseFormat BuildResponseFormat(IReadOnlyList<FieldExtractionDescriptor> fields)

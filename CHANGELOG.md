@@ -343,6 +343,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A date field lost its value whenever the model wrote a time.** The field-extraction prompt named every `DateTime`
+  field by its type, whatever its input mode, so the model answered a Date-mode field as `2026-11-20T00:00:00` and the
+  date reader rejected it; the schema's pattern would have refused that, but SiliconFlow does not enforce patterns.
+  A `DateTime` field is now named by its input mode (`Date`, `DateTime` or `Month`), and the instructions give the
+  `Month` format too.
 - **Extract's background jobs were stored under their args types' full names**, not the `VaultExtract.*` names the
   documentation gives: ABP reads `[BackgroundJobName]` from the args type, and Extract had put it on the job class. A
   rename or a namespace move of an args type would have stranded the jobs queued under the old name, which ABP
