@@ -184,8 +184,10 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
             return [];
         }
 
-        // EF Core 10 does not translate FREETEXTTABLE, so the ranked keys come from SqlQuery and are joined in LINQ to the
-        // chunk DbSet: the join keeps the tenant filter and the read scope in the generated SQL (storage PoC). The
+        // The ranked keys come from SqlQuery and are joined in LINQ to the chunk DbSet: the join keeps the tenant filter
+        // and the read scope in the generated SQL (storage PoC). Not EF Core 11's FreeTextTable: 11.0.0 appends the
+        // DbSet's query filters to the FREETEXTTABLE source under an alias it never declares ("The multi-part identifier
+        // "v.TenantId" could not be bound"), and ABP gives every multi-tenant entity such a filter. The
         // query text is a parameter; the table name comes from the EF model. No TOP n inside FREETEXTTABLE: its ranking
         // spans every tenant, so a top-n cut there could leave this tenant with nothing.
         // The table name is the EF model's, quoted; only the query text comes from the caller, and it is a parameter.
