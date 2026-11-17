@@ -180,6 +180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The product is called Dignite Vault** (shipped host, Angular host app, docs). The host's `AppName` — the browser tab
+  title, the sign-in page, the footer and the home page of the SPA — is `Dignite Vault` in English, `文書活用` in Japanese,
+  `文枢` in Simplified Chinese and `文樞` in Traditional Chinese. Vault Extract and Vault Index stay the names of the
+  modules: the menu group, the `VaultExtract.Enable` feature, the packages. Localization and text only; no EF migration
+  and no change to the REST, MCP or EventBus contracts.
 - **A scanned page inside a digital PDF is read by OCR** (`Dignite.Vault.Parse.Pdf`). The PDF engine judges each page's
   text layer — none, characters no font maps to text, a broken font encoding, scan noise (RAGFlow's rules) — and reads
   such a page, or one PdfPig cannot parse, with the host's OCR engine as a one-page PDF, onto that page. Before, a
@@ -314,7 +319,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package and every `@abp/ng.*` package.
 - **abp-modules `10.7.6`** (was `10.7.1`), on both sides: `Dignite.Abp.FlexFields.*`, `Dignite.Abp.AspNetCore.Mcp`,
   `Dignite.Abp.Notifications.*`, `Dignite.NotificationCenter.*` and `@dignite/ng.flex-fields`,
-  `@dignite/ng.flex-fields-ckeditor`, `@dignite/ng.notification-center`. What reaches Vault Extract:
+  `@dignite/ng.flex-fields-ckeditor`, `@dignite/ng.notification-center`. What reaches Dignite Vault:
   - MCP tool results are no longer `\u`-escaped. Non-ASCII text (Japanese, Chinese) and `<`, `>`, `&` reach the MCP
     client as written, so a document body or a title is several times shorter for the model. The parsed JSON is
     unchanged, so a client that parses it needs no change. `PromptBoundary` still encodes `<` inside the content it
@@ -564,7 +569,7 @@ Additive, no data change; `StoreSuccessfulJobs` stays off, so the column is writ
 - **abp-modules `10.0.0-rc.28`, .NET side.** `Dignite.Abp.FlexFields.*`, `Dignite.Abp.AspNetCore.Mcp`,
   `Dignite.Abp.Notifications.*` and `Dignite.NotificationCenter.*` move from rc.25 to rc.28. rc.28 renames the
   file-storing module to `Dignite.Abp.BlobStoring.Pipeline` / `.Imaging` (contributors for ABP 10.7's BLOB content
-  pipeline); Vault Extract uses neither the old nor the new packages and keeps `Volo.Abp.BlobStoring` as is.
+  pipeline); Dignite Vault uses neither the old nor the new packages and keeps `Volo.Abp.BlobStoring` as is.
 - **Breaking - Angular 22, `@abp/ng.*` 10.7.0, TypeScript 6 (was Angular 21, 10.5.0, TypeScript 5.9).** The workspace
   follows ABP 10.7.0's Angular template: `@angular/*` 22.2, `@angular/cli` / `@angular/build` 22.2, `ng-packagr` 22.2,
   `typescript` 6.0.3, `@abp/ng.*` `~10.7.0`, `@abp/ng.theme.lepton-x` `~5.7.0`, `angular-eslint` 22. The published
@@ -598,14 +603,14 @@ Additive, no data change; `StoreSuccessfulJobs` stays off, so the column is writ
 
 ## [0.5.0-preview.15] - 2026-10-10
 
-The abp-modules libraries move to `10.0.0-rc.25` (File Explorer removed upstream; Vault Extract never used it). No EF migration.
+The abp-modules libraries move to `10.0.0-rc.25` (File Explorer removed upstream; Dignite Vault never used it). No EF migration.
 
 ### Changed
 
 - **abp-modules `10.0.0-rc.25`, on both sides.** `Dignite.Abp.FlexFields.*`, `Dignite.Abp.AspNetCore.Mcp`,
   `Dignite.Abp.Notifications.*` and `Dignite.NotificationCenter.*` move to `10.0.0-rc.25`, and the Angular pins
   `@dignite/ng.flex-fields`, `@dignite/ng.flex-fields-ckeditor` and `@dignite/ng.notification-center` move with them.
-  rc.25 removes `Dignite.FileExplorer.*` from abp-modules and leaves file-storing with its core only; Vault Extract
+  rc.25 removes `Dignite.FileExplorer.*` from abp-modules and leaves file-storing with its core only; Dignite Vault
   does not use File Explorer, so this is a lockstep upgrade with no behaviour change and no EF migration.
 
 ## [0.5.0-preview.14] - 2026-10-09
@@ -627,19 +632,19 @@ The abp-modules libraries move to `10.0.0-rc.24`, and a host can now run operato
   Application, and a publisher using `Dignite.Abp.Notifications.Client` would then have distributed its notifications
   itself instead of sending them to the notification service. Its production code is otherwise unchanged.
   **Host impact:**
-  - The Vault Extract host as shipped does not change: `Dignite.NotificationCenter.Application` brings the
+  - The Dignite Vault host as shipped does not change: `Dignite.NotificationCenter.Application` brings the
     implementation.
   - A host that embeds Application and installs neither the Notification Center nor `.Client` now resolves
     `NullNotificationPublisher`: each notification logs a warning and is dropped. Install one of the two to deliver.
   - The distribution background job is named `Dignite.Abp.Notifications.Distribute` (since rc.23), so jobs still
     queued under the old name (`Dignite.Abp.Notifications.NotificationDistributionJobArgs`) are not picked up after the
-    upgrade. Vault Extract sends each notification to one explicit recipient, which is distributed inline, so its own
+    upgrade. Dignite Vault sends each notification to one explicit recipient, which is distributed inline, so its own
     queue is normally empty; check that `AbpBackgroundJobs` holds no row under the old name before deploying.
   - No EF migration (`dotnet ef migrations has-pending-model-changes` reports none).
 - **Operator notifications can run as a split deployment (optional).** A host may install
   `Dignite.Abp.Notifications.Client` and `Dignite.Abp.Notifications.EntityFrameworkCore` (or `.MongoDB`) instead of
   `Dignite.NotificationCenter.*`, map the `NotificationCenter` connection string to a notification service's
-  database, and let that service own the inbox and the SignalR hub. The Vault Extract host as shipped keeps the
+  database, and let that service own the inbox and the SignalR hub. The Dignite Vault host as shipped keeps the
   monolith install and does not change. In a split deployment the transaction in `DocumentNotificationDispatcher`
   holds only the outbox write of the publish request, not the inbox rows, which the service writes; the comment
   there said otherwise and now says both. See
