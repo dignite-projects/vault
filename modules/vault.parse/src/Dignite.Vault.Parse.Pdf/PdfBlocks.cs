@@ -26,6 +26,9 @@ internal sealed record PdfHeadingBlock(PdfRectangle Bounds, int Level, string Ma
 internal sealed record PdfListBlock(PdfRectangle Bounds, IReadOnlyList<string> Items) : PdfBlock(Bounds);
 
 /// <summary>A table; <see cref="Continuations"/> are the regions of the pages a page break carried it on to.</summary>
+/// <summary>A page read by the OCR engine: its elements, which come to refer to this page.</summary>
+internal sealed record PdfElementsBlock(PdfRectangle Bounds, IReadOnlyList<ExtractionDocumentElement> Elements) : PdfBlock(Bounds);
+
 internal sealed record PdfTableBlock(PdfRectangle Bounds, PdfTable Table) : PdfBlock(Bounds)
 {
     public IReadOnlyList<PdfContinuation> Continuations { get; init; } = [];
@@ -127,6 +130,21 @@ internal static class PdfElements
                     }
 
                     yield return element;
+                    break;
+
+                case PdfElementsBlock read:
+                    foreach (var ocrElement in read.Elements)
+                    {
+                        // The OCR engine read a one-page copy: its page is this one.
+                        ocrElement.Sources.Clear();
+                        if (page is not null)
+                        {
+                            ocrElement.Sources.Add(new ExtractionDocumentSourceReference(page));
+                        }
+
+                        yield return ocrElement;
+                    }
+
                     break;
 
                 case PdfFigureBlock figure:

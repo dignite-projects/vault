@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.Writer;
 using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Vault.Parse.Pdf;
@@ -86,7 +87,6 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
         using (document)
         {
             var pages = new List<PageContent>();
-            var hasTextLayer = false;
             var failedPages = 0;
             foreach (var page in document.GetPages())
             {
@@ -99,27 +99,25 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    // PdfPig parses content streams lazily, so a corrupt page / malformed font faults here
-                    // (on access), not at Open. Skip the bad page and mark the result incomplete rather
-                    // than failing the whole document — mirrors VisionLlmOcrProvider's per-page resilience (#268).
-                    Logger.LogWarning(ex, "Failed to parse the text layer of a PDF page; skipping it.");
-                    failedPages++;
+                    // PdfPig parses content streams lazily, so a corrupt page / malformed font faults here (on access),
+                    // not at Open. The page is read by OCR like a scanned one; without OCR it is skipped and the result
+                    // marked incomplete rather than failing the whole document (#268).
+                    Logger.LogWarning(ex, "Failed to parse the text layer of a PDF page; reading it by OCR.");
+                    pages.Add(new PageContent(page, Array.Empty<Word>(), PdfPageTextQuality.Missing, TextLayerFailed: true));
                     continue;
                 }
 
-                if (!hasTextLayer && words.Any(w => HasLetterOrDigit(w.Text)))
-                {
-                    hasTextLayer = true;
-                }
-
-                pages.Add(new PageContent(page, words));
+                // A page with no text, or text that does not say what the page shows (a broken font encoding, scan
+                // noise), is read by OCR instead.
+                var quality = PdfPageText.Judge(words);
+                pages.Add(new PageContent(page, words, quality));
             }
 
-            // No digital text layer → scanned / image-only PDF. Do NOT OCR images here; return empty so
-            // the router's whole-page OCR fallback owns that path (avoids double OCR).
-            if (!hasTextLayer)
+            // No usable text layer anywhere → a scanned / image-only (or wholly garbled) PDF. Return empty so the
+            // router's OCR fallback reads the whole file in one call; no page is OCR'd here.
+            if (pages.All(p => p.Quality != PdfPageTextQuality.Usable))
             {
-                Logger.LogDebug("PDF has no digital text layer; deferring to whole-page OCR fallback.");
+                Logger.LogDebug("PDF has no usable digital text layer; deferring to whole-document OCR.");
                 return Empty(identifier);
             }
 
@@ -135,6 +133,11 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             // Distinct from failedPages (GetWords fault → whole page dropped): here GetImages faulted but
             // the page's text was already extracted and is retained — only its images are skipped.
             var pagesWithSkippedImages = 0;
+            // Pages without a usable text layer, read by OCR one at a time: failed, truncated, or past the cap.
+            var ocrPageBudget = _options.MaxOcrPagesPerPdf;
+            var failedPageOcr = 0;
+            var truncatedPageOcr = 0;
+            var pagesOverOcrCap = 0;
 
             var languageHints = ResolveLanguageHints(options);
 
@@ -143,18 +146,63 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             // only selects candidates; a line is dropped only when its digit-normalized text repeats across
             // enough pages — so a per-page signature / seal / total / footnote is preserved, and a single-page
             // document drops nothing.
-            var runningContent = PdfRunningHeaderFooter.Detect(pages.ConvertAll(p => p.Words));
+            var runningContent = PdfRunningHeaderFooter.Detect(pages.ConvertAll(p => p.Quality == PdfPageTextQuality.Usable ? p.Words : Array.Empty<Word>()));
 
             // #403: build the document-wide font-size → heading-level scale once (rank of the distinct sizes
             // larger than the char-count-weighted body size), then pass it to each page render so larger/bold
             // lines become Markdown headings. Built from all words; a single-size document yields no headings.
-            var headingScale = PdfHeadingScale.Build(pages.SelectMany(p => p.Words));
+            var headingScale = PdfHeadingScale.Build(pages.Where(p => p.Quality == PdfPageTextQuality.Usable).SelectMany(p => p.Words));
 
             for (var pageIndex = 0; pageIndex < pages.Count; pageIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var pageContent = pages[pageIndex];
+                if (pageContent.Quality != PdfPageTextQuality.Usable)
+                {
+                    if (!_options.OcrPagesWithoutText)
+                    {
+                        // Without page OCR a page whose text layer could not be parsed is lost; the others read on
+                        // below as before (a scanned page's raster as a figure, a garbled page's text as written).
+                        if (pageContent.TextLayerFailed)
+                        {
+                            failedPages++;
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        if (ocrPageBudget <= 0)
+                        {
+                            pagesOverOcrCap++;
+                            continue;
+                        }
+
+                        ocrPageBudget--;
+                        var read = await OcrPageAsync(document, pageContent.Page.Number, identifier, languageHints, cancellationToken);
+                        if (read is null)
+                        {
+                            failedPageOcr++;
+                            continue;
+                        }
+
+                        if (!read.IsComplete())
+                        {
+                            truncatedPageOcr++;
+                        }
+
+                        var elements = read.Sections.SelectMany(section => section.Elements).ToList();
+                        if (elements.Count > 0)
+                        {
+                            readPages.Add((pageContent.Page, new PdfTableContinuation.Page(
+                                pageContent.Page.Number,
+                                [new PdfElementsBlock(new PdfRectangle(0, 0, pageContent.Page.Width, pageContent.Page.Height), elements)])));
+                        }
+
+                        continue;
+                    }
+                }
+
                 var figures = new List<PdfReadingOrder.Figure>();
 
                 List<IPdfImage> images;
@@ -311,7 +359,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             // that could drift when a new counter is added).
             var incompleteReason = BuildIncompleteReason(
                 failedPages, pagesWithSkippedImages, droppedByCap, undecodable, truncatedOcr, failedFigureOcr,
-                latticeDroppedFragments);
+                latticeDroppedFragments, failedPageOcr, truncatedPageOcr, pagesOverOcrCap);
             var complete = incompleteReason is null;
             if (!complete)
             {
@@ -507,9 +555,6 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
         }
     }
 
-    private static bool HasLetterOrDigit(string? text)
-        => !string.IsNullOrEmpty(text) && text.Any(char.IsLetterOrDigit);
-
     /// <summary>
     /// Resolves the OCR language hints for embedded-image transcription: the per-document hints from the
     /// extraction options, or empty. There is no central host default (#441 removed it); a provider that needs a
@@ -527,12 +572,27 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     /// </summary>
     internal static string? BuildIncompleteReason(
         int failedPages, int pagesWithSkippedImages, int droppedByCap, int undecodable, int truncatedOcr, int failedFigureOcr,
-        int latticeDroppedFragments)
+        int latticeDroppedFragments, int failedPageOcr = 0, int truncatedPageOcr = 0, int pagesOverOcrCap = 0)
     {
         var parts = new List<string>();
         if (failedPages > 0)
         {
             parts.Add($"{failedPages} page(s) could not be parsed and were skipped");
+        }
+
+        if (failedPageOcr > 0)
+        {
+            parts.Add($"{failedPageOcr} page(s) without a usable text layer failed OCR and were skipped");
+        }
+
+        if (truncatedPageOcr > 0)
+        {
+            parts.Add($"{truncatedPageOcr} page transcription(s) were truncated or discarded by the OCR provider");
+        }
+
+        if (pagesOverOcrCap > 0)
+        {
+            parts.Add($"{pagesOverOcrCap} page(s) without a usable text layer were skipped after reaching the per-document OCR page cap");
         }
 
         if (pagesWithSkippedImages > 0)
@@ -568,5 +628,37 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
         return parts.Count == 0 ? null : string.Join("; ", parts) + ".";
     }
 
-    private readonly record struct PageContent(Page Page, IReadOnlyList<Word> Words);
+    private readonly record struct PageContent(
+        Page Page, IReadOnlyList<Word> Words, PdfPageTextQuality Quality, bool TextLayerFailed = false);
+
+    /// <summary>
+    /// Page <paramref name="pageNumber"/> read by the OCR engine, as a one-page PDF (PdfPig copies the page), or
+    /// <c>null</c> when it could not be copied or read. A cancellation of the caller's token still propagates.
+    /// </summary>
+    protected virtual async Task<ExtractionDocument?> OcrPageAsync(
+        PdfDocument document, int pageNumber, string identifier, IReadOnlyList<string> languageHints, CancellationToken cancellationToken)
+    {
+        try
+        {
+            byte[] page;
+            using (var builder = new PdfDocumentBuilder())
+            {
+                builder.AddPage(document, pageNumber);
+                page = builder.Build();
+            }
+
+            using var stream = new MemoryStream(page, writable: false);
+            return await _ocr.ExtractAsync(
+                stream,
+                identifier + "#page-" + pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "application/pdf",
+                ParseExtractionOptions.Create(fileName: null, languageHints),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            Logger.LogWarning(ex, "OCR of PDF page {PageNumber} failed; skipping the page.", pageNumber);
+            return null;
+        }
+    }
 }
