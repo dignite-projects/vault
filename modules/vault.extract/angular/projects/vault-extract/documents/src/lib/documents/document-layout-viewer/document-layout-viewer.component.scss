@@ -1,0 +1,64 @@
+// Region colours follow the theme's semantic colours, so the overlay reads in light and dark themes alike.
+.layout-page {
+  background: var(--bs-body-bg);
+}
+
+.layout-box {
+  border: 1.5px solid var(--layout-color);
+  background: color-mix(in srgb, var(--layout-color) 8%, transparent);
+  cursor: pointer;
+
+  &:hover,
+  &.layout-selected {
+    background: color-mix(in srgb, var(--layout-color) 28%, transparent);
+  }
+}
+
+.layout-cell {
+  border-width: 1px;
+  border-style: dashed;
+}
+
+.layout-paragraph,
+.layout-listItem,
+.layout-quote,
+.layout-markdown {
+  --layout-color: var(--bs-primary);
+}
+
+.layout-heading {
+  --layout-color: var(--bs-danger);
+}
+
+.layout-table,
+.layout-cell {
+  --layout-color: var(--bs-success);
+}
+
+.layout-image {
+  --layout-color: var(--bs-warning);
+}
+
+.layout-code,
+.layout-pageHeader,
+.layout-pageFooter {
+  --layout-color: var(--bs-secondary);
+}
+
+.layout-badge {
+  background: var(--layout-color);
+  color: var(--bs-body-bg);
+}
+
+.layout-detail {
+  position: sticky;
+  top: 1rem;
+  width: 22rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.layout-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

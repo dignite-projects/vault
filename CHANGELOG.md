@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Layout view of a PDF** (`@dignite/ng.vault-extract`). The file preview of a PDF has a **Layout** switch that draws
+  the pages with pdf.js (`pdfjs-dist`, a new dependency of the library, loaded only when the switch is turned on) and
+  outlines every region the parse read, coloured by kind; pointing at one shows its text. Its worker runs on the main
+  thread, so a host needs no worker asset. The Angular proxies are regenerated against the ABP 11 host for it: every
+  call now sends an `Accept` header, `DocumentService.upload` takes `FormData`, and `getLayout` is new. See
+  [Documents](docs/en/documents/documents.md#reviewing-a-document).
+
 - **Document layout** (modules and shipped host). A parse now keeps the document tree it produced — sections, headings,
   lists, tables with merged cells, images with their OCR text, and the page region every element was read from — as the
   blob `layout/{documentId}`, and `GET /api/vault-extract/documents/{id}/layout` (`IDocumentAppService.GetLayoutAsync`)

@@ -10,10 +10,12 @@ export class DocumentStatisticsService {
   apiName = 'Default';
   
 
+  
   get = (config?: Partial<Rest.Config>) =>
     this.restService.request<any, DocumentStatisticsDto>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/document-statistics',
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }

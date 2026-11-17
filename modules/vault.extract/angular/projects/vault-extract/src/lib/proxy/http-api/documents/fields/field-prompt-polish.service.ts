@@ -10,11 +10,13 @@ export class FieldPromptPolishService {
   apiName = 'Default';
   
 
+  
   polish = (input: FieldPromptPolishInput, cancellationToken: any, config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldPromptPolishResultDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/field-prompt-polish/polish',
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }

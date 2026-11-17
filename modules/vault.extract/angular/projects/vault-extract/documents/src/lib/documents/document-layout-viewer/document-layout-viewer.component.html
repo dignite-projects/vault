@@ -1,0 +1,73 @@
+@switch (state()) {
+  @case ('loading') {
+    <div class="d-flex align-items-center justify-content-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+    </div>
+  }
+  @case ('noLayout') {
+    <div class="alert alert-secondary" role="status">
+      <i class="fas fa-circle-info me-2"></i>{{ 'VaultExtract::Document:NoLayout' | abpLocalization }}
+    </div>
+  }
+  @case ('error') {
+    <div class="alert alert-danger" role="alert">
+      <i class="fas fa-exclamation-triangle me-2"></i>{{ 'VaultExtract::Document:LayoutUnavailable' | abpLocalization }}
+    </div>
+  }
+  @case ('ready') {
+    @if (!current()) {
+      <div class="alert alert-warning py-2" role="status">
+        <i class="fas fa-pen me-2"></i>{{ 'VaultExtract::Document:LayoutNotCurrent' | abpLocalization }}
+      </div>
+    }
+
+    <div class="layout-viewer d-flex flex-wrap gap-3 align-items-start">
+      <div class="layout-pages flex-grow-1 d-flex flex-column align-items-center gap-3">
+        @for (page of pages(); track page.number) {
+          <div
+            class="layout-page position-relative border shadow-sm"
+            [style.width.px]="page.width"
+            [style.height.px]="page.height"
+          >
+            <canvas
+              #pageCanvas
+              class="position-absolute top-0 start-0"
+              [attr.data-page]="page.number"
+              [style.width.px]="page.width"
+              [style.height.px]="page.height"
+            ></canvas>
+            @for (box of page.boxes; track $index) {
+              <div
+                class="layout-box position-absolute"
+                [class]="'layout-' + box.kind"
+                [class.layout-selected]="box === selected()"
+                [style.left.px]="box.x"
+                [style.top.px]="box.y"
+                [style.width.px]="box.w"
+                [style.height.px]="box.h"
+                [title]="box.text"
+                (mouseenter)="hovered.set(box)"
+                (mouseleave)="hovered.set(null)"
+                (click)="select(box)"
+              ></div>
+            }
+          </div>
+        }
+      </div>
+
+      <aside class="layout-detail card shadow-sm">
+        <div class="card-body small">
+          @if (shown(); as box) {
+            <div class="mb-2">
+              <span class="badge layout-badge" [class]="'layout-' + box.kind">{{ box.kind }}</span>
+              <span class="text-muted ms-2">{{ 'VaultExtract::Document:LayoutPage' | abpLocalization: box.pageNumber.toString() }}</span>
+            </div>
+            <div class="layout-text">{{ box.text }}</div>
+          } @else {
+            <p class="text-muted mb-0">{{ 'VaultExtract::Document:LayoutHint' | abpLocalization }}</p>
+          }
+        </div>
+      </aside>
+    </div>
+  }
+}

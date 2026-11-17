@@ -10,11 +10,13 @@ export class SlugSuggestionService {
   apiName = 'Default';
   
 
+  
   suggest = (input: SuggestSlugInput, cancellationToken: any, config?: Partial<Rest.Config>) =>
     this.restService.request<any, SlugSuggestionDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/slug-suggestion/suggest',
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }
