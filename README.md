@@ -1,6 +1,6 @@
-# Dignite Vault Extract
+# Dignite Vault
 
-> **Dignite Vault Extract = any content requiring IDP (Intelligent Document Processing) — scans / photos / PDF images / Office files / digital-born documents → trustworthy structured data.**
+> **Dignite Vault = any content requiring IDP (Intelligent Document Processing) — scans / photos / PDF images / Office files / digital-born documents → trustworthy structured data.**
 > A **channel layer**, not an end-product. It doesn't consume, doesn't own, doesn't dive into business — it hands Markdown + structured metadata to downstream RAG platforms, business systems, and AI clients via REST / EventBus / MCP server / Webhook (planned).
 
 For the positioning, architecture, what the module does not contain, the event contract and the security rules for LLM call paths, see [CLAUDE.md](./CLAUDE.md). It is the truth source — this README only stages the entry points; everything operational lives in [docs/](./docs/en/index.md).
@@ -113,4 +113,4 @@ External references:
 
 ## License
 
-Dignite Vault Extract is licensed under the [GNU Lesser General Public License v3.0](./LICENSE).
+Dignite Vault is licensed under the [GNU Lesser General Public License v3.0](./LICENSE).
