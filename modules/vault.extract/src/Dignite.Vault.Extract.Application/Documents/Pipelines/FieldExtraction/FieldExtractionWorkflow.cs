@@ -182,6 +182,9 @@ public class FieldExtractionWorkflow : ITransientDependency
             chars += EstimateFieldChars(field);
         }
 
+        // The quoted sources: up to MaxSourcesPerField passages per field, each a JSON string of quoted document text.
+        chars += fields.Count * MaxSourcesPerField * ((MaxSourceLength * CjkTokenSafetyMultiplier) + 4);
+
         chars += DocumentFieldValidationWarningConsts.MaxWarningsPerExtraction *
             ((DocumentFieldValidationWarningConsts.MaxMessageLength * CjkTokenSafetyMultiplier) + 60); // + fieldName enum value + JSON overhead
 
@@ -239,6 +242,12 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// </summary>
     private const int CjkTokenSafetyMultiplier = 4;
 
+    /// <summary>Passages the model may quote per field as where it found the value.</summary>
+    public const int MaxSourcesPerField = 3;
+
+    /// <summary>Characters one quoted passage may hold: a value with its label, not a paragraph.</summary>
+    public const int MaxSourceLength = 200;
+
     private int MaxOutputTokenCeiling {
         get {
             if (_behaviorOptions.MaxFieldExtractionOutputTokens <= 0)
@@ -273,7 +282,10 @@ public class FieldExtractionWorkflow : ITransientDependency
         "a line of column labels followed by one or more lines of space- or tab-separated values is still a table — read each such line as a row and align its cells to the column labels from left to right. " +
         "Use headings, tables, and lists as structure signals, but never require Markdown table syntax: extract tabular values even when the pipes and separators have been stripped during extraction. " +
         "Set a field to null only when its information is genuinely absent from the document — not merely because the text is unformatted, split across lines, or lacks table syntax. " +
-        "Return the result as an object with two keys: \"values\" (one key per requested field, as described above) and \"validationWarnings\". " +
+        "Return the result as an object with three keys: \"values\" (one key per requested field, as described above), \"sources\" and \"validationWarnings\". " +
+        "\"sources\" has one key per requested field: an array of up to three short passages copied character for character from the document body where that field's value appears, " +
+        "as written in the document and not normalized (the date, amount or name exactly as printed, with its label when the label fits), one passage per distinct place, " +
+        "and an empty array when the value is null. " +
         "A field's prompt may declare validation rules for its own extracted value (for example a running-balance or total check). " +
         "When a field's value fails such a rule, still return the value in \"values\" exactly as found in the document, and additionally add one entry to \"validationWarnings\" naming that field and giving a concise, human-readable explanation of the mismatch. " +
         "Never invent, alter, or fabricate data to make a rule pass, and never drop a value merely because it failed validation — the value stays, the warning is reported separately. " +
@@ -369,9 +381,10 @@ public class FieldExtractionWorkflow : ITransientDependency
             ["properties"] = new JsonObject
             {
                 ["values"] = BuildValuesSchema(fields),
+                ["sources"] = BuildSourcesSchema(fields),
                 ["validationWarnings"] = warningsSchema
             },
-            ["required"] = new JsonArray { "values", "validationWarnings" },
+            ["required"] = new JsonArray { "values", "sources", "validationWarnings" },
             ["additionalProperties"] = false
         };
 
@@ -402,6 +415,31 @@ public class FieldExtractionWorkflow : ITransientDependency
         };
     }
 
+    private static JsonObject BuildSourcesSchema(IReadOnlyList<FieldExtractionDescriptor> fields)
+    {
+        var properties = new JsonObject();
+        var required = new JsonArray();
+        foreach (var field in fields)
+        {
+            properties[field.Name] = new JsonObject
+            {
+                ["type"] = "array",
+                ["maxItems"] = MaxSourcesPerField,
+                ["items"] = new JsonObject { ["type"] = "string", ["maxLength"] = MaxSourceLength }
+            };
+            required.Add(field.Name);
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["description"] = "Per field, passages copied verbatim from the document where its value was found.",
+            ["properties"] = properties,
+            ["required"] = required,
+            ["additionalProperties"] = false
+        };
+    }
+
     private FieldExtractionWorkflowResult ParseResult(
         string rawJson,
         IReadOnlyList<FieldExtractionDescriptor> fields)
@@ -425,7 +463,7 @@ public class FieldExtractionWorkflow : ITransientDependency
 
         // Envelope (#527 §1): { "values": { ... }, "validationWarnings": [ ... ] }. The two halves are parsed
         // independently, so a malformed warning can never drop a valid value (and vice versa).
-        return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseWarnings(root, fields));
+        return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseWarnings(root, fields), ParseSources(root, fields));
     }
 
     private static FieldExtractionWorkflowResult AllNull(IReadOnlyList<FieldExtractionDescriptor> fields)
@@ -464,6 +502,43 @@ public class FieldExtractionWorkflow : ITransientDependency
             // The raw JsonElement is kept as-is: it is already the canonical JSON shape, and re-encoding it
             // would cost precision on decimals for nothing.
             result[field.Name] = prop;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The quoted passages per declared field, as untrusted as the warnings: undeclared fields, non-strings and blanks are
+    /// dropped, and the count and length are held to the schema's bounds whether or not the provider enforced them.
+    /// </summary>
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ParseSources(
+        JsonElement root,
+        IReadOnlyList<FieldExtractionDescriptor> fields)
+    {
+        var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        if (!root.TryGetProperty("sources", out var sources) || sources.ValueKind != JsonValueKind.Object)
+        {
+            return result;
+        }
+
+        foreach (var field in fields)
+        {
+            if (!sources.TryGetProperty(field.Name, out var quoted) || quoted.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var passages = quoted.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString()!.Trim())
+                .Where(passage => passage.Length > 0)
+                .Select(passage => TextTruncator.AtCharBoundary(passage, MaxSourceLength))
+                .Take(MaxSourcesPerField)
+                .ToList();
+            if (passages.Count > 0)
+            {
+                result[field.Name] = passages;
+            }
         }
 
         return result;

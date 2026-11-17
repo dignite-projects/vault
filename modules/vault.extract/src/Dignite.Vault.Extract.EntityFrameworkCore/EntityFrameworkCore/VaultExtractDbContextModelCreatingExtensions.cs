@@ -39,6 +39,20 @@ public static class VaultExtractDbContextModelCreatingExtensions
             v => v == null ? 0 : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null).GetHashCode(),
             v => v == null ? null : JsonSerializer.Deserialize<DocumentParseMetadata>(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null));
 
+    private static readonly ValueConverter<DocumentFieldSources, string> FieldSourcesConverter =
+        new(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => string.IsNullOrEmpty(v)
+                ? new DocumentFieldSources()
+                : JsonSerializer.Deserialize<DocumentFieldSources>(v, (JsonSerializerOptions?)null) ?? new DocumentFieldSources());
+
+    // Mutated in place (Clear / Remove), so EF must compare by content, not by reference.
+    private static readonly ValueComparer<DocumentFieldSources> FieldSourcesComparer =
+        new(
+            (a, b) => JsonSerializer.Serialize(a, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(b, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null).GetHashCode(),
+            v => JsonSerializer.Deserialize<DocumentFieldSources>(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!);
+
     public static void ConfigureVaultExtract(this ModelBuilder builder)
     {
         Check.NotNull(builder, nameof(builder));
@@ -89,6 +103,12 @@ public static class VaultExtractDbContextModelCreatingExtensions
             // populated, so every document predating v3 would become unreadable on its next load rather
             // than failing at migration time. "{}" is the empty bag such a document actually has.
             b.Property(x => x.FlexFields).HasDefaultValueSql("'{}'");
+
+            // R5: where each value sits in the Markdown. Read and written as a whole, no query: a JSON string like
+            // ExtractionMetadata, defaulting to the empty map every existing document has.
+            b.Property(x => x.FieldSources)
+                .HasConversion(FieldSourcesConverter, FieldSourcesComparer)
+                .HasDefaultValueSql("'{}'");
 
             // #527 §4: field validation warnings are an aggregate-internal child collection (one merged warning per
             // field), separate from field values. Hard-deleting a Document cascades warning-row deletion; the

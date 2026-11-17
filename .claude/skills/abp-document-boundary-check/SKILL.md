@@ -25,7 +25,7 @@ The following fields are infrastructure-level:
 | Cabinet / organization dimension | `CabinetId` |
 | Lifecycle | `LifecycleStatus` |
 | Text extraction | `Markdown` as the only text payload, `Title` as a Markdown-derived display snapshot, `Language`, `ExtractionMetadata` |
-| Type-bound extracted field values | `FlexFields` (`FlexFieldDictionary`, keyed by `Field.Name`; every key is backed by a field definition), `FieldValidationWarnings` (warning messages only, #527) |
+| Type-bound extracted field values | `FlexFields` (`FlexFieldDictionary`, keyed by `Field.Name`; every key is backed by a field definition), `FieldValidationWarnings` (warning messages only, #527), `FieldSources` (per field name, the `Markdown` ranges its value was quoted from; offsets only, no text) |
 | AI classification common metadata | `DocumentTypeId` as the internal immutable association, external wire-format `DocumentTypeCode`, `ClassificationConfidence` |
 | Human review | `ReviewDisposition`, `ReviewReasons`, `RejectionReason` |
 | Duplicate detection (#411) | `FieldFingerprint` (hash of the type's unique-key field values), `DuplicateAllowed` (operator override) |

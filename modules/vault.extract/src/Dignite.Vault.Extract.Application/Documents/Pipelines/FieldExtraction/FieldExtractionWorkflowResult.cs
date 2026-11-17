@@ -18,7 +18,16 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 /// </summary>
 public sealed record FieldExtractionWorkflowResult(
     IReadOnlyDictionary<string, JsonElement?> Values,
-    IReadOnlyList<FieldValidationWarningResult> ValidationWarnings);
+    IReadOnlyList<FieldValidationWarningResult> ValidationWarnings,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? Sources = null)
+{
+    /// <summary>
+    /// Per field name, the passages the model quoted from the document as where it found the value: untrusted text,
+    /// bounded in count and length, that the caller locates in the Markdown. A field it quoted nothing for is absent.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Sources { get; init; } =
+        Sources ?? new Dictionary<string, IReadOnlyList<string>>();
+}
 
 /// <summary>
 /// One field validation warning as produced by the LLM (#527 §1), keyed by the field <b>name</b> — the workflow speaks

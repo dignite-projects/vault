@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -55,7 +57,17 @@ public class DocumentLayoutStore : ITransientDependency
     /// The stored layout as JSON, with <c>current</c> telling whether <paramref name="markdown"/> (the document's Markdown
     /// now) is the one the tree rendered; <c>null</c> when the document has no layout.
     /// </summary>
-    public virtual async Task<string?> GetAsync(Guid documentId, string? markdown, CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// While the layout is current, <c>fields</c> places <paramref name="fieldSources"/> on the pages:
+    /// <c>[{ "name", "spans": [{ "offset", "length" }], "sources": [{ "page", "polygon" }] }]</c>, the regions of the
+    /// narrowest elements — a table cell rather than its table — whose rendered Markdown overlaps a span. Without a
+    /// current layout the ranges cannot be placed, and <c>fields</c> is empty.
+    /// </remarks>
+    public virtual async Task<string?> GetAsync(
+        Guid documentId,
+        string? markdown,
+        IReadOnlyDictionary<string, IReadOnlyList<DocumentTextSpan>>? fieldSources = null,
+        CancellationToken cancellationToken = default)
     {
         await using var stream = await _blobContainer.GetOrNullAsync(BlobName(documentId), cancellationToken);
         if (stream is null)
@@ -64,8 +76,43 @@ public class DocumentLayoutStore : ITransientDependency
         }
 
         var root = (await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken))!.AsObject();
-        root["current"] = markdown is not null && root["markdownSha256"]?.GetValue<string>() == Hash(markdown);
+        var current = markdown is not null && root["markdownSha256"]?.GetValue<string>() == Hash(markdown);
+        root["current"] = current;
+        root["fields"] = current && fieldSources is { Count: > 0 } && root["document"] is JsonObject tree
+            ? PlaceFields(ExtractionDocumentJson.Read(tree), markdown!, fieldSources)
+            : new JsonArray();
         return root.ToJsonString();
+    }
+
+    protected virtual JsonArray PlaceFields(
+        ExtractionDocument tree,
+        string markdown,
+        IReadOnlyDictionary<string, IReadOnlyList<DocumentTextSpan>> fieldSources)
+    {
+        var map = ExtractionDocumentMarkdown.Map(tree);
+        var fields = new JsonArray();
+        if (!string.Equals(map.Markdown, markdown, StringComparison.Ordinal))
+        {
+            // The hash matched, so the renderer itself changed since the parse: its offsets no longer line up.
+            return fields;
+        }
+
+        foreach (var (name, spans) in fieldSources.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            var sources = spans.SelectMany(span => map.SourcesOf(span.Offset, span.Length)).Distinct().ToList();
+            fields.Add(new JsonObject
+            {
+                ["name"] = name,
+                ["spans"] = new JsonArray(spans.Select(span => (JsonNode?)new JsonObject
+                {
+                    ["offset"] = span.Offset,
+                    ["length"] = span.Length
+                }).ToArray()),
+                ["sources"] = ExtractionDocumentJson.WriteSources(sources)
+            });
+        }
+
+        return fields;
     }
 
     public virtual Task<bool> DeleteAsync(Guid documentId, CancellationToken cancellationToken = default)

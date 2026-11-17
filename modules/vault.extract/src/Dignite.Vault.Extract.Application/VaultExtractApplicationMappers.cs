@@ -35,6 +35,7 @@ public partial class DocumentToDocumentDtoMapper : MapperBase<Document, Document
     [MapperIgnoreTarget(nameof(DocumentDto.RequiresReview))]
     [MapperIgnoreTarget(nameof(DocumentDto.ReviewReasonDetails))]
     [MapperIgnoreTarget(nameof(DocumentDto.Rights))]
+    [MapperIgnoreTarget(nameof(DocumentDto.FieldSources))]
     public override partial DocumentDto Map(Document source);
 
     [MapperIgnoreTarget(nameof(DocumentDto.DocumentTypeCode))]
@@ -44,6 +45,7 @@ public partial class DocumentToDocumentDtoMapper : MapperBase<Document, Document
     [MapperIgnoreTarget(nameof(DocumentDto.RequiresReview))]
     [MapperIgnoreTarget(nameof(DocumentDto.ReviewReasonDetails))]
     [MapperIgnoreTarget(nameof(DocumentDto.Rights))]
+    [MapperIgnoreTarget(nameof(DocumentDto.FieldSources))]
     public override partial void Map(Document source, DocumentDto destination);
 }
 
