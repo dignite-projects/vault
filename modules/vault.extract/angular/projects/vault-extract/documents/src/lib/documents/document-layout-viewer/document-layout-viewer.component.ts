@@ -166,7 +166,7 @@ export class DocumentLayoutViewerComponent {
     this.loading = pdfjs.getDocument({ data });
     this.pdf = await this.loading.promise;
 
-    const fieldBoxes = layout.fields.flatMap(field => field.boxes);
+    const fieldBoxes = ([] as LayoutBox[]).concat(...layout.fields.map(field => field.boxes));
     const pages: ViewerPage[] = [];
     for (let number = 1; number <= this.pdf.numPages; number++) {
       const page = await this.pdf.getPage(number);
