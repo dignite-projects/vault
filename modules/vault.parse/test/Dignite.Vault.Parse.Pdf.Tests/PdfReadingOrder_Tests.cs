@@ -382,23 +382,31 @@ public class PdfReadingOrder_Tests
     [Fact]
     public void MergeAdjacentHeadings_leaves_a_figure_transcription_untouched()
     {
-        var input = "## Title\n\n" + ImageOcrMarkup.Wrap("intro\n\n## A\n\n## B\n\noutro", 1);
+        // A transcription's own headings are the OCR engine's Markdown, inside the figure block: never merged.
+        IReadOnlyList<PdfBlock> blocks = [Heading(2, "Title"), Figure("intro\n\n## A\n\n## B\n\noutro")];
 
-        PdfReadingOrder.MergeAdjacentHeadings(input).ShouldBe(input);
+        PdfReadingOrder.MergeAdjacentHeadings(blocks).ShouldBe(blocks);
     }
 
     [Fact]
     public void MergeAdjacentHeadings_still_merges_text_layer_headings()
     {
-        PdfReadingOrder.MergeAdjacentHeadings("## Agreement\n\n## Letter\n\nbody")
-            .ShouldBe("## Agreement Letter\n\nbody");
+        var merged = PdfReadingOrder.MergeAdjacentHeadings([Heading(2, "Agreement"), Heading(2, "Letter"), new PdfParagraphBlock(Box, "body")]);
+
+        PdfElements.ToMarkdown(merged).ShouldBe("## Agreement Letter\n\nbody");
     }
 
     [Fact]
     public void MergeAdjacentHeadings_does_not_merge_across_a_figure()
     {
-        var input = "## Before\n\n" + ImageOcrMarkup.Wrap("x", 1) + "\n\n## After";
+        IReadOnlyList<PdfBlock> blocks = [Heading(2, "Before"), Figure("x"), Heading(2, "After")];
 
-        PdfReadingOrder.MergeAdjacentHeadings(input).ShouldBe(input);
+        PdfReadingOrder.MergeAdjacentHeadings(blocks).ShouldBe(blocks);
     }
+
+    private static readonly PdfRectangle Box = new(0, 0, 10, 10);
+
+    private static PdfHeadingBlock Heading(int level, string text) => new(Box, level, text);
+
+    private static PdfFigureBlock Figure(string transcription) => new(Box, transcription, null, 1);
 }

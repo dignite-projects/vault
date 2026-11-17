@@ -289,13 +289,13 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                     rulingBounds = Array.Empty<PdfRectangle>();
                 }
 
-                var pageMarkdown = PdfReadingOrder.RenderPage(
+                var pageBlocks = PdfReadingOrder.ReadPage(
                     renderWords, figures, _options.ReconstructTables, headingScale, rulingBounds,
                     out var pageLatticeDropped);
                 latticeDroppedFragments += pageLatticeDropped;
-                if (!string.IsNullOrWhiteSpace(pageMarkdown))
+                if (pageBlocks.Count > 0)
                 {
-                    AddPage(extracted, pageContent.Page, pageMarkdown);
+                    AddPage(extracted, pageContent.Page, pageBlocks);
                 }
             }
 
@@ -472,10 +472,10 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     private static ExtractionDocument Empty(string identifier) => new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
 
     /// <summary>
-    /// A section for <paramref name="page"/> holding its content, read from the page's Markdown, every element referring
-    /// to the page in PdfPig's frame (points, origin bottom-left).
+    /// A section for <paramref name="page"/> holding its blocks as elements, each referring to its region of the page in
+    /// PdfPig's frame (points, origin bottom-left).
     /// </summary>
-    protected virtual void AddPage(ExtractionDocument document, Page page, string pageMarkdown)
+    private static void AddPage(ExtractionDocument document, Page page, IReadOnlyList<PdfBlock> blocks)
     {
         var source = new ExtractionDocumentSourcePage(
             "page-" + page.Number.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -487,7 +487,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
         var section = new ExtractionDocumentSection();
         section.Sources.Add(new ExtractionDocumentSourceReference(source));
         document.Sections.Add(section);
-        MarkdownDocumentReader.ReadInto(document, section, pageMarkdown, source);
+        section.Elements.AddRange(PdfElements.Create(blocks, source));
     }
 
     private static bool HasLetterOrDigit(string? text)

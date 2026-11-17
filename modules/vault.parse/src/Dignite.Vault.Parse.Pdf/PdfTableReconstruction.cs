@@ -88,6 +88,13 @@ internal static class PdfTableReconstruction
     /// a confident grid (the caller then keeps the Phase A paragraph rendering).
     /// </summary>
     public static string? TryRender(IReadOnlyList<Cell> cells)
+        => TryReconstruct(cells) is { } block ? PdfElements.ToMarkdown([block]) : null;
+
+    /// <summary>
+    /// The table (or bullet list) <paramref name="cells"/> form, or <c>null</c> when they do not form a confident grid.
+    /// See <see cref="TryRender"/>.
+    /// </summary>
+    public static PdfBlock? TryReconstruct(IReadOnlyList<Cell> cells)
     {
         var meaningful = cells.Where(c => !string.IsNullOrWhiteSpace(c.Text)).ToList();
         if (meaningful.Count == 0)
@@ -187,12 +194,13 @@ internal static class PdfTableReconstruction
         // as a real Markdown list instead of a table (and instead of letting it fall back to the paragraph path,
         // where the column-wise reading order would strand every bullet away from its text). Only the leading
         // column is checked — that is where a list marker sits.
+        var bounds = Bounds(meaningful);
         if (IsBulletMarkerColumn(rows, 0))
         {
-            return RenderBulletList(rows);
+            return BulletList(rows, bounds);
         }
 
-        return RenderGrid(rows);
+        return new PdfTableBlock(bounds, Grid(rows));
     }
 
     /// <summary>
@@ -209,6 +217,10 @@ internal static class PdfTableReconstruction
     /// caller un-claims the blocks and the stream/paragraph path re-renders them, so the caller reads this only
     /// past the null check.</param>
     public static string? TryRenderLattice(IReadOnlyList<Cell> cells, PdfRulingLines.Grid grid, out int droppedFragments)
+        => TryReconstructLattice(cells, grid, out droppedFragments) is { } block ? PdfElements.ToMarkdown([block]) : null;
+
+    /// <summary>The table <paramref name="cells"/> form on the drawn <paramref name="grid"/>. See <see cref="TryRenderLattice"/>.</summary>
+    public static PdfTableBlock? TryReconstructLattice(IReadOnlyList<Cell> cells, PdfRulingLines.Grid grid, out int droppedFragments)
     {
         droppedFragments = 0;
 
@@ -246,26 +258,59 @@ internal static class PdfTableReconstruction
         }
 
         // Emit the rows that carry text (a drawn-but-blank spacer row is dropped, not rendered as an empty row).
-        var rendered = new List<IReadOnlyList<string>>(grid.RowCount);
+        var keptRows = new List<int>(grid.RowCount);
         for (var r = 0; r < grid.RowCount; r++)
         {
-            var line = new string[grid.ColumnCount];
             var hasText = false;
             for (var c = 0; c < grid.ColumnCount; c++)
             {
-                var bucket = buckets[r, c];
-                line[c] = bucket is null ? string.Empty : MarkdownText.EscapeInlineCell(JoinCellFragments(bucket));
-                hasText |= line[c].Length > 0;
+                hasText |= buckets[r, c] is not null;
             }
 
             if (hasText)
             {
-                rendered.Add(line);
+                keptRows.Add(r);
             }
         }
 
-        return rendered.Count < MinRows ? null : MarkdownText.RenderTable(rendered);
+        if (keptRows.Count < MinRows)
+        {
+            return null;
+        }
+
+        var table = new PdfTable(keptRows.Count, grid.ColumnCount);
+        for (var i = 0; i < keptRows.Count; i++)
+        {
+            var r = keptRows[i];
+            for (var c = 0; c < grid.ColumnCount; c++)
+            {
+                var bucket = buckets[r, c];
+                table.Cells.Add(new PdfTableCell(
+                    i, c, 1, 1, bucket is null ? string.Empty : JoinCellFragments(bucket), CellBounds(grid, r, c)));
+            }
+        }
+
+        return new PdfTableBlock(GridBounds(grid), table);
     }
+
+    /// <summary>The drawn region of cell (<paramref name="row"/> from the top, <paramref name="column"/>) of <paramref name="grid"/>.</summary>
+    private static PdfRectangle CellBounds(PdfRulingLines.Grid grid, int row, int column)
+    {
+        var bandFromBottom = grid.RowCount - 1 - row;
+        return new PdfRectangle(
+            grid.ColumnBoundaries[column], grid.RowBoundaries[bandFromBottom],
+            grid.ColumnBoundaries[column + 1], grid.RowBoundaries[bandFromBottom + 1]);
+    }
+
+    private static PdfRectangle GridBounds(PdfRulingLines.Grid grid)
+        => new(grid.ColumnBoundaries[0], grid.RowBoundaries[0], grid.ColumnBoundaries[^1], grid.RowBoundaries[^1]);
+
+    private static PdfRectangle Bounds(IReadOnlyList<Cell> cells)
+        => new(
+            cells.Min(c => Math.Min(c.Bounds.Left, c.Bounds.Right)),
+            cells.Min(c => Math.Min(c.Bounds.Bottom, c.Bounds.Top)),
+            cells.Max(c => Math.Max(c.Bounds.Left, c.Bounds.Right)),
+            cells.Max(c => Math.Max(c.Bounds.Bottom, c.Bounds.Top)));
 
     /// <summary>
     /// Index of the cell band whose ascending <paramref name="boundaries"/> contain <paramref name="value"/>
@@ -848,26 +893,23 @@ internal static class PdfTableReconstruction
     }
 
     /// <summary>
-    /// Renders the rows as a GFM bullet list, one <c>- item</c> per row, where the item text is the row's
-    /// non-marker columns joined left to right (the leading column is the bullet glyph and is dropped). Item
-    /// text is source text, so it is inline-escaped like the paragraph path (#320); a row with no text beyond
-    /// the marker is skipped.
+    /// The rows as a bullet list, one item per row, whose text is the row's non-marker columns joined left to right
+    /// (the leading column is the bullet glyph and is dropped). Item text is source text, inline-escaped when it becomes
+    /// an element like the paragraph path's (#320); a row with no text beyond the marker is skipped.
     /// </summary>
-    private static string RenderBulletList(List<GridRow> rows)
+    private static PdfListBlock BulletList(List<GridRow> rows, PdfRectangle bounds)
     {
         var items = new List<string>();
         foreach (var row in rows)
         {
             var text = string.Join(" ", row.Cells.Skip(1).Where(c => c.Length > 0));
-            if (text.Length == 0)
+            if (text.Length > 0)
             {
-                continue;
+                items.Add(text);
             }
-
-            items.Add("- " + MarkdownText.EscapeInline(text));
         }
 
-        return string.Join("\n", items);
+        return new PdfListBlock(bounds, items);
     }
 
     /// <summary>Joins the fragments that landed in one cell of one visual line, left to right, with a single space.</summary>
@@ -875,17 +917,10 @@ internal static class PdfTableReconstruction
         => string.Join(" ", cells.OrderBy(c => c.Bounds.Left).Select(c => c.Text));
 
     /// <summary>
-    /// Renders the rectangular grid as a GFM Markdown table via <see cref="MarkdownText.RenderTable"/>. Cells
-    /// are SOURCE TEXT (the PDF digital text layer), so each is escaped with
-    /// <see cref="MarkdownText.EscapeInlineCell"/> — escaping the inline metacharacters (<c>* ` [ ] &lt;</c>)
-    /// as well as the pipe/newline — so table cells get the same #320 source-text protection the paragraph
-    /// path has (a plain cell-escape would leave a literal <c>*</c>/<c>[</c> in a contract cell to be re-parsed).
+    /// The rectangular grid as a table of source text. Each cell is escaped when it becomes an element — the inline
+    /// metacharacters (<c>* ` [ ] &lt;</c>) and newlines, as the paragraph path's are (#320), and a pipe by the table
+    /// renderer — so a literal <c>*</c>/<c>[</c> in a contract cell is never re-parsed.
     /// </summary>
-    private static string RenderGrid(List<GridRow> rows)
-    {
-        var escaped = rows
-            .Select(row => (IReadOnlyList<string>)row.Cells.Select(MarkdownText.EscapeInlineCell).ToArray())
-            .ToList();
-        return MarkdownText.RenderTable(escaped);
-    }
+    private static PdfTable Grid(List<GridRow> rows)
+        => PdfTable.FromRows(rows.Select(row => (IReadOnlyList<string>)row.Cells).ToList());
 }

@@ -361,6 +361,12 @@ internal static class PdfReadingOrder
     public static string Render(
         IReadOnlyList<TextLine> lines, IReadOnlyList<Figure> figures, PdfHeadingScale? headingScale = null,
         ParagraphModel? paragraphModel = null)
+        => PdfElements.ToMarkdown(RenderBlocks(lines, figures, headingScale, paragraphModel));
+
+    /// <summary>The blocks of <see cref="Render(IReadOnlyList{TextLine}, IReadOnlyList{Figure}, PdfHeadingScale?, ParagraphModel?)"/>, in reading order.</summary>
+    internal static List<PdfBlock> RenderBlocks(
+        IReadOnlyList<TextLine> lines, IReadOnlyList<Figure> figures, PdfHeadingScale? headingScale = null,
+        ParagraphModel? paragraphModel = null)
     {
         var medianLineHeight = lines.Count > 0
             ? PdfGeometry.Median(lines.Select(l => l.Bounds.Height))
@@ -434,7 +440,7 @@ internal static class PdfReadingOrder
 
         if (items.Count == 0)
         {
-            return string.Empty;
+            return new List<PdfBlock>();
         }
 
         // 3. Reading order: strictly top-to-bottom (Top descending), then left-to-right for items that
@@ -451,8 +457,9 @@ internal static class PdfReadingOrder
         // and the gap is within the measured wrap pitch; otherwise — a short (paragraph-ending) previous line or
         // a blank-line/section gap — it splits. Without a model, fall back to the legacy glyph-height pitch.
         var paragraphPitch = (medianLineHeight > 0 ? medianLineHeight : 0.0) * ParagraphPitchLineHeights;
-        var blocks = new List<string>();
+        var blocks = new List<PdfBlock>();
         var paragraph = new List<string>();
+        PdfRectangle? paragraphBounds = null;
         double? previousTop = null;
         var previousFull = false;
 
@@ -465,8 +472,9 @@ internal static class PdfReadingOrder
                 // would otherwise be re-parsed as a list / heading). The lines are joined into one output line
                 // (CJK boundary -> no space, since CJK text is not space-delimited; otherwise a space), so only
                 // its start is a line-start position.
-                blocks.Add(MarkdownText.EscapeLineStarts(JoinWrappedLines(paragraph)));
+                blocks.Add(new PdfParagraphBlock(paragraphBounds!.Value, MarkdownText.EscapeLineStarts(JoinWrappedLines(paragraph))));
                 paragraph.Clear();
+                paragraphBounds = null;
             }
 
             previousTop = null;
@@ -484,10 +492,7 @@ internal static class PdfReadingOrder
                 // figure span (the classification embedded-document signal + the unified sub-document detection pass).
                 // The caption is a digital-text-layer line bound to this figure, so escape it; item.Text is the OCR
                 // transcription (already Markdown) and is emitted verbatim inside the markers.
-                var figureMarkup = ImageOcrMarkup.Wrap(item.Text, item.PageNumber);
-                blocks.Add(item.Caption is { Length: > 0 } caption
-                    ? MarkdownText.EscapeBlockText(caption) + "\n\n" + figureMarkup
-                    : figureMarkup);
+                blocks.Add(new PdfFigureBlock(item.Bounds, item.Text, item.Caption, item.PageNumber));
                 continue;
             }
 
@@ -498,7 +503,7 @@ internal static class PdfReadingOrder
                 // Consecutive same-level heading blocks (a heading wrapped across lines / bands — e.g. the title
                 // and its trailing 「書」) are stitched back together by MergeAdjacentHeadings at the page level.
                 FlushParagraph();
-                blocks.Add(new string('#', item.HeadingLevel) + " " + item.Text);
+                blocks.Add(new PdfHeadingBlock(item.Bounds, item.HeadingLevel, item.Text));
                 continue;
             }
 
@@ -519,86 +524,37 @@ internal static class PdfReadingOrder
             }
 
             paragraph.Add(item.Text);
+            paragraphBounds = paragraphBounds is { } open ? Union(open, item.Bounds) : item.Bounds;
             previousTop = item.Bounds.Top;
             previousFull = full;
         }
 
         FlushParagraph();
 
-        return string.Join("\n\n", blocks);
+        return blocks;
     }
 
     /// <summary>
-    /// Stitches consecutive same-level heading blocks into one heading (#403): a heading that wrapped across
-    /// visual lines / reading bands is rendered as adjacent <c>#…</c> blocks, and here they merge so e.g. the
-    /// title's trailing 「書」 rejoins its title line. Operates by splitting on the blank-line block separator
-    /// and re-joining it, so every non-heading block (paragraph) is returned unchanged. Figure spans are skipped
-    /// by tracking the <c>*[Image OCR]*</c> … <c>*[End OCR]*</c> markers (a transcription is the OCR provider's own
-    /// Markdown and may contain blank lines), so a transcription's own headings are never merged and no heading
-    /// merges into or across a figure.
+    /// Stitches consecutive same-level heading blocks into one heading (#403): a heading that wrapped across visual
+    /// lines / reading bands is read as adjacent heading blocks, and here they merge so e.g. the title's trailing 「書」
+    /// rejoins its title line. Any other block between two headings (a paragraph, a figure, a table) keeps them apart.
     /// </summary>
-    internal static string MergeAdjacentHeadings(string pageMarkdown)
+    internal static List<PdfBlock> MergeAdjacentHeadings(IReadOnlyList<PdfBlock> blocks)
     {
-        if (pageMarkdown.Length == 0)
-        {
-            return pageMarkdown;
-        }
-
-        var blocks = pageMarkdown.Split("\n\n");
-        var merged = new List<string>(blocks.Length);
-        var insideFigure = false;
-        var previousIsMergeTarget = false;
+        var merged = new List<PdfBlock>(blocks.Count);
         foreach (var block in blocks)
         {
-            var startedInsideFigure = insideFigure;
-            var sawMarker = false;
-            foreach (var line in block.Split('\n'))
+            if (block is PdfHeadingBlock heading && merged.Count > 0 && merged[^1] is PdfHeadingBlock open && open.Level == heading.Level)
             {
-                if (ImageOcrMarkup.IsOpenLine(line))
-                {
-                    insideFigure = true;
-                    sawMarker = true;
-                }
-                else if (ImageOcrMarkup.IsCloseLine(line))
-                {
-                    insideFigure = false;
-                    sawMarker = true;
-                }
-            }
-
-            var touchesFigure = startedInsideFigure || insideFigure || sawMarker;
-            var level = HeadingLevelOf(block);
-            if (!touchesFigure && level > 0 && merged.Count > 0 && previousIsMergeTarget && HeadingLevelOf(merged[^1]) == level)
-            {
-                // Append this heading line's text (after its duplicate "#…<space>" prefix) to the open heading.
-                merged[^1] = merged[^1] + " " + block[(level + 1)..];
+                merged[^1] = new PdfHeadingBlock(Union(open.Bounds, heading.Bounds), open.Level, open.Markdown + " " + heading.Markdown);
             }
             else
             {
                 merged.Add(block);
             }
-
-            previousIsMergeTarget = !touchesFigure;
         }
 
-        return string.Join("\n\n", merged);
-    }
-
-    /// <summary>The heading level (1..6) of a single-line <c>"#… text"</c> heading block, or 0 otherwise.</summary>
-    private static int HeadingLevelOf(string block)
-    {
-        if (block.IndexOf('\n') >= 0)
-        {
-            return 0; // a heading block is always a single line
-        }
-
-        var hashes = 0;
-        while (hashes < block.Length && block[hashes] == '#')
-        {
-            hashes++;
-        }
-
-        return hashes is >= 1 and <= 6 && hashes < block.Length && block[hashes] == ' ' ? hashes : 0;
+        return merged;
     }
 
     /// <summary>
@@ -636,15 +592,22 @@ internal static class PdfReadingOrder
         IReadOnlyList<Word> words, IReadOnlyList<Figure> figures, bool reconstructTables,
         PdfHeadingScale? headingScale, IReadOnlyList<PdfRectangle>? rulingBounds,
         out int latticeDroppedFragments)
+        => PdfElements.ToMarkdown(ReadPage(words, figures, reconstructTables, headingScale, rulingBounds, out latticeDroppedFragments));
+
+    /// <summary>The blocks of <see cref="RenderPage"/>, in reading order.</summary>
+    internal static List<PdfBlock> ReadPage(
+        IReadOnlyList<Word> words, IReadOnlyList<Figure> figures, bool reconstructTables,
+        PdfHeadingScale? headingScale, IReadOnlyList<PdfRectangle>? rulingBounds,
+        out int latticeDroppedFragments)
     {
-        var markdown = RenderPageCore(
+        var blocks = ReadPageCore(
             words, figures, reconstructTables, headingScale, rulingBounds, out latticeDroppedFragments);
-        // #403: a heading that wrapped across lines / bands renders as adjacent same-level "# …" blocks; stitch
+        // #403: a heading that wrapped across lines / bands reads as adjacent same-level heading blocks; stitch
         // them back into one heading (e.g. the title and its trailing 「書」). A no-op when no headings exist.
-        return headingScale is { HasHeadings: true } ? MergeAdjacentHeadings(markdown) : markdown;
+        return headingScale is { HasHeadings: true } ? MergeAdjacentHeadings(blocks) : blocks;
     }
 
-    private static string RenderPageCore(
+    private static List<PdfBlock> ReadPageCore(
         IReadOnlyList<Word> words, IReadOnlyList<Figure> figures, bool reconstructTables,
         PdfHeadingScale? headingScale, IReadOnlyList<PdfRectangle>? rulingBounds,
         out int latticeDroppedFragments)
@@ -678,7 +641,7 @@ internal static class PdfReadingOrder
             // Any segmenter/reading-order fault degrades to the flat path: the page still renders and no
             // content is lost (the digital text layer is the channel's primary, non-negotiable payload).
             // A cancellation is NOT swallowed — it propagates so a host/job shutdown aborts promptly.
-            return Render(pageLines, figures, headingScale, paragraphModel);
+            return RenderBlocks(pageLines, figures, headingScale, paragraphModel);
         }
 
         // A single region (or no/one-block segmentation) is the #301 behavior — render the whole page as one
@@ -689,7 +652,7 @@ internal static class PdfReadingOrder
         // (and AssignFiguresToBlocks requires a non-empty block list).
         if (orderedBlocks.Count == 0 || (orderedBlocks.Count <= 1 && grids.Count == 0))
         {
-            return Render(pageLines, figures, headingScale, paragraphModel);
+            return RenderBlocks(pageLines, figures, headingScale, paragraphModel);
         }
 
         // Non-lossy guard: RecursiveXYCut partitions every word into a leaf, so block words should account
@@ -700,7 +663,7 @@ internal static class PdfReadingOrder
             block => block.TextLines.Sum(line => line.Words.Count(w => !string.IsNullOrWhiteSpace(w.Text))));
         if (blockMeaningful < inputMeaningful)
         {
-            return Render(pageLines, figures, headingScale, paragraphModel);
+            return RenderBlocks(pageLines, figures, headingScale, paragraphModel);
         }
 
         // Attach each figure to the block it reads with (nearest block centroid) so figure inlining +
@@ -714,7 +677,7 @@ internal static class PdfReadingOrder
         var tables = reconstructTables ? DetectTableClusters(orderedBlocks, grids) : TableClusters.Empty;
         latticeDroppedFragments = tables.LatticeDroppedFragments;
 
-        var rendered = new List<string>(orderedBlocks.Count);
+        var rendered = new List<PdfBlock>(orderedBlocks.Count);
         var emittedTables = new HashSet<int>();
 
         // #407: accumulate consecutive non-table, same-column blocks into ONE paragraph run, then render the run
@@ -729,11 +692,7 @@ internal static class PdfReadingOrder
         {
             if (runLines.Count > 0 || runFigures.Count > 0)
             {
-                var runMarkdown = Render(runLines, runFigures, headingScale, paragraphModel);
-                if (!string.IsNullOrWhiteSpace(runMarkdown))
-                {
-                    rendered.Add(runMarkdown);
-                }
+                rendered.AddRange(RenderBlocks(runLines, runFigures, headingScale, paragraphModel));
 
                 runLines.Clear();
                 runFigures.Clear();
@@ -751,7 +710,7 @@ internal static class PdfReadingOrder
                 FlushRun();
                 if (emittedTables.Add(lead))
                 {
-                    rendered.Add(tables.MarkdownByLead[lead]);
+                    rendered.Add(tables.BlockByLead[lead]);
 
                     // A table region is text; a figure that AssignFiguresToBlocks happened to bucket into one
                     // of its blocks is rare, but must not be lost — append it after the table (non-lossy).
@@ -760,11 +719,7 @@ internal static class PdfReadingOrder
                         .ToList();
                     if (clusterFigures.Count > 0)
                     {
-                        var figureMarkdown = Render(Array.Empty<TextLine>(), clusterFigures);
-                        if (!string.IsNullOrWhiteSpace(figureMarkdown))
-                        {
-                            rendered.Add(figureMarkdown);
-                        }
+                        rendered.AddRange(RenderBlocks(Array.Empty<TextLine>(), clusterFigures));
                     }
                 }
 
@@ -795,7 +750,7 @@ internal static class PdfReadingOrder
         }
 
         FlushRun();
-        return string.Join("\n\n", rendered);
+        return rendered;
     }
 
     /// <summary>
@@ -806,8 +761,8 @@ internal static class PdfReadingOrder
     {
         public static readonly TableClusters Empty = new();
 
-        /// <summary>Lead (lowest-index) block of a cluster -> its rendered Markdown table.</summary>
-        public Dictionary<int, string> MarkdownByLead { get; } = new();
+        /// <summary>Lead (lowest-index) block of a cluster -> its reconstructed table (or bullet list).</summary>
+        public Dictionary<int, PdfBlock> BlockByLead { get; } = new();
 
         /// <summary>Any block that is part of a reconstructed table -> that cluster's lead block index.</summary>
         public Dictionary<int, int> LeadByBlock { get; } = new();
@@ -867,7 +822,7 @@ internal static class PdfReadingOrder
 
             // TryRenderLattice returns null unless the claimed blocks fill a >= 2x2 grid, so a lone caption
             // block that happens to sit inside a grid extent does not become a spurious table.
-            var lattice = PdfTableReconstruction.TryRenderLattice(latticeCells, g, out var droppedFragments);
+            var lattice = PdfTableReconstruction.TryReconstructLattice(latticeCells, g, out var droppedFragments);
             if (lattice is null)
             {
                 continue;
@@ -877,7 +832,7 @@ internal static class PdfReadingOrder
             result.LatticeDroppedFragments += droppedFragments;
 
             var latticeLead = insideBlocks.Min();
-            result.MarkdownByLead[latticeLead] = lattice;
+            result.BlockByLead[latticeLead] = lattice;
             result.BlocksByLead[latticeLead] = insideBlocks;
             foreach (var bi in insideBlocks)
             {
@@ -935,7 +890,7 @@ internal static class PdfReadingOrder
                 .Select(word => new PdfTableReconstruction.Cell(word.BoundingBox, word.Text))
                 .ToList();
 
-            var table = PdfTableReconstruction.TryRender(cells);
+            var table = PdfTableReconstruction.TryReconstruct(cells);
             if (table is null)
             {
                 continue;
@@ -945,7 +900,7 @@ internal static class PdfReadingOrder
             // (lower-index) heading/intro block falls through to the paragraph pass at its own earlier position,
             // so the heading still renders above the table.
             var lead = coreBlocks.Min();
-            result.MarkdownByLead[lead] = table;
+            result.BlockByLead[lead] = table;
             result.BlocksByLead[lead] = coreBlocks;
             foreach (var bi in coreBlocks)
             {
