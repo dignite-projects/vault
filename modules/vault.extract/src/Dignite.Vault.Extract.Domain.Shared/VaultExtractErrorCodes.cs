@@ -41,6 +41,9 @@ public static class VaultExtractErrorCodes
         // #481 (nothing consumed it in the interim, so this is not a wire break) — a legacy pre-#481 derived row
         // can still carry a null FileOrigin during the documented binaries-first deploy window.
         public const string NoSourceBlob = "Extract:DocumentNoSourceBlob";
+        // The document has no stored layout: a sub-document (seeded from its parent's Markdown, never parsed itself), or
+        // one parsed before layouts were kept. A re-parse stores one.
+        public const string NoLayout = "Extract:DocumentNoLayout";
         // #485 (A3): restoring a derived document is rejected when another LIVE document already occupies the
         // same (OriginDocumentId, OriginConstituentKey) identity — the application-layer fail-close that replaces
         // the fail-close the #481-dropped #391 filtered-unique index used to give for free at restore time.

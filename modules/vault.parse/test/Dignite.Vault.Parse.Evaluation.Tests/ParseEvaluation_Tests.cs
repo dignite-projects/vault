@@ -74,6 +74,20 @@ public class ParseEvaluation_Tests(ParseEvaluationFixture fixture, ITestOutputHe
         throughTree.ShouldBe(direct);
     }
 
+    /// <summary>The tree Vault stores: written as JSON and read back, it renders the same Markdown.</summary>
+    [Theory]
+    [MemberData(nameof(DigitalDocuments))]
+    public async Task A_parse_survives_json(string id)
+    {
+        var tree = await fixture.ParseAsync(ParseEvaluationFixture.Corpus.Single(d => d.Id == id));
+
+        var read = ExtractionDocumentJson.Deserialize(ExtractionDocumentJson.Serialize(tree));
+
+        ExtractionDocumentMarkdown.Render(read).ShouldBe(ExtractionDocumentMarkdown.Render(tree));
+        read.Sections.SelectMany(section => section.Elements).Sum(element => element.Sources.Count)
+            .ShouldBe(tree.Sections.SelectMany(section => section.Elements).Sum(element => element.Sources.Count));
+    }
+
     [VisionTheory]
     [MemberData(nameof(OcrDocuments))]
     public async Task An_ocr_document_is_scored(string id)

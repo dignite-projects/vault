@@ -472,6 +472,7 @@
     "Extract:DocumentFileTooLarge": "文件 '{FileName}' 超过了允许的最大大小 {MaxBytes} 字节。",
     "Extract:DocumentUnsupportedFileType": "文件 '{FileName}' 的类型 ('{ContentType}') 不受支持。请上传支持的图片、PDF、CSV/TSV、DOCX、PPTX、TXT 或 XLSX 文件。",
     "Extract:DocumentNoSourceBlob": "该文档没有可供下载的源文件。",
+    "Extract:DocumentNoLayout": "该文档没有版面数据。子文档没有自己的版面；在开始保存版面之前解析的文档，重新解析后即会生成。",
     "Extract:DocumentRestoreConflict": "无法恢复文档 '{DocumentId}'：已存在另一份共享同一来源片段的在用子文档。为避免产生重复，已拒绝本次恢复。",
     "Extract:DocumentRestoreSuperseded": "无法恢复文档 '{DocumentId}'：它的父文档之后被重新解析或重新分类，这份子文档已不属于父文档当前的拆分结果。恢复它会与取代它的子文档重复。请在父文档上重新解析。",
     "Extract:DocumentReparseSubDocument": "这是一份子文档：它的内容是父文档的一个片段，没有自己的原文件。请在父文档上重新解析，子文档会随之重新拆分。",

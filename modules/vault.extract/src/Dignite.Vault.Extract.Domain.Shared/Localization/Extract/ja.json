@@ -472,6 +472,7 @@
     "Extract:DocumentFileTooLarge": "ファイル '{FileName}' は許可されている最大サイズ {MaxBytes} バイトを超えています。",
     "Extract:DocumentUnsupportedFileType": "ファイル '{FileName}' のタイプ（'{ContentType}'）はサポートされていません。対応している画像、PDF、CSV/TSV、DOCX、PPTX、TXT、または XLSX ファイルをアップロードしてください。",
     "Extract:DocumentNoSourceBlob": "このドキュメントにはダウンロードできるソースファイルがありません。",
+    "Extract:DocumentNoLayout": "このドキュメントにはレイアウトがありません。サブドキュメントは独自のレイアウトを持ちません。レイアウトの保存が始まる前に解析されたドキュメントは、再解析するとレイアウトが作成されます。",
     "Extract:DocumentRestoreConflict": "ドキュメント '{DocumentId}' を復元できません：同じソース構成要素を共有する別のライブなサブドキュメントが既に存在します。重複を避けるため、復元は拒否されました。",
     "Extract:DocumentRestoreSuperseded": "ドキュメント '{DocumentId}' を復元できません：親ドキュメントがその後再解析または再分類され、このサブドキュメントは親の現在の分割結果に含まれていません。復元すると、置き換わったサブドキュメントと重複します。親ドキュメントを再解析してください。",
     "Extract:DocumentReparseSubDocument": "これはサブドキュメントです。本文は親ドキュメントの一部分で、独自のファイルを持ちません。親ドキュメントを再解析してください。サブドキュメントはその際に分割し直されます。",

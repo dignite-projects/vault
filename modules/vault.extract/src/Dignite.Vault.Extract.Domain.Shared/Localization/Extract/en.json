@@ -472,6 +472,7 @@
     "Extract:DocumentFileTooLarge": "File '{FileName}' exceeds the maximum allowed size of {MaxBytes} bytes.",
     "Extract:DocumentUnsupportedFileType": "File '{FileName}' has an unsupported type ('{ContentType}'). Please upload a supported image, PDF, CSV/TSV, DOCX, PPTX, TXT, or XLSX file.",
     "Extract:DocumentNoSourceBlob": "This document has no source file available for download.",
+    "Extract:DocumentNoLayout": "This document has no layout. A sub-document has none of its own; a document parsed before layouts were kept gets one when it is re-parsed.",
     "Extract:DocumentRestoreConflict": "Cannot restore document '{DocumentId}': a live sub-document with the same source constituent already exists. The restore is rejected to avoid a duplicate.",
     "Extract:DocumentRestoreSuperseded": "Cannot restore document '{DocumentId}': its parent has since been re-parsed or reclassified, and this sub-document is no longer part of the parent's split. Restoring it would duplicate the sub-documents that replaced it. Re-parse the parent document instead.",
     "Extract:DocumentReparseSubDocument": "This is a sub-document: its text is a slice of its parent document and it has no file of its own. Re-parse the parent document instead; that re-splits its sub-documents.",

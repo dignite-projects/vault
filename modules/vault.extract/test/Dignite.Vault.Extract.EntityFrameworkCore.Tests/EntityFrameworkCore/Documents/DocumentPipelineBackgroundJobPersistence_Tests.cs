@@ -210,10 +210,10 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
             PipelineRunId = textExtractionRunId
         });
 
-        // (a) No separate marked-Markdown artifact is archived (and there is no native payload here either), so the
-        // job writes no blob at all — the markers live in Document.Markdown itself.
+        // (a) No separate marked-Markdown artifact is archived: the job writes the layout and no other blob — the
+        // markers live in Document.Markdown itself.
         await _blobContainer.DidNotReceive().SaveAsync(
-            Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            Arg.Is<string>(name => !name.StartsWith("layout/")), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
 
         // (b) The persisted egress payload retains the markers verbatim AND the figure transcription body inline.
         await WithUnitOfWorkAsync(async () =>
@@ -281,9 +281,11 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
             Arg.Is<DocumentExtractionOptions?>(o => o.GetFileName() == "test.pdf"),
             Arg.Any<CancellationToken>());
 
-        // Nothing beside the Markdown is archived.
-        await _blobContainer.DidNotReceive().SaveAsync(
+        // Beside the Markdown only the layout is kept, under its stable key.
+        await _blobContainer.Received(1).SaveAsync(
             Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await _blobContainer.Received(1).SaveAsync(
+            $"layout/{documentId}", Arg.Any<Stream>(), true, Arg.Any<CancellationToken>());
 
         // Reload through an independent UoW and new DbContext, deserializing the JSON column from DB.
         await WithUnitOfWorkAsync(async () =>
@@ -320,6 +322,55 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
             $"extraction-native/{documentId}", Arg.Any<CancellationToken>());
         await _blobContainer.Received(1).DeleteAsync(
             "blobs/test.pdf", Arg.Any<CancellationToken>());
+        await _blobContainer.Received(1).DeleteAsync(
+            $"layout/{documentId}", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetLayout_Serves_The_Parse_Tree_And_Whether_The_Markdown_Is_Still_Its_Own()
+    {
+        var documentId = _guidGenerator.Create();
+        var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
+        StubExtraction("# Scan\n\nbody", usedOcr: true);
+        byte[]? stored = null;
+        _blobContainer.SaveAsync($"layout/{documentId}", Arg.Do<Stream>(stream =>
+        {
+            using var copy = new MemoryStream();
+            stream.CopyTo(copy);
+            stored = copy.ToArray();
+        }), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        _blobContainer.GetOrNullAsync($"layout/{documentId}", Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(stored is null ? null : new MemoryStream(stored)));
+
+        await _textExtractionJob.ExecuteAsync(new DocumentParseJobArgs
+        {
+            DocumentId = documentId,
+            PipelineRunId = textExtractionRunId
+        });
+
+        var content = await _documentAppService.GetLayoutAsync(documentId);
+        content.ContentType.ShouldBe("application/json");
+        var layout = (await System.Text.Json.Nodes.JsonNode.ParseAsync(content.GetStream()))!.AsObject();
+        layout["schema"]!.GetValue<string>().ShouldBe("vault.extract.layout");
+        layout["current"]!.GetValue<bool>().ShouldBeTrue();
+        var tree = ExtractionDocumentJson.Read(layout["document"]!.AsObject());
+        ExtractionDocumentMarkdown.Render(tree).ShouldBe("# Scan\n\nbody");
+
+        // An operator's correction changes the Markdown; the layout still describes the parse.
+        var corrected = await GetRequiredService<Dignite.Vault.Extract.Documents.Layout.DocumentLayoutStore>()
+            .GetAsync(documentId, "# Scan\n\ncorrected body");
+        System.Text.Json.Nodes.JsonNode.Parse(corrected!)!["current"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task GetLayout_Fails_For_A_Document_Without_One()
+    {
+        var documentId = _guidGenerator.Create();
+        await ArrangeQueuedParseAsync(documentId);
+
+        var ex = await Should.ThrowAsync<Volo.Abp.BusinessException>(() => _documentAppService.GetLayoutAsync(documentId));
+
+        ex.Code.ShouldBe(VaultExtractErrorCodes.Document.NoLayout);
     }
 
     [Fact]

@@ -58,6 +58,12 @@ public class DocumentController : VaultExtractController, IDocumentAppService
         return _documentAppService.UploadAsync(input);
     }
 
+    [HttpGet("{id}/layout")]
+    public virtual Task<IRemoteStreamContent> GetLayoutAsync(Guid id)
+    {
+        return _documentAppService.GetLayoutAsync(id);
+    }
+
     [HttpGet("{id}/blob")]
     public virtual Task<IRemoteStreamContent> GetBlobAsync(Guid id)
     {

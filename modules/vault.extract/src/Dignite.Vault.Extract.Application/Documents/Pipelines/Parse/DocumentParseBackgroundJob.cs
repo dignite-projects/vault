@@ -39,6 +39,7 @@ public class DocumentParseBackgroundJob
     private readonly DocumentPipelineJobScheduler _pipelineJobScheduler;
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly DocumentExtractionClient _extractionClient;
+    private readonly Layout.DocumentLayoutStore _layoutStore;
     private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
     private readonly IDistributedEventBus _distributedEventBus;
     private readonly IClock _clock;
@@ -87,12 +88,14 @@ public class DocumentParseBackgroundJob
         IDocumentTypeRepository documentTypeRepository,
         ManualClassificationApplier manualClassificationApplier,
         SubDocumentRetractor subDocumentRetractor,
-        DocumentWriteLock documentWriteLock)
+        DocumentWriteLock documentWriteLock,
+        Layout.DocumentLayoutStore layoutStore)
         : base(documentRepository, runRepository, pipelineRunManager, pipelineRunAccessor, unitOfWorkManager, dataFilter, documentWriteLock)
     {
         _pipelineJobScheduler = pipelineJobScheduler;
         _backgroundJobManager = backgroundJobManager;
         _extractionClient = extractionClient;
+        _layoutStore = layoutStore;
         _blobContainer = blobContainer;
         _distributedEventBus = distributedEventBus;
         _clock = clock;
@@ -175,6 +178,8 @@ public class DocumentParseBackgroundJob
                     ExtractionDocumentMarkdown.Render(extracted),
                     extracted.GetLanguage(),
                     new DocumentParseMetadata(extracted.GetProvider(), extracted.IsComplete(), extracted.GetIncompleteReason()));
+
+                await TrySaveLayoutAsync(args.DocumentId, extracted, result.Markdown);
             }
 
             // #381: the PDF provider brackets each embedded-figure transcription with *[Image OCR p:N]*…*[End OCR]*
@@ -478,6 +483,24 @@ public class DocumentParseBackgroundJob
         var trimmed = withoutExtension.Trim();
         // #491: a file name can carry astral-plane characters; cut at a char boundary (see TryGenerateTitleAsync).
         return TextTruncator.AtCharBoundary(trimmed, DocumentConsts.MaxTitleLength);
+    }
+
+    /// <summary>
+    /// Stores the tree the parse produced as the document's layout (external phase, no unit of work). It fails open: the
+    /// Markdown is the document's content, the layout a view of where it came from, so a failed write is logged and the
+    /// parse completes. A re-parse overwrites it; one written by an attempt that does not complete is told apart by the
+    /// Markdown hash it carries.
+    /// </summary>
+    protected virtual async Task TrySaveLayoutAsync(Guid documentId, Microsoft.Extensions.Documents.ExtractionDocument tree, string markdown)
+    {
+        try
+        {
+            await _layoutStore.SaveAsync(documentId, tree, markdown, _cancellationTokenProvider.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Failed to store the layout of document {DocumentId}; the parse completes without it.", documentId);
+        }
     }
 
     /// <summary>What a parse produced: the stored Markdown, the detected language and the provenance.</summary>
