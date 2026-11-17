@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Run Dignite Vault Extract from source on a developer machine: prerequisites, LLM and database configuration, migrations, the Angular SPA, sidecars and proxy regeneration."
+    "Description": "Run Dignite Vault from source on a developer machine: prerequisites, LLM and database configuration, migrations, the Angular SPA, sidecars and proxy regeneration."
 }
 ```
 
 # Local Development
 
-This guide runs the Vault Extract repository on a developer machine: the .NET host, the Angular operator UI and their database, either all together through the Aspire AppHost or one by one. To add the modules to an application of your own instead, see [Installation](installation.md).
+This guide runs the Dignite Vault repository on a developer machine: the .NET host, the Angular operator UI and their database, either all together through the Aspire AppHost or one by one. To add the modules to an application of your own instead, see [Installation](installation.md).
 
 ## Prerequisites
 
@@ -182,7 +182,7 @@ ss -tlnp | grep -E '8866|18888|4317'
 
 ### Database Migration Errors
 
-Migrations need `CREATE TABLE` and `CREATE INDEX` rights on the target database. LocalDB's default user has them; on a shared SQL Server, grant the application user `db_owner` on the Vault Extract database.
+Migrations need `CREATE TABLE` and `CREATE INDEX` rights on the target database. LocalDB's default user has them; on a shared SQL Server, grant the application user `db_owner` on the Dignite Vault database.
 
 ### PaddleOCR Is Slow on the First Request
 

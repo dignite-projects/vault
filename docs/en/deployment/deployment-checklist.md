@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Per-release smoke tests for a Dignite Vault Extract deployment: startup, storage, document types, text extraction, migrations, events, MCP and operator notifications."
+    "Description": "Per-release smoke tests for a Dignite Vault deployment: startup, storage, document types, text extraction, migrations, events, MCP and operator notifications."
 }
 ```
 
@@ -33,7 +33,7 @@ Recurring checks to run when deploying to a new environment, upgrading a critica
 
 ## Document Types (Fresh Deployment)
 
-Vault Extract seeds no document types ([Document Types and Fields](../documents/document-types.md)); the shipped host adds a *Sample Document* type in Development only.
+Dignite Vault seeds no document types ([Document Types and Fields](../documents/document-types.md)); the shipped host adds a *Sample Document* type in Development only.
 
 - [ ] On an empty database, `VaultDocumentTypes` is empty after migration (outside Development)
 - [ ] Uploading before any type exists in the caller's layer fails with `Extract:NoDocumentTypesConfigured`; nothing is stored

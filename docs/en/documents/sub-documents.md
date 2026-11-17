@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "How Dignite Vault Extract splits a bundle of documents, or a document with embedded standalone documents, into sub-documents that are classified and extracted on their own."
+    "Description": "How Dignite Vault splits a bundle of documents, or a document with embedded standalone documents, into sub-documents that are classified and extracted on their own."
 }
 ```
 
 # Sub-Documents
 
-One uploaded file does not always hold one document. A scan of a whole folder can contain an invoice, a delivery note and a contract; a report can embed a photographed receipt. Vault Extract detects these cases during classification and **splits** the parts into **sub-documents**: ordinary documents, each classified, extracted and published on its own, that point back to the document they came from.
+One uploaded file does not always hold one document. A scan of a whole folder can contain an invoice, a delivery note and a contract; a report can embed a photographed receipt. Dignite Vault detects these cases during classification and **splits** the parts into **sub-documents**: ordinary documents, each classified, extracted and published on its own, that point back to the document they came from.
 
 ## Two Cases
 

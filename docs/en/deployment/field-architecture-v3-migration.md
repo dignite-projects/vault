@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Runbook for moving a Dignite Vault Extract 0.3.x deployment's field values to field architecture v3 before upgrading to 0.5.0: which build, steps, verification and rollback."
+    "Description": "Runbook for moving a Dignite Vault 0.3.x deployment's field values to field architecture v3 before upgrading to 0.5.0: which build, steps, verification and rollback."
 }
 ```
 

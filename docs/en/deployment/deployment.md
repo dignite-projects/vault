@@ -1,20 +1,20 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Deploy the Dignite Vault Extract host: database, original-file storage, signing certificate, string encryption, OCR and AI providers, Docker, reverse proxy and migrations."
+    "Description": "Deploy the Dignite Vault host: database, original-file storage, signing certificate, string encryption, OCR and AI providers, Docker, reverse proxy and migrations."
 }
 ```
 
 # Deployment
 
-This page covers what a host operator configures to run the Vault Extract host: the database, the storage for original files, the signing certificate, the OCR and AI providers, the Docker layout and, if there is one, the reverse proxy. Per-feature settings are on each feature's page.
+This page covers what a host operator configures to run the Dignite Vault host: the database, the storage for original files, the signing certificate, the OCR and AI providers, the Docker layout and, if there is one, the reverse proxy. Per-feature settings are on each feature's page.
 
-> Vault Extract outputs Markdown and structured metadata to downstream consumers (RAG platforms, business systems, MCP clients). It does **not** ship a vector database, an embedding pipeline or a chat platform; those belong to the downstream side.
+> Dignite Vault outputs Markdown and structured metadata to downstream consumers (RAG platforms, business systems, MCP clients). It does **not** ship a vector database, an embedding pipeline or a chat platform; those belong to the downstream side.
 
 ## Topology
 
 ```text
-Vault Extract host (ASP.NET Core)
+Dignite Vault host (ASP.NET Core)
   ├─► SQL Server ─── application data: documents, types and fields, identity, OpenIddict,
   │                  background jobs, event outbox and inbox, notifications
   ├─► BLOB storage ─ original uploaded files (container "extract-documents")
@@ -24,7 +24,7 @@ Vault Extract host (ASP.NET Core)
   egress: REST API · MCP server · distributed events · CSV / XLSX download
 ```
 
-Vault Extract's state lives in two places: the relational database and the BLOB storage that holds each document's original file. Back them up together. Downstream consumers keep their own storage (vector database, business aggregates, search index).
+Dignite Vault's state lives in two places: the relational database and the BLOB storage that holds each document's original file. Back them up together. Downstream consumers keep their own storage (vector database, business aggregates, search index).
 
 ## Connection Strings
 

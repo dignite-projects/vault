@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Download the document list as CSV or XLSX from Dignite Vault Extract: fixed system columns plus one column per field of the type, with no business transformation."
+    "Description": "Download the document list as CSV or XLSX from Dignite Vault: fixed system columns plus one column per field of the type, with no business transformation."
 }
 ```
 
 # Data Download
 
-Data Download is Dignite Vault Extract's **file-based egress** — the last mile to downstream systems that have no API and can only ingest files (Yayoi, freee, mid-market Yonyou, and similar accounting packages that import CSV). It sits alongside the programmatic egresses (REST / MCP / EventBus, with Webhook planned) but serves a different audience: **a human who downloads a file and imports it somewhere else.**
+Data Download is Dignite Vault's **file-based egress** — the last mile to downstream systems that have no API and can only ingest files (Yayoi, freee, mid-market Yonyou, and similar accounting packages that import CSV). It sits alongside the programmatic egresses (REST / MCP / EventBus, with Webhook planned) but serves a different audience: **a human who downloads a file and imports it somewhere else.**
 
 That audience is the whole reason it exists. REST, MCP, and EventBus each need a technical consumer on the other end. A 税理士 sitting at the operator UI has no other self-serve egress, and it is also the deterministic, no-LLM-in-the-loop way to get the exact extracted values — a safety property that matters precisely *because* an AI client could otherwise transform them.
 
@@ -69,7 +69,7 @@ JSON file export is intentionally **not** offered — programmatic consumers sho
 
 ## Example: Composing a freee-Style Import CSV
 
-Dignite Vault Extract ships nothing freee-specific. You compose the format from your own type-bound fields.
+Dignite Vault ships nothing freee-specific. You compose the format from your own type-bound fields.
 
 Suppose a tenant has an `invoice` document type with tenant fields `issue_date`, `amount`, `partner_name` (defined on the type's **Fields** page, extracted automatically after classification). Set their `DisplayOrder` to 0 / 1 / 2 and their `DisplayName` to the headers you want. At month-end, filter the document list to the invoices you want and download.
 

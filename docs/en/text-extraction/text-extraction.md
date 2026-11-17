@@ -1,19 +1,19 @@
 ```json
 //[doc-seo]
 {
-    "Description": "How Dignite Vault Extract turns uploads into Markdown: the Markdown-first contract, the Parse router and its engines, OCR engine choice, extractor options and custom engines."
+    "Description": "How Dignite Vault turns uploads into Markdown: the Markdown-first contract, the Parse router and its engines, OCR engine choice, extractor options and custom engines."
 }
 ```
 
 # Text Extraction
 
-Every document uploaded to Dignite Vault Extract passes through a text-extraction stage that converts the raw bytes into **Markdown**. The Markdown then drives the channel's internal pipeline — classification, sub-document segmentation, field extraction and title generation — and is the only text payload Dignite Vault Extract exposes to downstream consumers (RAG platforms, business systems, MCP clients) through REST and MCP. The accepted file types and the upload size limit are listed in [Documents and Review](../documents/documents.md#uploading).
+Every document uploaded to Dignite Vault passes through a text-extraction stage that converts the raw bytes into **Markdown**. The Markdown then drives the channel's internal pipeline — classification, sub-document segmentation, field extraction and title generation — and is the only text payload Dignite Vault exposes to downstream consumers (RAG platforms, business systems, MCP clients) through REST and MCP. The accepted file types and the upload size limit are listed in [Documents and Review](../documents/documents.md#uploading).
 
 ## Markdown-First Contract
 
-Dignite Vault Extract is an AI-native platform. Markdown is the **single text payload** of the pipeline. But what Markdown contributes depends on whether the source document has structure — be honest about both cases:
+Dignite Vault is an AI-native platform. Markdown is the **single text payload** of the pipeline. But what Markdown contributes depends on whether the source document has structure — be honest about both cases:
 
-**With structure — real signal.** For contracts, reports, CSV/TSV, XLSX, DOCX/PPTX with headings and layout, or layout-aware OCR output (PP-StructureV3, Azure DI `prebuilt-layout`): headings, tables and lists are not formatting decoration — they are semantic signals that downstream RAG chunkers (header-path injection) and Dignite Vault Extract's own LLM prompts (system prompt: "input is Markdown") rely on. Use them in full.
+**With structure — real signal.** For contracts, reports, CSV/TSV, XLSX, DOCX/PPTX with headings and layout, or layout-aware OCR output (PP-StructureV3, Azure DI `prebuilt-layout`): headings, tables and lists are not formatting decoration — they are semantic signals that downstream RAG chunkers (header-path injection) and Dignite Vault's own LLM prompts (system prompt: "input is Markdown") rely on. Use them in full.
 
 **Without structure — container, not signal.** For OCR loose paragraphs, plain `.txt`, PP-OCRv4 line dumps, single-line notes: the Markdown wrapper is a **container name**, not a signal upgrade — `string.Join("\n\n", paragraphs)` and the plain text it wraps are byte-for-byte indistinguishable. We still route this through the Markdown contract so internal pipelines (classification / field extraction / title generation) and downstream consumers (RAG / business systems) stay on one shape. The wrapper buys uniformity, not LLM comprehension.
 
@@ -76,7 +76,7 @@ Digital engines **coexist** and are picked **per file** — unlike the OCR engin
 
 ## OCR — Choosing an Engine
 
-Dignite Vault Extract ships three OCR engines. Enable **one** in the host module's `[DependsOn]` (in this repository, `src/Dignite.Vault.Extract.Host/VaultExtractHostModule.cs`, together with the matching `<ProjectReference>`) based on the deployment scenario — the digital engines inject a single `ParseOcrClient` for figures, so the OCR engines are mutually exclusive. The shipped host enables **Vision-LLM**.
+Dignite Vault ships three OCR engines. Enable **one** in the host module's `[DependsOn]` (in this repository, `src/Dignite.Vault.Extract.Host/VaultExtractHostModule.cs`, together with the matching `<ProjectReference>`) based on the deployment scenario — the digital engines inject a single `ParseOcrClient` for figures, so the OCR engines are mutually exclusive. The shipped host enables **Vision-LLM**.
 
 | | [Vision-LLM](ocr-vision-llm.md) (shipped default) | [PaddleOCR](ocr-paddleocr.md) | [Azure Document Intelligence](ocr-azure-document-intelligence.md) |
 |---|---|---|---|
@@ -95,7 +95,7 @@ Each provider's setup lives on its own page: **[Vision-LLM](ocr-vision-llm.md)**
 
 These apply regardless of which provider is wired:
 
-- Dignite Vault Extract does not auto-switch OCR profiles per document. The OCR provider runs once with the host-configured model; there is no second OCR pass with a guessed specialized mode, and OCR average confidence is no longer a quality gate (#196).
+- Dignite Vault does not auto-switch OCR profiles per document. The OCR provider runs once with the host-configured model; there is no second OCR pass with a guessed specialized mode, and OCR average confidence is no longer a quality gate (#196).
 - OCR completion always advances the document to classification. OCR average confidence was removed (#196): it did not reliably predict real quality (skewed pages, blurry scans and layout issues are not reflected in an average score). Quality problems surface later as review reasons (an unresolved classification, a suspected duplicate, missing or invalid field values), which the operator resolves, or fixes by re-parsing the document. See [Documents and Review](../documents/documents.md).
 - **Extraction completeness (#268).** An engine may report that it captured only part of a document (e.g. a vision-LLM output truncated at the token cap, or a dropped PDF page). This is carried in the document's metadata (`ParseDocumentMetadata.IncompleteReason`, absent when complete), recorded in `Document.ExtractionMetadata`, and surfaced to downstream consumers on the REST `DocumentDto` as `ExtractionIsComplete` + `ExtractionIncompleteReason`. It is a **quality signal** (distinct from internal extraction provenance, which is not exposed); the channel does not gate Ready on it — consumers decide whether to accept, downgrade, or route to review. Engines that don't report it default to complete.
 
@@ -133,7 +133,7 @@ Derive from `ParseOcrClient` (for image/scan input; it claims images and PDFs at
 
 The engine lives in its own module project (`Dignite.Vault.Parse.Ocr.<Vendor>` or `Dignite.Vault.Parse.<Vendor>`), references `Dignite.Vault.Parse` (for `MarkdownDocumentReader` and the shared helpers), and is enabled by the host through `[DependsOn(...)]`. Digital engines coexist (picked per file), so adding one does not displace the others.
 
-**Structure is the engine's job, not the router's.** There is no parallel raw-text channel. An engine that answers in Markdown reads it with `MarkdownDocumentReader`; if the underlying OCR engine returns plain text only (e.g. PaddleOCR PP-OCRv4), the engine itself wraps it into paragraphs. Returning an empty document when the engine produced text is a contract violation. Custom OCR engines expose their model choice through engine/host configuration, not through Dignite Vault Extract core profile codes.
+**Structure is the engine's job, not the router's.** There is no parallel raw-text channel. An engine that answers in Markdown reads it with `MarkdownDocumentReader`; if the underlying OCR engine returns plain text only (e.g. PaddleOCR PP-OCRv4), the engine itself wraps it into paragraphs. Returning an empty document when the engine produced text is a contract violation. Custom OCR engines expose their model choice through engine/host configuration, not through Dignite Vault core profile codes.
 
 ## See Also
 

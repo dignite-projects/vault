@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Use a vision-capable chat model as Dignite Vault Extract's OCR provider for photos, thermal receipts and image-only PDFs: configuration, image downscaling, guards and cost."
+    "Description": "Use a vision-capable chat model as Dignite Vault's OCR provider for photos, thermal receipts and image-only PDFs: configuration, image downscaling, guards and cost."
 }
 ```
 
 # Vision-LLM OCR
 
-> One of Dignite Vault Extract's OCR providers. Overview and comparison: [Text Extraction](text-extraction.md). **The shipped host enables it by default.**
+> One of Dignite Vault's OCR providers. Overview and comparison: [Text Extraction](text-extraction.md). **The shipped host enables it by default.**
 
 ## When to Use It
 
@@ -105,7 +105,7 @@ The budget was measured on one image and one model, so treat 1.5 megapixels as u
 
 ## Hallucination / Repetition-Loop Guard
 
-A vision LLM driven in chat mode can fall into a repetition loop that fills the token budget with the same line over and over (the PaddleOCR-VL chat-mode death loop in #259). As a *trusted digitization channel*, Dignite Vault Extract must never persist such output. Defences, layered:
+A vision LLM driven in chat mode can fall into a repetition loop that fills the token budget with the same line over and over (the PaddleOCR-VL chat-mode death loop in #259). As a *trusted digitization channel*, Dignite Vault must never persist such output. Defences, layered:
 
 - **`MaxOutputTokens`** caps generation length (a loop can't run unbounded).
 - **`Temperature = 0`** + an explicit "transcribe each piece of text exactly once, never repeat a line" instruction.

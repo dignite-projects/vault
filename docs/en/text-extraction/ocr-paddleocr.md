@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Use the PaddleOCR sidecar as Dignite Vault Extract's OCR provider: enabling the module, PP-StructureV3 and other models, configuration and resource footprint."
+    "Description": "Use the PaddleOCR sidecar as Dignite Vault's OCR provider: enabling the module, PP-StructureV3 and other models, configuration and resource footprint."
 }
 ```
 
 # PaddleOCR
 
-> One of Dignite Vault Extract's OCR providers. Overview and comparison: [Text Extraction](text-extraction.md).
+> One of Dignite Vault's OCR providers. Overview and comparison: [Text Extraction](text-extraction.md).
 
 PaddleOCR runs as a local Docker sidecar. `PP-StructureV3` runs on CPU and emits native Markdown; data never leaves the network.
 

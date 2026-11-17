@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "What Dignite Vault Extract erases when ABP's GDPR module reports a user-data deletion request: the uploader name on every document, across the Host and every tenant."
+    "Description": "What Dignite Vault erases when ABP's GDPR module reports a user-data deletion request: the uploader name on every document, across the Host and every tenant."
 }
 ```
 
 # GDPR User-Data Erasure
 
-When ABP's GDPR module reports that a user asked for their data to be deleted, Vault Extract erases that user's name from every document they uploaded. Documents themselves are kept. Decision record: [#698](https://github.com/dignite-projects/vault/issues/698).
+When ABP's GDPR module reports that a user asked for their data to be deleted, Dignite Vault erases that user's name from every document they uploaded. Documents themselves are kept. Decision record: [#698](https://github.com/dignite-projects/vault/issues/698).
 
 ## What Is Erased, and What Is Not
 
@@ -16,7 +16,7 @@ Every uploaded document stores a snapshot of the uploader's display name, so the
 | Kept | Why |
 |---|---|
 | The documents, their Markdown, fields and original files | They are the tenant's records, not the requester's account data. Deleting them would also tell every downstream consumer that the document was permanently deleted. |
-| `CreatorId`, `LastModifierId`, `DeleterId` | These are ids, not names. ABP's Identity Pro handler, which the GDPR module relies on, anonymizes the account and deletes it (a soft delete unless configured otherwise), so an id no longer points at a person. Vault Extract cannot see that handler: it is the publishing host's job to anonymize the account. Document ownership and duplicate detection still need `CreatorId`. |
+| `CreatorId`, `LastModifierId`, `DeleterId` | These are ids, not names. ABP's Identity Pro handler, which the GDPR module relies on, anonymizes the account and deletes it (a soft delete unless configured otherwise), so an id no longer points at a person. Dignite Vault cannot see that handler: it is the publishing host's job to anonymize the account. Document ownership and duplicate detection still need `CreatorId`. |
 
 One consequence to know about: once the account is gone, nobody holds the owner arm on those documents any more, so they stay reachable only through the role-level permissions (`Documents.ReadAll` and its siblings) or a per-type grant, never through ownership. A host that publishes the event but keeps the account active leaves that user the owner of their documents. See [per-document-type permissions](../configuration/document-type-permissions.md).
 
@@ -24,9 +24,9 @@ Not handled here, because it belongs to other modules: the notification inbox (D
 
 ## When It Runs
 
-The handler subscribes to `GdprUserDataDeletionRequestedEto` from the `Volo.Abp.Gdpr.Abstractions` package. **That event is published by ABP's GDPR module, which is a commercial module (ABP Team license or higher).** Vault Extract does not ship it, so on a host without that module nothing ever publishes the event and the handler stays idle. Hosts that run the module need no configuration.
+The handler subscribes to `GdprUserDataDeletionRequestedEto` from the `Volo.Abp.Gdpr.Abstractions` package. **That event is published by ABP's GDPR module, which is a commercial module (ABP Team license or higher).** Dignite Vault does not ship it, so on a host without that module nothing ever publishes the event and the handler stays idle. Hosts that run the module need no configuration.
 
-The event names the user and, from ABP 10.7 on, the tenant the deletion was requested in. Vault Extract still sweeps the Host and every tenant, inactive tenants included: the tenant on the event is where the request was made, not where the user's documents are, and one account can be a member of several tenants. Each layer is erased in its own unit of work. Documents in the recycle bin are erased too.
+The event names the user and, from ABP 10.7 on, the tenant the deletion was requested in. Dignite Vault still sweeps the Host and every tenant, inactive tenants included: the tenant on the event is where the request was made, not where the user's documents are, and one account can be a member of several tenants. Each layer is erased in its own unit of work. Documents in the recycle bin are erased too.
 
 The cost of the sweep is one `UPDATE` per tenant, matching no rows in the layers where the user uploaded nothing. The ABP 10.7 behaviour was checked against the released packages: `GdprUserDataDeletionRequestedEto` carries a `TenantId`, the GDPR module's publisher sets it to the tenant of the request, and the event bus runs the handler inside that tenant when it is set. The handler does not read it.
 

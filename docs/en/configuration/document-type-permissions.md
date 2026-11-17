@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Grant read, edit, delete and upload on individual document types in Dignite Vault Extract, and how per-type grants, module-wide permissions and uploader ownership combine."
+    "Description": "Grant read, edit, delete and upload on individual document types in Dignite Vault, and how per-type grants, module-wide permissions and uploader ownership combine."
 }
 ```
 
@@ -11,7 +11,7 @@ By default, what a user may do with documents is an all-or-nothing decision: the
 
 This page describes the narrower grants: **this user (or role) may read / edit / delete / upload into these document types and no others** — and the axis that sits beside them: **whoever uploaded a document may view, edit and delete it, whatever type it landed on.**
 
-They are built on ABP's [resource-based authorization](https://abp.io/docs/latest/framework/fundamentals/authorization), not on anything Vault Extract invented — the grants, the management API, the user / role lookup and the dialog are all ABP's.
+They are built on ABP's [resource-based authorization](https://abp.io/docs/latest/framework/fundamentals/authorization), not on anything Dignite Vault invented — the grants, the management API, the user / role lookup and the dialog are all ABP's.
 
 ## What Exists
 
@@ -259,7 +259,7 @@ The **recycle bin** asks nothing before it queries. Admission is entry, the rows
 
 ## Granting and Revoking
 
-There is no Vault Extract API for managing these grants. They go through ABP's standard resource-permission endpoints (`/api/permission-management/permissions/resource…`), gated by `ManagePermissions`, and through ABP's `ResourcePermissionManagementComponent` dialog in the operator UI — which renders one checkbox per definition, so the four grants need no dialog work. User and role lookup comes from `Volo.Abp.PermissionManagement.Domain.Identity`, which the host already references.
+There is no Dignite Vault API for managing these grants. They go through ABP's standard resource-permission endpoints (`/api/permission-management/permissions/resource…`), gated by `ManagePermissions`, and through ABP's `ResourcePermissionManagementComponent` dialog in the operator UI — which renders one checkbox per definition, so the four grants need no dialog work. User and role lookup comes from `Volo.Abp.PermissionManagement.Domain.Identity`, which the host already references.
 
 In the operator UI, the dialog is reached from **Document Types → row actions → Permissions**, visible only to a caller holding `ManagePermissions`.
 

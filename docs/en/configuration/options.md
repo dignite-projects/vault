@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Reference of Dignite Vault Extract's configuration sections and options classes, the VaultExtract.Enable feature, the permission tree and the per-document-type permissions."
+    "Description": "Reference of Dignite Vault's configuration sections and options classes, the VaultExtract.Enable feature, the permission tree and the per-document-type permissions."
 }
 ```
 
 # Options and Features
 
-This page lists every configuration point of Dignite Vault Extract in one place: the configuration sections and options classes, the feature, and the permissions. Each entry links to the page that explains it.
+This page lists every configuration point of Dignite Vault in one place: the configuration sections and options classes, the feature, and the permissions. Each entry links to the page that explains it.
 
 ## Configuration Sections
 
@@ -44,7 +44,7 @@ Some settings are not bound from configuration; set them in your host module.
 | `DocumentExportConsts.MaxExportDocumentCount` | 10,000 | Rows per download. [Data Download](../egress/data-download.md#limits-and-safety) |
 | `DocumentExportConsts.MaxColumnCount` | 100 | Field columns per download. [Data Download](../egress/data-download.md#limits-and-safety) |
 | `VaultExtractDbProperties.DbTablePrefix` / `DbSchema` | `Vault` / none | Database table names. [Installation](../get-started/installation.md#database) |
-| `NotificationRoutingOptions` | `SignalR` for every Vault Extract notification | Notification channels. [Operator Notifications](../egress/operator-notifications.md) |
+| `NotificationRoutingOptions` | `SignalR` for every Dignite Vault notification | Notification channels. [Operator Notifications](../egress/operator-notifications.md) |
 
 The MCP result caps (`VaultExtractMcpConsts`) are compile-time constants on purpose, so that configuration cannot widen an LLM-facing boundary. See [MCP Server: Limits](../egress/mcp-server.md#limits).
 

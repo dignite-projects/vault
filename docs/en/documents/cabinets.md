@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Organize Dignite Vault Extract documents into cabinets: a manual filing dimension, independent of document types, with an optional AI suggestion at upload."
+    "Description": "Organize Dignite Vault documents into cabinets: a manual filing dimension, independent of document types, with an optional AI suggestion at upload."
 }
 ```
 

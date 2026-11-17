@@ -1,15 +1,15 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Define document types and their fields in Dignite Vault Extract: Host and tenant layers, field types, extraction prompts, duplicate detection, validation warnings and type packs."
+    "Description": "Define document types and their fields in Dignite Vault: Host and tenant layers, field types, extraction prompts, duplicate detection, validation warnings and type packs."
 }
 ```
 
 # Document Types and Fields
 
-A **document type** is what classification sorts documents into, and the container of the **fields** extracted from documents of that type. Vault Extract ships **no built-in types and no business fields**: an administrator defines every type and every field, and the channel extracts by that schema. A contract amount or an invoice number is a field you define, not something the module knows about.
+A **document type** is what classification sorts documents into, and the container of the **fields** extracted from documents of that type. Dignite Vault ships **no built-in types and no business fields**: an administrator defines every type and every field, and the channel extracts by that schema. A contract amount or an invoice number is a field you define, not something the module knows about.
 
-> A business system that needs more than field values (an approval workflow, a contract record) builds it on its own side from the [egress contracts](../egress/integration-events.md). Vault Extract stays a channel.
+> A business system that needs more than field values (an approval workflow, a contract record) builds it on its own side from the [egress contracts](../egress/integration-events.md). Dignite Vault stays a channel.
 
 ## Host and Tenant Layers
 
@@ -109,7 +109,7 @@ Operators can correct any value on the document's detail page. A correction is v
 
 ## Duplicate Detection
 
-Duplicate detection is **opt-in per type**: mark the fields that identify a document (an invoice number and an issuer, for example) as **unique keys**. After extraction, Vault Extract hashes the unique-key values into a fingerprint; another live document of the same layer and type with the same fingerprint makes this document a **suspected duplicate**, a blocking review reason. A document with a unique-key field missing has no fingerprint and is never flagged.
+Duplicate detection is **opt-in per type**: mark the fields that identify a document (an invoice number and an issuer, for example) as **unique keys**. After extraction, Dignite Vault hashes the unique-key values into a fingerprint; another live document of the same layer and type with the same fingerprint makes this document a **suspected duplicate**, a blocking review reason. A document with a unique-key field missing has no fingerprint and is never flagged.
 
 The type's `DuplicateScope` decides which documents are compared:
 

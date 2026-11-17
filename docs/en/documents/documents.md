@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "How documents move through Dignite Vault Extract: uploading, lifecycle statuses, review reasons and the Ready gate, operator review actions, corrections and the recycle bin."
+    "Description": "How documents move through Dignite Vault: uploading, lifecycle statuses, review reasons and the Ready gate, operator review actions, corrections and the recycle bin."
 }
 ```
 

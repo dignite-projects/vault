@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Build a module that derives data from Dignite Vault Extract documents in the same host: the document integration service for ingestion and the read scope for serving users."
+    "Description": "Build a module that derives data from Dignite Vault documents in the same host: the document integration service for ingestion and the read scope for serving users."
 }
 ```
 

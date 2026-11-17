@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Configure the LLM provider behind Dignite Vault Extract: the keyed IChatClient registrations, model choice, non-OpenAI providers and the Vault:ExtractBehavior knobs."
+    "Description": "Configure the LLM provider behind Dignite Vault: the keyed IChatClient registrations, model choice, non-OpenAI providers and the Vault:ExtractBehavior knobs."
 }
 ```
 
 # AI Provider
 
-Dignite Vault Extract delegates every chat-completion call to `Microsoft.Extensions.AI`. AI configuration is split into two disjoint configuration sections:
+Dignite Vault delegates every chat-completion call to `Microsoft.Extensions.AI`. AI configuration is split into two disjoint configuration sections:
 
 | Section | Owns | Consumed by |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ Dignite Vault Extract delegates every chat-completion call to `Microsoft.Extensi
 
 The split keeps credentials (`ApiKey`) out of any `IOptions<>` that reaches application code, and lets operators tune behavior without touching the provider. Every LLM feature (classification, field extraction, sub-document segmentation, title generation, cabinet suggestion and the admin-side drafting helpers) shares the same provider registration.
 
-> Dignite Vault Extract is a channel layer. It has no chat, RAG or agentic tool-calling path (removed in [#166](https://github.com/dignite-projects/vault/issues/166)). Its LLM call sites are background pipeline workflows plus a few admin-facing drafting helpers. A downstream RAG or chat consumer registers its own `IChatClient` against its own provider.
+> Dignite Vault is a channel layer. It has no chat, RAG or agentic tool-calling path (removed in [#166](https://github.com/dignite-projects/vault/issues/166)). Its LLM call sites are background pipeline workflows plus a few admin-facing drafting helpers. A downstream RAG or chat consumer registers its own `IChatClient` against its own provider.
 
 ## Required before first run
 
@@ -228,7 +228,7 @@ The title-generator client can run on a smaller, cheaper model than the structur
 
 The vision key lives in the OCR provider project, not in `VaultExtractConsts`: an OCR provider sits below the Application layer and must not depend on it.
 
-Every client is registered with `UseOpenTelemetry()` and `UseLogging()`. None uses `UseFunctionInvocation` (Vault Extract calls no tools) or `UseDistributedCache` (every prompt is derived from document or admin input and is unique per call, so a cache would always miss).
+Every client is registered with `UseOpenTelemetry()` and `UseLogging()`. None uses `UseFunctionInvocation` (Dignite Vault calls no tools) or `UseDistributedCache` (every prompt is derived from document or admin input and is unique per call, so a cache would always miss).
 
 > **Provider-switch gotcha.** When you point `Endpoint` at a non-OpenAI provider, override every model id key together in the environment-specific configuration. `ChatModelId` alone is not enough when the provider does not recognize a model id inherited from the base `appsettings.json`.
 
@@ -331,7 +331,7 @@ For the full list of `IChatClient` providers and their factory calls, see the [M
 
 ## Cross-cutting LLM behavior (`ExtractBehavior`)
 
-These options describe *how* Vault Extract calls the model. They are bound from `Vault:ExtractBehavior` to `VaultExtractBehaviorOptions` and are host configuration: a host may raise a ceiling to process bigger documents or lower it to cap spend.
+These options describe *how* Dignite Vault calls the model. They are bound from `Vault:ExtractBehavior` to `VaultExtractBehaviorOptions` and are host configuration: a host may raise a ceiling to process bigger documents or lower it to cap spend.
 
 ```json
 "Vault": {
@@ -355,7 +355,7 @@ These options describe *how* Vault Extract calls the model. They are bound from 
 | `MaxSegmentationMarkdownLength` | `200000` | Maximum Markdown characters for sub-document detection. Segmentation reads the whole document, so a longer one is not segmented and gets a review signal |
 | `MaxFieldExtractionMarkdownLength` | `200000` | Maximum Markdown characters for field extraction. Field extraction cannot truncate (a field may sit anywhere), so a longer document is declined with the blocking `FieldExtractionIncomplete` review reason instead of calling the model |
 | `MaxFieldSchemaPromptLength` | `32000` | Maximum total prompt characters across the active fields of one document type. Creating, updating, restoring or importing a field is rejected when it would push the type over this budget |
-| `MaxFieldExtractionOutputTokens` | `16384` | Most output tokens a field-extraction call asks the **structured** model for. Vault Extract estimates a worst case from the field schema and sends it only up to this value, because a provider refuses a request that asks for more than its model can produce, and refuses it again on every retry. Set it to your structured model's maximum output tokens (128,000 for OpenAI's `gpt-6-luna`). On a reasoning model the cap also covers reasoning tokens unless `Vault:Extract:ReasoningEffort` is `None`. A response that needs more stops at the limit; the log names this key, and the fields that did not finish come back empty |
+| `MaxFieldExtractionOutputTokens` | `16384` | Most output tokens a field-extraction call asks the **structured** model for. Dignite Vault estimates a worst case from the field schema and sends it only up to this value, because a provider refuses a request that asks for more than its model can produce, and refuses it again on every retry. Set it to your structured model's maximum output tokens (128,000 for OpenAI's `gpt-6-luna`). On a reasoning model the cap also covers reasoning tokens unless `Vault:Extract:ReasoningEffort` is `None`. A response that needs more stops at the limit; the log names this key, and the fields that did not finish come back empty |
 
 The ceilings follow one rule: where cutting the tail would silently corrupt the result (field extraction, segmentation), the ceiling **gates** the call and raises a review signal; where it would not (classification, title, cabinet suggestion), the text is truncated.
 
@@ -380,7 +380,7 @@ The shipped host's `VaultExtractHostModule.ConfigureOpenTelemetry` adds the same
 | Source / Meter | Emitted by | Covers |
 | --- | --- | --- |
 | `Experimental.Microsoft.Extensions.AI` (Activity and Meter) | The `UseOpenTelemetry` decorator on each keyed client | GenAI semantic conventions: `chat {model}` spans, `gen_ai.client.operation.duration`, `gen_ai.client.token.usage` |
-| `Dignite.Vault.Extract.*` (reserved) | Nothing in Vault Extract today | Reserved for module-specific telemetry, including a downstream consumer's own meters |
+| `Dignite.Vault.Extract.*` (reserved) | Nothing in Dignite Vault today | Reserved for module-specific telemetry, including a downstream consumer's own meters |
 
 ## See Also
 

@@ -1,15 +1,15 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Connect Claude Desktop, Cursor, Claude Code or any MCP client to Dignite Vault Extract: resources, tools, OAuth discovery, rate limiting and tenant scope."
+    "Description": "Connect Claude Desktop, Cursor, Claude Code or any MCP client to Dignite Vault: resources, tools, OAuth discovery, rate limiting and tenant scope."
 }
 ```
 
 # MCP Server
 
-Dignite Vault Extract exposes an **MCP (Model Context Protocol) server** as one of its egress channels, next to the [REST API](rest-api.md) and [integration events](integration-events.md). AI clients (Claude Desktop, Cursor, Claude Code, any MCP client) can read and search documents without custom integration code.
+Dignite Vault exposes an **MCP (Model Context Protocol) server** as one of its egress channels, next to the [REST API](rest-api.md) and [integration events](integration-events.md). AI clients (Claude Desktop, Cursor, Claude Code, any MCP client) can read and search documents without custom integration code.
 
-> The MCP server exposes documents, document types and cabinets as resources, plus structured discovery and search tools. Extracted-field searches are anchored to a document type; metadata-only searches may be scoped to a cabinet or a source document instead. Extract itself has **no** keyword, full-text, semantic or vector retrieval: the host's Vault Index adds that on the same endpoint as the `vault_index_*` tools; see [Index Search](index-search.md). Vault Extract is an MCP **server** only and never acts as an MCP client.
+> The MCP server exposes documents, document types and cabinets as resources, plus structured discovery and search tools. Extracted-field searches are anchored to a document type; metadata-only searches may be scoped to a cabinet or a source document instead. Extract itself has **no** keyword, full-text, semantic or vector retrieval: the host's Vault Index adds that on the same endpoint as the `vault_index_*` tools; see [Index Search](index-search.md). Dignite Vault is an MCP **server** only and never acts as an MCP client.
 
 ## Installation
 
@@ -21,7 +21,7 @@ The shipped host depends on `VaultExtractMcpModule` and calls `AddAbpMcpAuthenti
 
 Every tool name starts with `vault_extract_`, and every resource URI uses the `vault-extract://` scheme.
 
-| MCP primitive | Vault Extract mapping |
+| MCP primitive | Dignite Vault mapping |
 | --- | --- |
 | Resource `vault-extract://documents/{id}` | A short system-metadata header (type, lifecycle, language, created-at, optional cabinet id) followed by the document's Markdown wrapped in `<document>` tags. The wrapped body is external, untrusted content, and the header says so |
 | Resource `vault-extract://document-types/{code}` | One document type's field schema |
@@ -75,7 +75,7 @@ Every request to `/mcp` requires a valid token. In addition, each tool and resou
 
 ### Manual Token
 
-Obtain a token from the Vault Extract auth server (`AuthServer:Authority`) with your usual OAuth flow (client credentials for a service client, or an interactive user token), grant the client or user the permissions above, and present it as a static `Authorization: Bearer <token>` header. The `mcp-remote` bridge and a manually configured MCP Inspector work this way. A request that already carries a valid token never triggers the discovery flow.
+Obtain a token from the Dignite Vault auth server (`AuthServer:Authority`) with your usual OAuth flow (client credentials for a service client, or an interactive user token), grant the client or user the permissions above, and present it as a static `Authorization: Bearer <token>` header. The `mcp-remote` bridge and a manually configured MCP Inspector work this way. A request that already carries a valid token never triggers the discovery flow.
 
 ### Automatic Discovery (RFC 9728)
 
@@ -88,7 +88,7 @@ Spec-compliant MCP clients (Claude Desktop and claude.ai custom connectors, MCP 
 
 The metadata document and the `WWW-Authenticate` pointer come from the `ModelContextProtocol.AspNetCore` authentication scheme (`McpAuth`), wired through `AddAbpMcpAuthenticationDiscovery`. The `McpAuth` scheme does **not** validate tokens and is not part of the `/mcp` authorization policy: it only serves `/.well-known/oauth-protected-resource` and supplies the 401 challenge, and only for the `/mcp` endpoint. Token validation, dynamic claims and tenant resolution stay on the OpenIddict chain, and every other endpoint (admin UI, REST, Swagger) keeps its default challenge.
 
-> **Preset client.** Completing step 4 also needs the auth server to accept the client. Vault Extract seeds **one public, PKCE, native client** for this purpose, with client id **`VaultExtract_Mcp`**, so Guided OAuth works without per-client registration. Dynamic Client Registration (RFC 7591) is deliberately not offered: a self-hosted server faces a knowable set of clients, and an open registration endpoint would be pure attack surface.
+> **Preset client.** Completing step 4 also needs the auth server to accept the client. Dignite Vault seeds **one public, PKCE, native client** for this purpose, with client id **`VaultExtract_Mcp`**, so Guided OAuth works without per-client registration. Dynamic Client Registration (RFC 7591) is deliberately not offered: a self-hosted server faces a knowable set of clients, and an open registration endpoint would be pure attack surface.
 
 #### Configure the Preset Client
 
@@ -99,7 +99,7 @@ Point the client at `https://<host>/mcp` with **no** token and set the client id
 - **mcp-remote / Cursor**: set the configured OAuth client id.
 - **ChatGPT connector / OpenAI Codex** and other OAuth-capable clients: set the OAuth **Client ID**.
 
-The browser opens the Vault Extract sign-in page. Because this is a public client with a published client id, you get an **explicit consent screen** before any token is issued.
+The browser opens the Dignite Vault sign-in page. Because this is a public client with a published client id, you get an **explicit consent screen** before any token is issued.
 
 > The preset client carries only the `VaultExtract` scope plus the minimal `profile` and `email` identity scopes. Data access is still decided by the **signed-in user's** permissions: the client holds none of its own, so a user without `VaultExtract.Documents` is denied even after a successful sign-in.
 
@@ -161,12 +161,12 @@ Native bridges (`mcp-remote`, Cursor, Claude Desktop) fetch from the server side
 
 ## Tenant Scope
 
-The host runs with multi-tenancy enabled (`VaultExtractHostModule.IsMultiTenant = true`). A call resolves to the tenant of the authenticated principal, and ABP's `IMultiTenant` global filter isolates the data; Vault Extract never writes a tenant predicate by hand. Every credential must therefore carry the right tenant claim.
+The host runs with multi-tenancy enabled (`VaultExtractHostModule.IsMultiTenant = true`). A call resolves to the tenant of the authenticated principal, and ABP's `IMultiTenant` global filter isolates the data; Dignite Vault never writes a tenant predicate by hand. Every credential must therefore carry the right tenant claim.
 
 Every tool also accepts an optional `tenantId`, and each resource has a tenant-scoped twin (`vault-extract://tenants/{tenantId}/documents/{id}`, `.../document-types/{code}`, `.../cabinets/{id}`). Targeting another tenant explicitly is **off by default**. A deployment that needs it must do both of the following:
 
 1. Set `VaultExtractMcpOptions.AllowExplicitTenantScope` to `true`.
-2. Replace `IMcpTenantAccessValidator`, whose default implementation (`DenyAllMcpTenantAccessValidator`) denies every request. Vault Extract has no notion of cross-tenant membership, so the deployment decides which callers may target which tenants.
+2. Replace `IMcpTenantAccessValidator`, whose default implementation (`DenyAllMcpTenantAccessValidator`) denies every request. Dignite Vault has no notion of cross-tenant membership, so the deployment decides which callers may target which tenants.
 
 The validator runs before the tenant lookup, so a denied caller cannot tell an unknown tenant from a forbidden one. An unknown or inactive tenant is rejected.
 
@@ -278,7 +278,7 @@ Claude Code reads remote HTTP MCP servers directly and uses Guided OAuth, with a
 
 - **One use case behind every adapter.** The search tool calls the same application service as the REST document list (`IDocumentAppService.GetListAsync`), so permission checks, input validation, field resolution and tenant isolation run in one place. The tool only handles transport concerns: strict `cabinetId` parsing, tolerant `lifecycleStatus` parsing, clamping the row count and wrapping titles with `PromptBoundary`.
 - **Strict cabinet id.** An invalid cabinet UUID raises an MCP error instead of silently dropping the filter, which could otherwise widen a cabinet-scoped request to every cabinet.
-- **Untrusted content.** Document bodies and configuration text (type and cabinet names) are wrapped and labeled as data. Vault Extract never treats embedded text as instructions, and clients should not either.
+- **Untrusted content.** Document bodies and configuration text (type and cabinet names) are wrapped and labeled as data. Dignite Vault never treats embedded text as instructions, and clients should not either.
 - **Single instance.** The Streamable HTTP transport keeps session state in process. Several host instances behind a load balancer need session affinity.
 - **Feature gate.** Every tool and resource calls an application service, so a tenant without the [`VaultExtract.Enable`](../configuration/options.md#features) feature is refused. `resources/list` treats a refused category as denied and still lists the others.
 

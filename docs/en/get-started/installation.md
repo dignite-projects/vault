@@ -140,7 +140,7 @@ The modules leave these decisions to the host:
 
 The application services are gated by the `VaultExtract.Enable` feature, which is on by default; see [Options and Features](../configuration/options.md#features). Users need permissions before they see anything; see [Permissions](../configuration/options.md#permissions).
 
-Vault Extract ships **no document types**. After installation an administrator creates the types and their fields; see [Document Types and Fields](../documents/document-types.md).
+Dignite Vault ships **no document types**. After installation an administrator creates the types and their fields; see [Document Types and Fields](../documents/document-types.md).
 
 ## Angular UI
 

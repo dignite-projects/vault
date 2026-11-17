@@ -1,17 +1,17 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Subscribe to Dignite Vault Extract's distributed events: stage and lifecycle ETOs, payload properties, the Ready gate and at-least-once delivery semantics."
+    "Description": "Subscribe to Dignite Vault's distributed events: stage and lifecycle ETOs, payload properties, the Ready gate and at-least-once delivery semantics."
 }
 ```
 
 # Integration Events
 
-Dignite Vault Extract publishes document pipeline progress as ABP [distributed events](https://abp.io/docs/latest/framework/infrastructure/event-bus/distributed) (ETOs). This is the **EventBus** egress channel, next to the [REST API](rest-api.md), the [MCP server](mcp-server.md) and [Data Download](data-download.md); a Webhook channel is planned. Every payload is thin (an ID plus key metadata): a consumer pulls the details it needs back through REST or MCP after receiving an event, or, from a module in the same host, through the [in-process integration service](in-process-integration.md).
+Dignite Vault publishes document pipeline progress as ABP [distributed events](https://abp.io/docs/latest/framework/infrastructure/event-bus/distributed) (ETOs). This is the **EventBus** egress channel, next to the [REST API](rest-api.md), the [MCP server](mcp-server.md) and [Data Download](data-download.md); a Webhook channel is planned. Every payload is thin (an ID plus key metadata): a consumer pulls the details it needs back through REST or MCP after receiving an event, or, from a module in the same host, through the [in-process integration service](in-process-integration.md).
 
 ## Subscribing
 
-The ETO classes live in the `Dignite.Vault.Extract.Abstractions` package (namespace `Dignite.Vault.Extract.Abstractions.Documents`), which depends only on ABP base packages. A consumer references that package, configures the same distributed event bus provider as the Vault Extract host (RabbitMQ, Kafka, Azure Service Bus, and so on), and handles the events it needs:
+The ETO classes live in the `Dignite.Vault.Extract.Abstractions` package (namespace `Dignite.Vault.Extract.Abstractions.Documents`), which depends only on ABP base packages. A consumer references that package, configures the same distributed event bus provider as the Dignite Vault host (RabbitMQ, Kafka, Azure Service Bus, and so on), and handles the events it needs:
 
 ```csharp
 using Dignite.Vault.Extract.Abstractions.Documents;
@@ -82,7 +82,7 @@ A type code is unique only within its layer, so route by the `(TenantId, Documen
 
 ## Delivery Semantics
 
-Dignite Vault Extract delivers every event through ABP's built-in **transactional outbox** — the business change and the event enqueue commit atomically, so events are **at-least-once** and never lost.
+Dignite Vault delivers every event through ABP's built-in **transactional outbox** — the business change and the event enqueue commit atomically, so events are **at-least-once** and never lost.
 
 Deduplication and ordering are the consumer's responsibility. Every ETO carries `EventTime` (set from the server clock at publish time); a consumer does idempotency by `(DocumentId, EventType, EventTime)` as a high-water mark: discard an incoming event whose `EventTime` is at or before the one already recorded for that key, otherwise apply it and store its `EventTime` as the new mark. A consumer that is itself an ABP application can instead enable the built-in **inbox** (`ConfigureEventInbox()`) for automatic exactly-once consumption by message id.
 

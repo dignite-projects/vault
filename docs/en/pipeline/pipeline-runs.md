@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Dignite Vault Extract's pipeline run history: run records, statuses, retries, the classification-candidates payload for the review UI and runs ended by a deletion."
+    "Description": "Dignite Vault's pipeline run history: run records, statuses, retries, the classification-candidates payload for the review UI and runs ended by a deletion."
 }
 ```
 

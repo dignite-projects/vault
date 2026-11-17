@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Call the Dignite Vault Extract REST API: authentication, uploading, reading documents and their Markdown and field values, list filters, and the endpoint reference."
+    "Description": "Call the Dignite Vault REST API: authentication, uploading, reading documents and their Markdown and field values, list filters, and the endpoint reference."
 }
 ```
 
 # REST API
 
-The REST API is Vault Extract's general programmatic egress: a business system or script uploads documents, reads their Markdown and field values, and acts on them. The operator UI uses the same API. For an AI client, prefer the [MCP server](mcp-server.md); for change notifications, subscribe to the [integration events](integration-events.md) and pull details from here.
+The REST API is Dignite Vault's general programmatic egress: a business system or script uploads documents, reads their Markdown and field values, and acts on them. The operator UI uses the same API. For an AI client, prefer the [MCP server](mcp-server.md); for change notifications, subscribe to the [integration events](integration-events.md) and pull details from here.
 
 The API is provided by the `Dignite.Vault.Extract.HttpApi` package. Every route starts with **`/api/vault-extract/`**. The running host documents every endpoint in Swagger UI at `/swagger`.
 

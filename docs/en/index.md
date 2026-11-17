@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Documentation of Dignite Vault Extract, the ABP module that turns scans, photos, PDFs and Office files into Markdown, classified types and extracted fields for downstream systems."
+    "Description": "Documentation of Dignite Vault, the ABP module that turns scans, photos, PDFs and Office files into Markdown, classified types and extracted fields for downstream systems."
 }
 ```
 
-# Dignite Vault Extract
+# Dignite Vault
 
-**Dignite Vault Extract** is the channel layer that turns content requiring IDP (Intelligent Document Processing) — scans, photos, PDF images, Office files and digital documents — into trustworthy structured data: **Markdown**, a classified **document type**, and **field values** extracted by a schema you define. It hands that data to downstream consumers (RAG platforms, business systems, AI clients) over a REST API, an MCP server and distributed events.
+**Dignite Vault** is the channel layer that turns content requiring IDP (Intelligent Document Processing) — scans, photos, PDF images, Office files and digital documents — into trustworthy structured data: **Markdown**, a classified **document type**, and **field values** extracted by a schema you define. It hands that data to downstream consumers (RAG platforms, business systems, AI clients) over a REST API, an MCP server and distributed events.
 
 It is an [ABP Framework](https://abp.io) application module (ABP 11, .NET 11, Angular 22), licensed under LGPL-3.0-only.
 
@@ -29,7 +29,7 @@ scans · photos · PDFs · Office files
 ## What It Does and Does Not Do
 
 - **Markdown first.** Every document becomes Markdown, the one text payload of every egress. Headings and tables survive, so downstream chunkers and LLMs can use them.
-- **You define the schema.** Vault Extract ships no document types and no business fields. Administrators define types and fields per layer (the Host, and each tenant separately); the channel classifies and extracts by them.
+- **You define the schema.** Dignite Vault ships no document types and no business fields. Administrators define types and fields per layer (the Host, and each tenant separately); the channel classifies and extracts by them.
 - **A trusted signal.** A document is published as Ready only when nothing needs review: a confirmed type, no suspected duplicate, no unresolved field problem. Everything else waits in an operator review queue.
 - **Providers are host configuration.** The LLM and OCR providers and their keys are configured by whoever deploys the host, never by end users.
 - **A channel, not an application.** Vector search, RAG Q&A, chat, approval workflows and business records (contracts, invoices) are out of scope: they belong to the downstream systems that consume the egress.
@@ -104,4 +104,4 @@ These pages describe the current behavior. Every release's changes, including br
 ## See Also
 
 - [ABP Framework Documentation](https://abp.io/docs/latest)
-- [Dignite abp-modules](https://github.com/dignite-projects/abp-modules) — FlexFields, the shared MCP server and Notifications, which Vault Extract builds on
+- [Dignite abp-modules](https://github.com/dignite-projects/abp-modules) — FlexFields, the shared MCP server and Notifications, which Dignite Vault builds on

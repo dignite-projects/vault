@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "The in-app notifications Dignite Vault Extract sends a document's uploader (needs review, failed, rejected, ready), and how to install them as a monolith or a split deployment."
+    "Description": "The in-app notifications Dignite Vault sends a document's uploader (needs review, failed, rejected, ready), and how to install them as a monolith or a split deployment."
 }
 ```
 
@@ -40,7 +40,7 @@ Delivery is the persisted inbox row plus a live push over SignalR (`/signalr-hub
 - **Connection.** The notification store uses the host's `Default` connection string. The distributed-event outbox stays on the host's own context.
 - **SignalR.** The hub is served by the host itself and the browser connects to it directly, so `App:CorsOrigins` must contain the SPA origin. If a reverse proxy sits in front of the host it should pass WebSocket upgrades on `/signalr-hubs/`; without that the bell still works, through a slower fallback. See [Deployment: Reverse proxy](../deployment/deployment.md#reverse-proxy).
 - **Subscriptions.** The notification module's "Subscriptions" settings tab is not enabled: every notification goes to an explicit recipient, which bypasses subscriptions, so its toggles would do nothing.
-- **Upgrading from `abp-modules` 10.0.0-rc.22 or earlier.** The distribution job is now named `Dignite.Abp.Notifications.Distribute`, and jobs still queued under the old name (`Dignite.Abp.Notifications.NotificationDistributionJobArgs`) are not picked up after the upgrade. Vault Extract sends each notification to one explicit recipient, which is distributed inline (up to five recipients by default), so its own queue is normally empty. Check that `AbpBackgroundJobs` holds no row with the old `JobName` before you deploy; if it does, let the old version drain them first. No EF migration.
+- **Upgrading from `abp-modules` 10.0.0-rc.22 or earlier.** The distribution job is now named `Dignite.Abp.Notifications.Distribute`, and jobs still queued under the old name (`Dignite.Abp.Notifications.NotificationDistributionJobArgs`) are not picked up after the upgrade. Dignite Vault sends each notification to one explicit recipient, which is distributed inline (up to five recipients by default), so its own queue is normally empty. Check that `AbpBackgroundJobs` holds no row with the old `JobName` before you deploy; if it does, let the old version drain them first. No EF migration.
 
 ## Two Ways to Install the Host
 
@@ -48,7 +48,7 @@ The Application module, the four definitions and the publishing code are the sam
 
 | Host | Installs | Inbox and hub |
 |---|---|---|
-| **Monolith** (the Vault Extract host as shipped) | `Dignite.Abp.Notifications.SignalR` and `Dignite.NotificationCenter.Application`, `.HttpApi`, `.EntityFrameworkCore`. The `Dignite.NotificationCenter.*` packages bring `Dignite.Abp.Notifications` (the in-process implementation: the local publisher, the distributor and the delivery handler) with them; do not add it by hand | In this host, in its own database |
+| **Monolith** (the Dignite Vault host as shipped) | `Dignite.Abp.Notifications.SignalR` and `Dignite.NotificationCenter.Application`, `.HttpApi`, `.EntityFrameworkCore`. The `Dignite.NotificationCenter.*` packages bring `Dignite.Abp.Notifications` (the in-process implementation: the local publisher, the distributor and the delivery handler) with them; do not add it by hand | In this host, in its own database |
 | **Split deployment** (one notification service shared by several products) | `Dignite.Abp.Notifications.Client` and `Dignite.Abp.Notifications.EntityFrameworkCore` (`Dignite.Abp.Notifications.MongoDB` when the notification service's database is MongoDB); no `Dignite.NotificationCenter.*`, no SignalR notifier | In the notification service. This host only publishes |
 
 A host with neither `Dignite.Abp.Notifications` nor `.Client` resolves `NullNotificationPublisher`: each publish logs a warning naming the notification and is dropped. A host with both uses the local publisher and distributes its notifications itself, so a split-deployment host must not pull in `Dignite.NotificationCenter.*`.

@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Collect Dignite Vault Extract's OpenTelemetry traces and metrics: what is emitted, the host's export settings, a local Aspire Dashboard and production OTLP backends."
+    "Description": "Collect Dignite Vault's OpenTelemetry traces and metrics: what is emitted, the host's export settings, a local Aspire Dashboard and production OTLP backends."
 }
 ```
 
 # Observability
 
-Dignite Vault Extract emits OpenTelemetry traces and metrics from the `Microsoft.Extensions.AI` stack it consumes, and ships them through a single host-configured export pipeline. This page covers what's emitted, how to wire it up locally, and how to point it at a production backend.
+Dignite Vault emits OpenTelemetry traces and metrics from the `Microsoft.Extensions.AI` stack it consumes, and ships them through a single host-configured export pipeline. This page covers what's emitted, how to wire it up locally, and how to point it at a production backend.
 
 ## What's Emitted
 
@@ -63,7 +63,7 @@ Expected sightings:
 
 ### Note: `gen_ai.usage.*` token counts are trustworthy here (no streaming)
 
-All Dignite Vault Extract LLM calls (classification / field extraction / title generation / slug suggestion) are **non-streaming**. The `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` values reflect the provider-reported totals for the turn and are safe to use for cost tracking.
+All Dignite Vault LLM calls (classification / field extraction / title generation / slug suggestion) are **non-streaming**. The `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` values reflect the provider-reported totals for the turn and are safe to use for cost tracking.
 
 This only becomes a caveat if a future code path introduces *streaming* (`GetStreamingResponseAsync`): `Microsoft.Extensions.AI`'s `OpenTelemetryChatClient` accumulates usage per streamed chunk, and some OpenAI-compatible gateways report **cumulative-so-far** usage on each chunk rather than per-chunk deltas — the SDK then sums them, inflating the total by the chunk count (observed ~40–70× on SiliconFlow + DeepSeek-V3). If streaming is ever added, verify token numbers against the provider's billing dashboard before trusting OTel for absolute cost.
 

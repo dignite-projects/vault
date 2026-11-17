@@ -1,13 +1,13 @@
 ```json
 //[doc-seo]
 {
-    "Description": "How Dignite Vault Extract classifies documents into the types of their own layer: the LLM workflow, confidence thresholds, outcomes, operator correction and declared types."
+    "Description": "How Dignite Vault classifies documents into the types of their own layer: the LLM workflow, confidence thresholds, outcomes, operator correction and declared types."
 }
 ```
 
 # Document Classification
 
-When a document finishes [text extraction](../text-extraction/text-extraction.md), Dignite Vault Extract classifies it against `DocumentType` rows that belong to the same layer as the document (Host documents → `TenantId IS NULL` rows; tenant documents → matching tenant rows). The Host deployer creates their types through the admin UI (`IDocumentTypeAppService`); tenants do the same for their own private types. Dignite Vault Extract ships **no built-in types** and **does not register types in Module startup** — every type is owned by the deployer or tenant, never by Dignite Vault Extract itself.
+When a document finishes [text extraction](../text-extraction/text-extraction.md), Dignite Vault classifies it against `DocumentType` rows that belong to the same layer as the document (Host documents → `TenantId IS NULL` rows; tenant documents → matching tenant rows). The Host deployer creates their types through the admin UI (`IDocumentTypeAppService`); tenants do the same for their own private types. Dignite Vault ships **no built-in types** and **does not register types in Module startup** — every type is owned by the deployer or tenant, never by Dignite Vault itself.
 
 The resulting type decides the next stage — field extraction for that type's fields, in the document's own layer — and is broadcast as `DocumentClassifiedEto` (carrying `DocumentTypeCode`) so downstream consumers can follow along. Classification also decides whether the document is a **container** of several documents, or embeds standalone documents, which are then split into [sub-documents](../documents/sub-documents.md).
 
@@ -35,7 +35,7 @@ Two design properties matter:
 
 ## Registering Document Types
 
-Both Host deployers and tenants create their `DocumentType` rows through the admin UI (`IDocumentTypeAppService`), each in their own layer. There is **no module-startup registration path** — Dignite Vault Extract ships with no built-in types, and there is no inheritance: a Host type never applies to tenant documents. The full list of type properties is in [Document Types and Fields](../documents/document-types.md#document-types); these are the ones classification reads:
+Both Host deployers and tenants create their `DocumentType` rows through the admin UI (`IDocumentTypeAppService`), each in their own layer. There is **no module-startup registration path** — Dignite Vault ships with no built-in types, and there is no inheritance: a Host type never applies to tenant documents. The full list of type properties is in [Document Types and Fields](../documents/document-types.md#document-types); these are the ones classification reads:
 
 | Field | Used by |
 |---|---|
