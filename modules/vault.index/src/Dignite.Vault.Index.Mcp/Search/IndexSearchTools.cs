@@ -37,6 +37,8 @@ public sealed class IndexSearchTools
         + "document id, title and type code, the heading path, and the chunk text. Pass a hit's pointer to "
         + "vault_index_read for the full chunk and its neighbours, or its documentId to vault_index_outline for the "
         + "document's sections. When textTruncated is true the hit shows only the start of its chunk. "
+        + "When the hits were reranked, rerankScore is each hit's relevance to the query from 0 to 1: a best hit far "
+        + "below 0.1 usually means no document answers the question, so say that rather than answer from it. "
         + "Returns evidence, never an answer: cite the document and heading path of what you use. "
         + UntrustedText)]
     public static async Task<IndexSearchToolResult> SearchAsync(

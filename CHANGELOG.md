@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search can say it has no answer.** The Index evaluation set (version 5) gains 20 questions no document answers, and
+  a new abstention measurement compares their top scores with the answerable ones'
+  (`Evaluation/abstention-2026-11-17.md`): with `BAAI/bge-reranker-v2-m3` the best hit scores a median 0.98 for an
+  answerable question and 0.006 for an unanswerable one. `Vault:IndexSearch:MinRerankScore` (off by default) drops
+  reranked hits below a floor, so such a search returns none; at 0.05 it turned away 17 of 20 unanswerable questions
+  and dropped 6 of 127 answerable ones, mostly cross-language. `rerankScore` is now documented as comparable across
+  searches with one model, and the MCP search tool tells agents that a best hit far below 0.1 usually means no answer.
+  See [Index Search](docs/en/egress/index-search.md).
+
 - **Sub-documents of a PDF bundle get their pages as a file of their own.** When a container is a PDF with a current
   layout, each part that owns its pages (at least 80% of each page's text, and at least 80% of its own text on them)
   is cut out of the bundle into its own PDF (`bundle (p2-3).pdf`): it downloads, previews, has a layout and field

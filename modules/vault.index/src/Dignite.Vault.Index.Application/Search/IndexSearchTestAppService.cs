@@ -42,7 +42,8 @@ public class IndexSearchTestAppService : VaultIndexAppService, IIndexSearchTestA
             input.VectorWeight ?? defaults.VectorWeight,
             input.CandidatesPerLeg ?? defaults.CandidatesPerLeg,
             input.RerankCandidateCount ?? defaults.RerankCandidateCount,
-            input.Rerank ?? defaults.Rerank);
+            input.Rerank ?? defaults.Rerank,
+            defaults.MinRerankScore);
 
         var result = new IndexSearchTestResultDto
         {

@@ -24,12 +24,14 @@ namespace Dignite.Vault.Index.Search;
 /// <param name="CandidatesPerLeg">How many candidates each leg returns.</param>
 /// <param name="RerankCandidateCount">How many of the leading fused candidates the reranker reorders.</param>
 /// <param name="Rerank">Whether to rerank at all, when the host has a reranker.</param>
+/// <param name="MinRerankScore">After a rerank, the lowest score a hit may keep; <c>null</c> keeps every hit.</param>
 public sealed record IndexSearchSettings(
     double KeywordWeight,
     double VectorWeight,
     int CandidatesPerLeg,
     int RerankCandidateCount,
-    bool Rerank);
+    bool Rerank,
+    double? MinRerankScore = null);
 
 /// <summary>Everything one run of the pipeline produced, from each leg to the final order.</summary>
 public sealed class IndexSearchOutcome
@@ -110,7 +112,8 @@ public class IndexSearchPipeline : ITransientDependency
         _options.VectorWeight,
         IndexSearchConsts.CandidatesPerLeg,
         _ranker.RerankCandidateCount,
-        Rerank: true);
+        Rerank: true,
+        _options.MinRerankScore);
 
     /// <summary>
     /// Runs the pipeline. <paramref name="loadCount"/> is how many leading fused candidates to load and order; at least
@@ -170,6 +173,11 @@ public class IndexSearchPipeline : ITransientDependency
         var ordered = reranked is null
             ? candidates.Select(c => new RankedChunk(c, null))
             : reranked.Concat(candidates.Skip(head.Count).Select(c => new RankedChunk(c, null)));
+        if (reranked is not null && settings.MinRerankScore is { } floor)
+        {
+            // The candidates the reranker did not read rank below every one it did, so with a floor they go too.
+            ordered = reranked.Where(r => r.RerankScore >= floor);
+        }
 
         return new IndexSearchOutcome
         {

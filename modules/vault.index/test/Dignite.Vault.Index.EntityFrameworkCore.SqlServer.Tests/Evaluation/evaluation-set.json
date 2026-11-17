@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\". Version 3 (2026-11-13) adds two documents whose article headings carry no caption (\"第5条\" only), as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters. They are what outline navigation with section summaries is measured on. Version 4 (2026-11-13) adds crossQuestions: questions only several documents answer (a listing with a condition, a comparison, a total, a timeline, a link between documents, a whole type), each with the facts its answer must contain, any one spelling of each fact sufficing. Every company named in the corpus is fictional; the company asking is 株式会社ディグナイト.",
   "documents": [
     { "id": "lease-shibakoen", "type": "lease", "title": "建物賃貸借契約書(芝公園レジデンス 702)", "fields": { "物件": "芝公園レジデンス", "当事者": "山田太郎", "金額": "185,000 円" } },
@@ -136,5 +136,28 @@
     { "query": "我们公司作为委托方签订了哪些业务委托合同?每月委托费是多少?", "language": "zh", "facts": [["クリーンワークス", "清掃", "清扫"], ["120000", "12万"]], "documents": ["outsourcing-cleaning", "outsourcing-system", "outsourcing-basic-terms"] },
     { "query": "哪些会议已经安排了12月的下一次会议?分别是哪一天?", "language": "zh", "facts": [["12月6日", "12/6"], ["12月3日", "12/3"]], "documents": ["minutes-1101", "minutes-1105"] },
     { "query": "Which agreements renew automatically unless a party objects, and how far before expiry must the objection be made for each?", "language": "en", "facts": [["札幌", "Sapporo"], ["芝公園", "Shibakoen", "Shiba"], ["ミナト", "Minato", "master", "基本契約"]], "documents": ["lease-sapporo", "lease-shibakoen", "outsourcing-basic-terms"] }
+  ],
+  "unanswerableNote": "Version 5 (2026-11-17): questions in the corpus's business domains whose answer no document holds, several sharing words with a document (the Nagoya branch is in the sales report, not in a lease), for measuring whether search can tell it has no answer.",
+  "unanswerableQuestions": [
+    {"query": "名古屋営業所の事務所の月額賃料はいくらですか", "language": "ja"},
+    {"query": "社用車を私用で使ってもよいですか", "language": "ja"},
+    {"query": "育児休業は最長でどのくらい取得できますか", "language": "ja"},
+    {"query": "請求書 INV-2026-2001 の支払期限はいつですか", "language": "ja"},
+    {"query": "社員食堂の営業時間は何時から何時までですか", "language": "ja"},
+    {"query": "第4四半期の売上目標はいくらですか", "language": "ja"},
+    {"query": "健康保険組合の問い合わせ先の電話番号は", "language": "ja"},
+    {"query": "新入社員研修はいつ実施されますか", "language": "ja"},
+    {"query": "会議室の予約はどのシステムで行いますか", "language": "ja"},
+    {"query": "在宅勤務の通信費手当は月いくら支給されますか", "language": "ja"},
+    {"query": "インフルエンザ予防接種の費用は会社が負担しますか", "language": "ja"},
+    {"query": "福利厚生のスポーツジム利用補助はありますか", "language": "ja"},
+    {"query": "社内の Wi-Fi のパスワードは何ですか", "language": "ja"},
+    {"query": "公司年会在什么时候举行？", "language": "zh"},
+    {"query": "员工停车场每月收费多少？", "language": "zh"},
+    {"query": "出差时可以乘坐商务舱吗？", "language": "zh"},
+    {"query": "What is the dress code for client meetings?", "language": "en"},
+    {"query": "How do I reset my email password?", "language": "en"},
+    {"query": "Who is the data protection officer?", "language": "en"},
+    {"query": "What is the warranty period of the X-500 copier?", "language": "en"}
   ]
 }

@@ -181,8 +181,11 @@ The host calls the rerank API that Cohere introduced and Jina, SiliconFlow and v
 | `KeywordWeight` | `1` | The keyword leg's weight in reciprocal rank fusion |
 | `VectorWeight` | `1` | The vector leg's weight |
 | `RerankCandidateCount` | `30` | Fused candidates the reranker reads (at most 100) |
+| `MinRerankScore` | unset | After a rerank, the lowest score a hit may have; below it a hit is dropped, so a question nothing answers returns no hits. Unset keeps every hit. No effect without a reranker |
 
 Keep the weights equal. Down-weighting the keyword leg helped paraphrased questions on the evaluation set without a reranker, but at a keyword weight of 0.5 or less a chunk only the keyword leg finds ranks below every vector candidate. That is how an invoice number or a name gets lost in a large corpus. A reranker fixes the paraphrase case without that cost.
+
+`MinRerankScore` is off by default because it costs answers. On the evaluation set with `BAAI/bge-reranker-v2-m3`, the best hit of an answerable question scored a median 0.98 and that of a question no document answers 0.006. A floor of 0.05 turned away 17 of 20 unanswerable questions and dropped 6 of 127 answerable ones, most of them asked in another language than their document (an English question about a Japanese lease scored 0.001); 0.01 kept 122 and turned away 12. A question naming something only resembling a document (an invoice number that is not in the corpus) scored 0.89, so no floor catches it. Set it where the questions are asked in the documents' language and an empty answer is worth more than a weak one, and measure it on your own questions first: the scale is the rerank model's.
 
 ## Index chat model (`Vault:Index`)
 
