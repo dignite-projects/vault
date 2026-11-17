@@ -2,6 +2,7 @@ using Dignite.Abp.FlexFields;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ using Volo.Abp.Data;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.EventBus.Distributed;
+using Dignite.Vault.Extract.Documents.Layout;
 
 namespace Dignite.Vault.Extract.Documents;
 
@@ -547,6 +549,24 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         }
     }
 
+    public virtual async Task<IRemoteStreamContent> GetLayoutAsync(Guid id)
+    {
+        await _documentAccess.CheckEntryAsync();
+        var document = await _documentRepository.GetAsync(id, includeDetails: false);
+
+        // The layout is the document's own content read another way: the same Read rule as GetAsync and GetBlobAsync.
+        await _documentAccess.CheckAsync(DocumentAccessRule.Read, DocumentAccessSubject.Of(document));
+
+        var layout = await LazyServiceProvider.LazyGetRequiredService<DocumentLayoutStore>().GetAsync(id, document.Markdown)
+            ?? throw new BusinessException(VaultExtractErrorCodes.Document.NoLayout).WithData("DocumentId", id);
+
+        return new RemoteStreamContent(
+            new MemoryStream(Encoding.UTF8.GetBytes(layout), writable: false),
+            "layout.json",
+            "application/json",
+            disposeStream: true);
+    }
+
     public virtual async Task<IRemoteStreamContent> GetBlobAsync(Guid id)
     {
         // #635: entry asserted before the load — see GetAsync.
@@ -679,6 +699,15 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
                     "Failed to delete blob {BlobName} for document {DocumentId}.",
                     document.FileOrigin.BlobName, id);
             }
+        }
+
+        try
+        {
+            await LazyServiceProvider.LazyGetRequiredService<DocumentLayoutStore>().DeleteAsync(document.Id);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete the layout of document {DocumentId}.", id);
         }
 
         // Parses before the move to Microsoft.Extensions.DocumentExtraction archived the engine's native output under

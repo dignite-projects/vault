@@ -58,6 +58,33 @@ A caller who may not read the document gets only `id` and `rights` back.
 
 `GET /api/vault-extract/documents/{id}/blob` downloads the original file. A sub-document has none (`Extract:DocumentNoSourceBlob`); download its parent's.
 
+`GET /api/vault-extract/documents/{id}/layout` returns where the Markdown came from: the document tree its parse produced, as JSON (`application/json`), read with the same right as the document.
+
+```json
+{
+  "schema": "vault.extract.layout",
+  "version": 1,
+  "markdownSha256": "…",
+  "current": true,
+  "document": {
+    "version": 1,
+    "pages": [ { "id": "page-1", "number": 1, "width": 595.3, "height": 841.9, "unit": "Point", "origin": "BottomLeft" } ],
+    "sections": [ { "type": "section", "sources": [ { "page": "page-1" } ], "elements": [
+      { "type": "text", "role": "heading", "headingLevel": 1, "text": "請求書",
+        "sources": [ { "page": "page-1", "polygon": [ [70.5, 769.6], [196.5, 769.6], [196.5, 746.0], [70.5, 746.0] ] } ] },
+      { "type": "table", "rows": 7, "columns": 5, "cells": [ { "row": 0, "column": 0, "rowSpan": 1, "columnSpan": 1, "role": "columnHeader",
+        "content": { "type": "text", "text": "区分" }, "sources": [ … ] } ], "sources": [ … ] }
+    ] } ]
+  }
+}
+```
+
+- Every element carries the page regions it was read from: `polygon` is the region's corners in the page's own frame (`unit`, `origin`), clockwise from top-left. A PDF's digital pages give regions for every block and every drawn table cell; an OCR'd page or image gives the page only.
+- Element types are `section`, `text` (with `role` — `heading`, `listItem`, `code`, `quote`, `markdown`, `pageHeader`, `pageFooter`, or none for a paragraph — and `headingLevel`; `text` is inline Markdown), `table` (cells with spans and `columnHeader` roles) and `image` (`text` is its OCR transcription).
+- `current` is `false` once the Markdown no longer is the one the tree rendered (an operator corrected it): the regions still point at the parse, not at the corrected text.
+- A sub-document has no layout of its own, and a document parsed before layouts were kept has none until it is re-parsed: both fail with `Extract:DocumentNoLayout`. A re-parse replaces the layout; a permanent delete removes it.
+- .NET consumers read `document` with `ExtractionDocumentJson.Read` (`Dignite.Vault.Parse.Abstractions`) into a `Microsoft.Extensions.Documents.ExtractionDocument`.
+
 ## Listing and Filtering Documents
 
 `GET /api/vault-extract/documents` returns a page of `DocumentListItemDto`: the document's identity, type, state, title, field values, file metadata, relations and `rights`, but no Markdown, language or review details, plus `deletionTime` for the recycle bin. Query parameters:

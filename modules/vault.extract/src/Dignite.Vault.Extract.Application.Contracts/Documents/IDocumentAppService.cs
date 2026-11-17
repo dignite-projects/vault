@@ -53,6 +53,15 @@ public interface IDocumentAppService : IApplicationService
 
     Task<IRemoteStreamContent> GetBlobAsync(Guid id);
 
+    /// <summary>
+    /// The document tree its parse produced, as JSON (<c>application/json</c>): sections and elements, each with the page
+    /// regions it was read from, the pages' sizes and coordinate frame, and <c>current</c> — whether the document's Markdown
+    /// is still the one the tree rendered (an operator's correction makes it <c>false</c>). Read like the document itself.
+    /// A document without one (a sub-document, or one parsed before layouts were kept) fails with
+    /// <c>Extract:DocumentNoLayout</c>.
+    /// </summary>
+    Task<IRemoteStreamContent> GetLayoutAsync(Guid id);
+
     Task DeleteAsync(Guid id);
 
     Task PermanentDeleteAsync(Guid id);

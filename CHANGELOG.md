@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Document layout** (modules and shipped host). A parse now keeps the document tree it produced — sections, headings,
+  lists, tables with merged cells, images with their OCR text, and the page region every element was read from — as the
+  blob `layout/{documentId}`, and `GET /api/vault-extract/documents/{id}/layout` (`IDocumentAppService.GetLayoutAsync`)
+  serves it as JSON with `current`, false once an operator has corrected the Markdown. A sub-document, or a document
+  parsed before this release until it is re-parsed, has none (`Extract:DocumentNoLayout`). `ExtractionDocumentJson`
+  (`Dignite.Vault.Parse.Abstractions`) reads and writes the tree, which `Microsoft.Extensions.Documents` cannot
+  serialize itself. The Angular client proxies are not regenerated yet. See
+  [REST API](docs/en/egress/rest-api.md).
+
 - **Vault Parse's document tree** (`Dignite.Vault.Parse.Abstractions`, `Dignite.Vault.Parse`). The first step of moving
   Parse onto `Microsoft.Extensions.DocumentExtraction`: `ExtractionDocumentMarkdown` renders the Markdown Vault stores from
   a `Microsoft.Extensions.Documents.ExtractionDocument`, `MarkdownDocumentReader` reads Markdown into one, and
