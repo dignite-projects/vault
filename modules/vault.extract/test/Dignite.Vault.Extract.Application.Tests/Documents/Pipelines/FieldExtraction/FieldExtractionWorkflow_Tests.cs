@@ -574,4 +574,43 @@ public class FieldExtractionWorkflow_Tests
 
         result.Values["amount"].ShouldBeNull();
     }
+
+    /// <summary>
+    /// A DateTime field is named by its input mode in the schema message: labelled "DateTime", a date field was answered
+    /// as "2026-11-20T00:00:00", which the date reader rejects (a provider need not enforce the schema's pattern).
+    /// </summary>
+    [Fact]
+    public async Task The_schema_message_names_a_DateTime_field_by_its_input_mode()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        List<ChatMessage>? sent = null;
+        chatClient.GetResponseAsync(
+                Arg.Do<IEnumerable<ChatMessage>>(messages => sent = messages.ToList()),
+                Arg.Any<ChatOptions?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "{ \"values\": {}, \"validationWarnings\": [] }")])));
+        var workflow = new FieldExtractionWorkflow(
+            chatClient,
+            NullLogger<FieldExtractionWorkflow>.Instance,
+            new FieldSchemaPromptBudgetGuard(Options.Create(new VaultExtractBehaviorOptions())),
+            TestFieldTypeRegistry.Default,
+            Options.Create(new VaultExtractBehaviorOptions()));
+
+        await workflow.ExtractAsync(
+            new[]
+            {
+                DateField("issue_date"),
+                DateTimeField("received_at"),
+                Field("billing_month", DateTimeFieldType.ControlName,
+                    new DateTimeConfiguration { InputMode = DateTimeInputMode.Month }.ConfigurationDictionary),
+                Field("amount", "Number")
+            },
+            "# doc");
+
+        var schemaMessage = sent![1].Text;
+        schemaMessage.ShouldContain("\"issue_date\" (Date, optional)");
+        schemaMessage.ShouldContain("\"received_at\" (DateTime, optional)");
+        schemaMessage.ShouldContain("\"billing_month\" (Month, optional)");
+        schemaMessage.ShouldContain("\"amount\" (Number, optional)");
+    }
 }
