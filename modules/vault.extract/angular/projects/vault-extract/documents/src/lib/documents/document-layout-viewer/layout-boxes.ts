@@ -13,7 +13,8 @@ export type LayoutBoxKind =
   | 'pageFooter'
   | 'table'
   | 'cell'
-  | 'image';
+  | 'image'
+  | 'field';
 
 /** A region of a page: its corners in PDF points from the page's bottom-left corner. */
 export interface LayoutBox {
@@ -33,11 +34,19 @@ export interface LayoutPage {
   height?: number;
 }
 
+/** Where a field's value was found: the regions of the text extraction quoted it from (the layout's `fields`). */
+export interface LayoutField {
+  name: string;
+  boxes: LayoutBox[];
+}
+
 export interface Layout {
   /** Whether the document's Markdown is still the one this layout rendered (false after an operator's correction). */
   current: boolean;
   pages: LayoutPage[];
   boxes: LayoutBox[];
+  /** Empty while the layout is not current: the field ranges then belong to text the layout did not render. */
+  fields: LayoutField[];
 }
 
 interface JsonSource {
@@ -70,7 +79,11 @@ const ROLES: readonly LayoutBoxKind[] = ['heading', 'listItem', 'code', 'quote',
  * drawn; a page read by OCR or an image carries its page only and yields no box.
  */
 export function readLayout(json: unknown): Layout {
-  const root = (json ?? {}) as { current?: boolean; document?: { pages?: JsonPage[]; sections?: JsonElement[] } };
+  const root = (json ?? {}) as {
+    current?: boolean;
+    fields?: { name?: string; sources?: JsonSource[] }[];
+    document?: { pages?: JsonPage[]; sections?: JsonElement[] };
+  };
   const jsonPages = root.document?.pages ?? [];
   const drawable = new Map<string, number>();
   const pages: LayoutPage[] = [];
@@ -85,8 +98,8 @@ export function readLayout(json: unknown): Layout {
     }
   }
 
-  const boxes: LayoutBox[] = [];
-  const add = (kind: LayoutBoxKind, text: string, sources: JsonSource[] | undefined) => {
+  const toBoxes = (kind: LayoutBoxKind, text: string, sources: JsonSource[] | undefined): LayoutBox[] => {
+    const result: LayoutBox[] = [];
     for (const source of sources ?? []) {
       const pageNumber = source.page != null ? drawable.get(source.page) : undefined;
       const polygon = source.polygon;
@@ -96,7 +109,7 @@ export function readLayout(json: unknown): Layout {
 
       const xs = polygon.map(point => point[0]);
       const ys = polygon.map(point => point[1]);
-      boxes.push({
+      result.push({
         pageNumber,
         kind,
         text,
@@ -106,7 +119,12 @@ export function readLayout(json: unknown): Layout {
         top: Math.max(...ys),
       });
     }
+
+    return result;
   };
+
+  const boxes: LayoutBox[] = [];
+  const add = (kind: LayoutBoxKind, text: string, sources: JsonSource[] | undefined) => boxes.push(...toBoxes(kind, text, sources));
 
   const walk = (element: JsonElement) => {
     switch (element.type) {
@@ -132,5 +150,8 @@ export function readLayout(json: unknown): Layout {
   };
 
   root.document?.sections?.forEach(walk);
-  return { current: root.current !== false, pages, boxes };
+  const fields = (root.fields ?? [])
+    .filter(field => !!field.name)
+    .map(field => ({ name: field.name!, boxes: toBoxes('field', field.name!, field.sources) }));
+  return { current: root.current !== false, pages, boxes, fields };
 }

@@ -154,6 +154,8 @@
     "Document:LayoutNotCurrent": "文本在解析后被修正过：区域显示的是解析时读取文本的位置，而不是修正后的文本。",
     "Document:LayoutPage": "第 {0} 页",
     "Document:LayoutHint": "将鼠标指向区域可查看从中读取的文本，单击可固定。OCR 读取的页面没有区域。",
+    "Document:LayoutFields": "字段",
+    "Document:LayoutFieldNotLocated": "不知道此值读取自哪里。",
     "Document:NoSourceFile": "此文档没有源文件。",
     "Document:Reparse": "重新解析",
     "Document:Reparse:Hint": "从原始文件重新提取文本，然后重新分类并重新抽取字段。",

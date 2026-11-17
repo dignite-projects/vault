@@ -61,7 +61,7 @@
       />
     </div>
   } @else if (isPdf() && showLayout() && fileBlob.blobUrl()) {
-    <lib-document-layout-viewer [documentId]="documentId" [fileUrl]="fileBlob.blobUrl()!" />
+    <lib-document-layout-viewer [documentId]="documentId" [fileUrl]="fileBlob.blobUrl()!" [fields]="layoutFields()" />
   } @else if (isPdf() && fileBlob.safeResourceUrl()) {
     <iframe
       [src]="fileBlob.safeResourceUrl()"

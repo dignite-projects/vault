@@ -28,6 +28,7 @@ export interface DocumentDto extends EntityDto<string> {
   extractionIsComplete?: boolean;
   extractionIncompleteReason?: string | null;
   extractedFields?: Record<string, any> | null;
+  fieldSources?: Record<string, DocumentTextSpanDto[]> | null;
   creationTime?: string;
   rights?: DocumentRightsDto;
 }
@@ -76,6 +77,11 @@ export interface DocumentStatisticsDto {
   failedCount?: number;
   needsReviewCount?: number;
   totalStorageBytes?: number;
+}
+
+export interface DocumentTextSpanDto {
+  offset?: number;
+  length?: number;
 }
 
 export interface DuplicateCandidateDto {

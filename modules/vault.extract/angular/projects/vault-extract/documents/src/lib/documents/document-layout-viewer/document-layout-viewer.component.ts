@@ -15,7 +15,14 @@ import { LocalizationPipe } from '@abp/ng.core';
 import { DocumentService } from '@dignite/ng.vault-extract';
 import { HttpErrorResponse } from '@angular/common/http';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
-import { LayoutBox, readLayout } from './layout-boxes';
+import { LayoutBox, LayoutField, readLayout } from './layout-boxes';
+
+/** A field listed beside the pages: its name in the layout, and the label and value the page shows for it. */
+export interface LayoutViewerField {
+  name: string;
+  label: string;
+  value: string;
+}
 
 /** A rendered page: its size on screen and the boxes drawn over it, already in screen pixels. */
 interface ViewerPage {
@@ -23,6 +30,8 @@ interface ViewerPage {
   width: number;
   height: number;
   boxes: ViewerBox[];
+  /** The regions of every field on this page; a box's `text` is its field's name. */
+  fieldBoxes: ViewerBox[];
 }
 
 interface ViewerBox extends LayoutBox {
@@ -54,6 +63,9 @@ async function loadPdfJs() {
  * Shows a PDF document's pages with the regions its parse read drawn over them (GET .../documents/{id}/layout): every
  * paragraph, heading, list item, table and table cell, and image, coloured by kind. Hovering a region shows its text;
  * clicking it keeps it selected. A page read by OCR carries no regions and is shown plain.
+ *
+ * Beside the pages it lists the extracted fields: pointing at one outlines where its value was found (the layout's
+ * `fields`), clicking keeps it outlined and scrolls to it. A field without a known place is listed and says so.
  */
 @Component({
   selector: 'lib-document-layout-viewer',
@@ -66,10 +78,13 @@ export class DocumentLayoutViewerComponent {
   readonly documentId = input.required<string>();
   /** The PDF itself (a blob: URL the preview page already holds). */
   readonly fileUrl = input.required<string>();
+  /** The fields to list, in display order. Without them, the layout's own field names are listed. */
+  readonly fields = input<LayoutViewerField[]>([]);
 
   private readonly documentService = inject(DocumentService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly canvases = viewChildren<ElementRef<HTMLCanvasElement>>('pageCanvas');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly state = signal<ViewerState>('loading');
   readonly current = signal(true);
@@ -77,6 +92,17 @@ export class DocumentLayoutViewerComponent {
   readonly selected = signal<ViewerBox | null>(null);
   readonly hovered = signal<ViewerBox | null>(null);
   readonly shown = computed(() => this.hovered() ?? this.selected());
+
+  private readonly layoutFields = signal<LayoutField[]>([]);
+  readonly selectedField = signal<string | null>(null);
+  readonly hoveredField = signal<string | null>(null);
+  readonly activeField = computed(() => this.hoveredField() ?? this.selectedField());
+  readonly fieldRows = computed(() => {
+    const located = new Set(this.layoutFields().filter(field => field.boxes.length > 0).map(field => field.name));
+    const given = this.fields();
+    const rows = given.length > 0 ? given : this.layoutFields().map(field => ({ name: field.name, label: field.name, value: '' }));
+    return rows.map(row => ({ ...row, located: located.has(row.name) }));
+  });
 
   private loading: PDFDocumentLoadingTask | null = null;
   private pdf: PDFDocumentProxy | null = null;
@@ -102,6 +128,15 @@ export class DocumentLayoutViewerComponent {
 
   select(box: ViewerBox): void {
     this.selected.set(this.selected() === box ? null : box);
+  }
+
+  selectField(name: string): void {
+    const selecting = this.selectedField() !== name;
+    this.selectedField.set(selecting ? name : null);
+    if (selecting) {
+      // The outline renders on the next change detection; bring its first region into view then.
+      setTimeout(() => this.host.nativeElement.querySelector('.layout-field')?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    }
   }
 
   private load(id: string, url: string): void {
@@ -131,6 +166,7 @@ export class DocumentLayoutViewerComponent {
     this.loading = pdfjs.getDocument({ data });
     this.pdf = await this.loading.promise;
 
+    const fieldBoxes = ([] as LayoutBox[]).concat(...layout.fields.map(field => field.boxes));
     const pages: ViewerPage[] = [];
     for (let number = 1; number <= this.pdf.numPages; number++) {
       const page = await this.pdf.getPage(number);
@@ -138,20 +174,18 @@ export class DocumentLayoutViewerComponent {
       const scale = Math.min(1.5, MAX_PAGE_WIDTH / natural.width);
       const viewport = page.getViewport({ scale });
       this.scales.set(number, scale);
-      pages.push({
-        number,
-        width: viewport.width,
-        height: viewport.height,
-        boxes: layout.boxes
+      const onScreen = (boxes: LayoutBox[]): ViewerBox[] =>
+        boxes
           .filter(box => box.pageNumber === number)
           .map(box => {
             const [x1, y1] = viewport.convertToViewportPoint(box.left, box.bottom);
             const [x2, y2] = viewport.convertToViewportPoint(box.right, box.top);
             return { ...box, x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
-          }),
-      });
+          });
+      pages.push({ number, width: viewport.width, height: viewport.height, boxes: onScreen(layout.boxes), fieldBoxes: onScreen(fieldBoxes) });
     }
 
+    this.layoutFields.set(layout.fields);
     this.current.set(layout.current);
     this.pages.set(pages);
     this.state.set('ready');

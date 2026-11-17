@@ -154,6 +154,8 @@
     "Document:LayoutNotCurrent": "解析後にテキストが修正されています。領域は解析時にテキストを読み取った位置を示し、修正後のテキストではありません。",
     "Document:LayoutPage": "{0} ページ",
     "Document:LayoutHint": "領域にカーソルを合わせると読み取ったテキストが表示されます。クリックで固定します。OCR で読み取ったページには領域がありません。",
+    "Document:LayoutFields": "項目",
+    "Document:LayoutFieldNotLocated": "この値を読み取った位置は不明です。",
     "Document:NoSourceFile": "このドキュメントにはソースファイルがありません。",
     "Document:Reparse": "再解析",
     "Document:Reparse:Hint": "元のファイルからテキストを抽出し直し、ドキュメントを再分類してフィールドを再抽出します。",
