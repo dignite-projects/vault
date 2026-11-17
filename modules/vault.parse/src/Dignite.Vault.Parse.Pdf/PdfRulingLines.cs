@@ -221,6 +221,14 @@ internal static class PdfRulingLines
             var columns = Cluster(columnPositions, clusterTolerance);
             var rows = Cluster(rowPositions, clusterTolerance);
 
+            // A rule's end is a cell corner even where no crossing rule is drawn: a table continued from the previous
+            // page has no top border on this one (it belonged to the row above), an open table has no outer columns.
+            // Close the grid at the farthest rule ends beyond its outermost boundaries.
+            var componentVerticals = verticalsByComponent[component];
+            var componentHorizontals = horizontalsByComponent[component];
+            ExtendOuter(rows, componentVerticals.Min(rule => rule.Y1), componentVerticals.Max(rule => rule.Y2), clusterTolerance);
+            ExtendOuter(columns, componentHorizontals.Min(rule => rule.X1), componentHorizontals.Max(rule => rule.X2), clusterTolerance);
+
             // A lattice needs >= 2 columns AND >= 2 rows (>= 3 boundaries on each axis).
             if (columns.Count >= 3 && rows.Count >= 3)
             {
@@ -378,6 +386,25 @@ internal static class PdfRulingLines
 
                 runStart = k;
             }
+        }
+    }
+
+    /// <summary>Adds <paramref name="low"/> / <paramref name="high"/> as boundaries when they lie beyond the outermost ones.</summary>
+    private static void ExtendOuter(List<double> boundaries, double low, double high, double tolerance)
+    {
+        if (boundaries.Count == 0)
+        {
+            return;
+        }
+
+        if (low < boundaries[0] - tolerance)
+        {
+            boundaries.Insert(0, low);
+        }
+
+        if (high > boundaries[^1] + tolerance)
+        {
+            boundaries.Add(high);
         }
     }
 

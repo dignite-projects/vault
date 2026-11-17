@@ -124,6 +124,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             }
 
             var extracted = new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
+            var readPages = new List<(Page Page, PdfTableContinuation.Page Blocks)>(pages.Count);
             var imageBudget = _options.MaxImagesPerPdf;
             var droppedByCap = 0;
             var undecodable = 0;
@@ -276,7 +277,9 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                 IReadOnlyList<PdfRectangle> rulingBounds;
                 try
                 {
+                    // Only what is drawn: a clipping path (the text frame's clip rectangle, say) is not a rule.
                     rulingBounds = pageContent.Page.Paths
+                        .Where(path => !path.IsClipping && (path.IsStroked || path.IsFilled))
                         .SelectMany(path => path)
                         .Select(subpath => subpath.GetBoundingRectangle())
                         .Where(rect => rect.HasValue)
@@ -295,9 +298,13 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                 latticeDroppedFragments += pageLatticeDropped;
                 if (pageBlocks.Count > 0)
                 {
-                    AddPage(extracted, pageContent.Page, pageBlocks);
+                    readPages.Add((pageContent.Page, new PdfTableContinuation.Page(pageContent.Page.Number, pageBlocks)));
                 }
             }
+
+            // A table a page break cut in two reads as one, on the page it starts on.
+            PdfTableContinuation.Join(readPages.ConvertAll(read => read.Blocks));
+            AddPages(extracted, readPages);
 
             // Single source of truth for the #268 signal: the reason string is built from the counters and
             // is null iff nothing was lost; completeness derives from it (no parallel hand-synced predicate
@@ -472,22 +479,32 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     private static ExtractionDocument Empty(string identifier) => new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
 
     /// <summary>
-    /// A section for <paramref name="page"/> holding its blocks as elements, each referring to its region of the page in
-    /// PdfPig's frame (points, origin bottom-left).
+    /// A source page for every page read, and a section for every page that still holds blocks, its elements each
+    /// referring to their region of the page in PdfPig's frame (points, origin bottom-left). A page a table's continuation
+    /// filled has no section of its own; the table refers to it.
     /// </summary>
-    private static void AddPage(ExtractionDocument document, Page page, IReadOnlyList<PdfBlock> blocks)
+    private static void AddPages(ExtractionDocument document, IReadOnlyList<(Page Page, PdfTableContinuation.Page Blocks)> pages)
     {
-        var source = new ExtractionDocumentSourcePage(
-            "page-" + page.Number.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            page.Number,
-            page.Width > 0 && page.Height > 0 ? new ExtractionDocumentPageDimensions(page.Width, page.Height) : null,
-            ExtractionDocumentCoordinateUnit.Point,
-            ExtractionDocumentCoordinateOrigin.BottomLeft);
-        document.SourcePages.Add(source);
-        var section = new ExtractionDocumentSection();
-        section.Sources.Add(new ExtractionDocumentSourceReference(source));
-        document.Sections.Add(section);
-        section.Elements.AddRange(PdfElements.Create(blocks, source));
+        var sources = new Dictionary<int, ExtractionDocumentSourcePage>();
+        foreach (var (page, _) in pages)
+        {
+            var source = new ExtractionDocumentSourcePage(
+                "page-" + page.Number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                page.Number,
+                page.Width > 0 && page.Height > 0 ? new ExtractionDocumentPageDimensions(page.Width, page.Height) : null,
+                ExtractionDocumentCoordinateUnit.Point,
+                ExtractionDocumentCoordinateOrigin.BottomLeft);
+            document.SourcePages.Add(source);
+            sources[page.Number] = source;
+        }
+
+        foreach (var (page, read) in pages.Where(read => read.Blocks.Blocks.Count > 0))
+        {
+            var section = new ExtractionDocumentSection();
+            section.Sources.Add(new ExtractionDocumentSourceReference(sources[page.Number]));
+            document.Sections.Add(section);
+            section.Elements.AddRange(PdfElements.Create(read.Blocks, sources[page.Number], number => sources.GetValueOrDefault(number)));
+        }
     }
 
     private static bool HasLetterOrDigit(string? text)

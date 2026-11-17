@@ -25,7 +25,14 @@ internal sealed record PdfHeadingBlock(PdfRectangle Bounds, int Level, string Ma
 /// <summary>A bullet list: one source-text item per row of a marker column (the marker itself is dropped).</summary>
 internal sealed record PdfListBlock(PdfRectangle Bounds, IReadOnlyList<string> Items) : PdfBlock(Bounds);
 
-internal sealed record PdfTableBlock(PdfRectangle Bounds, PdfTable Table) : PdfBlock(Bounds);
+/// <summary>A table; <see cref="Continuations"/> are the regions of the pages a page break carried it on to.</summary>
+internal sealed record PdfTableBlock(PdfRectangle Bounds, PdfTable Table) : PdfBlock(Bounds)
+{
+    public IReadOnlyList<PdfContinuation> Continuations { get; init; } = [];
+}
+
+/// <summary>Where a table continues: its region of page <see cref="PageNumber"/>.</summary>
+internal readonly record struct PdfContinuation(int PageNumber, PdfRectangle Bounds);
 
 /// <summary>An embedded image's OCR transcription (Markdown, as the OCR engine answered), with the caption bound to it.</summary>
 internal sealed record PdfFigureBlock(PdfRectangle Bounds, string Transcription, string? Caption, int? PageNumber) : PdfBlock(Bounds);
@@ -59,17 +66,24 @@ internal sealed class PdfTable(int rowCount, int columnCount)
     }
 }
 
-/// <summary>A table cell: its position and span, its source text, and its region on the page when known.</summary>
-internal readonly record struct PdfTableCell(int Row, int Column, int RowSpan, int ColumnSpan, string Text, PdfRectangle? Bounds);
+/// <summary>
+/// A table cell: its position and span, its source text, and its region when known — on the table's own page, or on page
+/// <see cref="PageNumber"/> for a cell of a continuation.
+/// </summary>
+internal readonly record struct PdfTableCell(int Row, int Column, int RowSpan, int ColumnSpan, string Text, PdfRectangle? Bounds, int? PageNumber = null);
 
 /// <summary>Turns <see cref="PdfBlock"/>s into elements of the document tree, and into Markdown the way Vault stores it.</summary>
 internal static class PdfElements
 {
     /// <summary>
-    /// The elements of <paramref name="blocks"/>, each referring to its region of <paramref name="page"/>. Without a page,
-    /// a figure still refers to the page it was found on, which the Markdown of an image names.
+    /// The elements of <paramref name="blocks"/>, each referring to its region of <paramref name="page"/>, and a table
+    /// carried on to later pages to its regions there (<paramref name="pageNumbered"/> finds them). Without a page, a figure
+    /// still refers to the page it was found on, which the Markdown of an image names.
     /// </summary>
-    public static IEnumerable<ExtractionDocumentElement> Create(IEnumerable<PdfBlock> blocks, ExtractionDocumentSourcePage? page)
+    public static IEnumerable<ExtractionDocumentElement> Create(
+        IEnumerable<PdfBlock> blocks,
+        ExtractionDocumentSourcePage? page,
+        Func<int, ExtractionDocumentSourcePage?>? pageNumbered = null)
     {
         foreach (var block in blocks)
         {
@@ -103,7 +117,16 @@ internal static class PdfElements
                     break;
 
                 case PdfTableBlock table:
-                    yield return Sourced(Table(table.Table, page), page, table.Bounds);
+                    var element = Sourced(Table(table.Table, page, pageNumbered), page, table.Bounds);
+                    foreach (var continuation in table.Continuations)
+                    {
+                        if (pageNumbered?.Invoke(continuation.PageNumber) is { } continued)
+                        {
+                            element.Sources.Add(new ExtractionDocumentSourceReference(continued, Polygon(continuation.Bounds)));
+                        }
+                    }
+
+                    yield return element;
                     break;
 
                 case PdfFigureBlock figure:
@@ -155,7 +178,8 @@ internal static class PdfElements
         ];
     }
 
-    private static ExtractionDocumentTableElement Table(PdfTable table, ExtractionDocumentSourcePage? page)
+    private static ExtractionDocumentTableElement Table(
+        PdfTable table, ExtractionDocumentSourcePage? page, Func<int, ExtractionDocumentSourcePage?>? pageNumbered)
     {
         var element = new ExtractionDocumentTableElement(null, table.RowCount, table.ColumnCount);
         foreach (var cell in table.Cells)
@@ -166,9 +190,10 @@ internal static class PdfElements
             var tableCell = text.Length == 0
                 ? new ExtractionDocumentTableCell(cell.RowSpan, cell.ColumnSpan, role)
                 : new ExtractionDocumentTableCell(new ExtractionDocumentTextElement(new TextContent(text)), cell.RowSpan, cell.ColumnSpan, role);
-            if (page is not null && cell.Bounds is { } bounds)
+            var cellPage = cell.PageNumber is { } number ? pageNumbered?.Invoke(number) : page;
+            if (cellPage is not null && cell.Bounds is { } bounds)
             {
-                tableCell.Sources.Add(new ExtractionDocumentSourceReference(page, Polygon(bounds)));
+                tableCell.Sources.Add(new ExtractionDocumentSourceReference(cellPage, Polygon(bounds)));
             }
 
             element.Cells[cell.Row, cell.Column] = tableCell;

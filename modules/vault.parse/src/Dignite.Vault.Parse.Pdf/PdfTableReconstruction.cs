@@ -83,6 +83,13 @@ internal static class PdfTableReconstruction
     // happens to land in a few column bands but isn't a real table.
     private const double MinFillRatio = 0.5;
 
+    // Every column at least this share of the table's width, with its lines not aligned across columns, reads as text
+    // columns rather than a table (RAGFlow's tableMaxColFrac; PdfReadingOrder orders such columns one after the other).
+    private const double MinTextColumnWidthFraction = 0.22;
+
+    // ...and at most this share of its visual lines spanning two columns or more.
+    private const double MaxTextColumnAlignedLineRatio = 0.2;
+
     /// <summary>
     /// Renders <paramref name="cells"/> as a GFM Markdown table, or returns <c>null</c> when they do not form
     /// a confident grid (the caller then keeps the Phase A paragraph rendering).
@@ -146,6 +153,19 @@ internal static class PdfTableReconstruction
             }
 
             lineColumns.Add(byColumn);
+        }
+
+        // 3b. Text columns, not a table: when every column is wide (RAGFlow's 22% bar: narrower is a table cell) and hardly
+        // any visual line lines up across columns, this is a multi-column body whose columns run independently. Folding
+        // below would stitch its alternating single-column lines into rows of a spurious table. A table lines up most of
+        // its rows; a key-value table whose value wraps around its label still lines up its other records.
+        var width = columns[^1].Right - columns[0].Left;
+        var alignedLines = lineColumns.Count(line => line.Count >= 2);
+        if (width > 0
+            && columns.All(column => column.Right - column.Left >= width * MinTextColumnWidthFraction)
+            && (double)alignedLines / lineColumns.Count <= MaxTextColumnAlignedLineRatio)
+        {
+            return null;
         }
 
         // 4. Fold wrapped-cell continuation lines into their parent row.
@@ -395,7 +415,24 @@ internal static class PdfTableReconstruction
             }
             else
             {
-                regions.AddRange(cells.Select(cell => (cell.Row, cell.Column, cell.Row, cell.Column)));
+                // Not a rectangle: an undrawn stretch leaked across a cell side (a merged cell drawn only on its first
+                // row, the rest of its column left blank). Keep what each column holds of it: its runs of rows.
+                foreach (var column in cells.GroupBy(cell => cell.Column))
+                {
+                    var rowsInColumn = column.Select(cell => cell.Row).Order().ToList();
+                    var runStart = rowsInColumn[0];
+                    for (var i = 1; i <= rowsInColumn.Count; i++)
+                    {
+                        if (i == rowsInColumn.Count || rowsInColumn[i] != rowsInColumn[i - 1] + 1)
+                        {
+                            regions.Add((runStart, column.Key, rowsInColumn[i - 1], column.Key));
+                            if (i < rowsInColumn.Count)
+                            {
+                                runStart = rowsInColumn[i];
+                            }
+                        }
+                    }
+                }
             }
         }
 

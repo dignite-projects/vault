@@ -75,7 +75,7 @@ The digital documents parse the same way every time, so each must hold the score
 
 The OCR documents are scored and reported, never gated: their output depends on the model and changes between calls. Each OCR page is one model call.
 
-Provider options can be changed for one run through environment variables, which is how a candidate setting is compared with the baseline. Turning off the PDF table reconstruction, for example, fails `invoice`, `pricelist` and `report`:
+Provider options can be changed for one run through environment variables, which is how a candidate setting is compared with the baseline. Turning off the PDF table reconstruction, for example, fails `invoice` and `pricelist`:
 
 ```bash
 PdfExtractor__ReconstructTables=false dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Evaluation.Tests/Dignite.Vault.Parse.Evaluation.Tests.csproj

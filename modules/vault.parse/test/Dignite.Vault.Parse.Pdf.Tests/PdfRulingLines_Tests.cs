@@ -38,6 +38,20 @@ public class PdfRulingLines_Tests
     }
 
     [Fact]
+    public void Closes_a_grid_at_rule_ends_beyond_its_outermost_rules()
+    {
+        // A table continued from the previous page: its first row has no top rule (that belonged to the row above, on
+        // the other page), only the column rules rising to the row's top at 340.
+        var bounds = new List<PdfRectangle>
+        {
+            VRule(50, 100, 340), VRule(150, 100, 340), VRule(250, 100, 340),
+            HRule(100, 50, 250), HRule(200, 50, 250), HRule(300, 50, 250)
+        };
+
+        PdfRulingLines.DetectGrids(bounds).ShouldHaveSingleItem().RowBoundaries.ShouldBe(new[] { 100.0, 200, 300, 340 });
+    }
+
+    [Fact]
     public void Merges_double_stroked_rules_into_one_boundary()
     {
         // Each rule is drawn twice, ~0.8pt apart (a common encoding). They must collapse to one boundary each —

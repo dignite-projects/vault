@@ -128,6 +128,12 @@ internal static class PdfReadingOrder
     // ratio of the shorter block's height — see ClusterTableCandidateBlocks (#310 Phase B).
     private const double RowConnectVerticalOverlap = 0.5;
 
+    // A text column is at least this share of its band's width; narrower, it is a table's column (RAGFlow tableMaxColFrac).
+    private const double MinTextColumnWidthFraction = 0.22;
+
+    // A text column holds at least this share of its band's lines; fewer, it is a stray block (RAGFlow minColLineFrac).
+    private const double MinTextColumnLineFraction = 0.12;
+
     // Consecutive visual rows belong to the same table candidate while the vertical gap between them stays
     // within this many median-block-heights. Wide enough for a table's inter-row pitch, tight enough to cut
     // the table off from a title / body paragraph above or below it (which sit farther away). See
@@ -1351,6 +1357,60 @@ internal static class PdfReadingOrder
     /// left-to-right; a table's cells reconstruct independently of this order.
     /// </summary>
     private static IReadOnlyList<DlaTextBlock> OrderBandRowWise(IReadOnlyList<DlaTextBlock> band)
+    {
+        // Text columns read one after the other: the whole left column, then the next. A band split by whitespace
+        // gutters into several WIDE columns, each holding a fair share of the band's lines, is a multi-column layout
+        // (RAGFlow's AssignColumn, internal/deepdoc/parser/pdf/layout/combined_column.go: a column narrower than 22% of
+        // the width is a table cell, a column with under 12% of the lines a stray). Anything else reads row-wise.
+        if (TextColumns(band) is { } columns)
+        {
+            return columns.SelectMany(OrderRows).ToList();
+        }
+
+        return OrderRows(band);
+    }
+
+    /// <summary>
+    /// The band's blocks split into text columns, left to right, or <c>null</c> when the band is not a multi-column text
+    /// layout. Columns are separated by gutters at least a line height wide that no block crosses; each must be at least
+    /// <see cref="MinTextColumnWidthFraction"/> of the band's width and hold <see cref="MinTextColumnLineFraction"/> of
+    /// its lines.
+    /// </summary>
+    private static List<List<DlaTextBlock>>? TextColumns(IReadOnlyList<DlaTextBlock> band)
+    {
+        var lineHeights = band.SelectMany(b => b.TextLines).Select(line => line.BoundingBox.Height).Where(h => h > 0).ToList();
+        if (lineHeights.Count == 0)
+        {
+            return null;
+        }
+
+        var bands = ColumnBands(band.Select(b => b.BoundingBox), PdfGeometry.Median(lineHeights));
+        if (bands.Count < 2)
+        {
+            return null;
+        }
+
+        var width = bands[^1].Right - bands[0].Left;
+        var totalLines = band.Sum(b => b.TextLines.Count);
+        var columns = bands.Select(_ => new List<DlaTextBlock>()).ToList();
+        foreach (var block in band)
+        {
+            columns[BandOf(block.BoundingBox, bands)].Add(block);
+        }
+
+        for (var i = 0; i < bands.Count; i++)
+        {
+            if (bands[i].Right - bands[i].Left < width * MinTextColumnWidthFraction
+                || columns[i].Sum(b => b.TextLines.Count) < totalLines * MinTextColumnLineFraction)
+            {
+                return null;
+            }
+        }
+
+        return columns;
+    }
+
+    private static IReadOnlyList<DlaTextBlock> OrderRows(IReadOnlyList<DlaTextBlock> band)
     {
         // Cluster blocks into visual rows: a block joins a row when it vertically overlaps that row's most
         // recently added block (compared against the last block, not an accreted union, so a tall block cannot
