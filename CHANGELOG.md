@@ -164,6 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A scanned page inside a digital PDF is read by OCR** (`Dignite.Vault.Parse.Pdf`). The PDF engine judges each page's
+  text layer — none, characters no font maps to text, a broken font encoding, scan noise (RAGFlow's rules) — and reads
+  such a page, or one PdfPig cannot parse, with the host's OCR engine as a one-page PDF, onto that page. Before, a
+  scanned page came through only as an embedded figure (and not at all when its image was JBIG2 or JPX), a garbled page
+  as its garble, and an unparsable page was skipped. A PDF with no usable page still goes whole to the OCR engine. New
+  options `PdfExtractor:OcrPagesWithoutText` (default `true`) and `PdfExtractor:MaxOcrPagesPerPdf` (default `30`); each
+  such page is one OCR call. See [Text Extraction](docs/en/text-extraction/text-extraction.md#digital-extraction--engines-picked-per-file).
 - **The PDF engine reads layout** (`Dignite.Vault.Parse.Pdf`). Every element of a PDF's document tree refers to its region
   of the page, and a drawn table's cells to theirs. A two-column body reads column after column instead of line by line
   across the columns, and is no longer taken for a table. A drawn table keeps its merged cells (stored as an HTML

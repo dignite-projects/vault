@@ -82,4 +82,18 @@ public class PdfExtractorOptions
     /// <see cref="PdfReadingOrder"/>), not options — only this on/off switch is host-configurable.
     /// </summary>
     public bool ReconstructTables { get; set; } = true;
+
+    /// <summary>
+    /// Read a page without a usable text layer — a scanned page in a digital PDF, a page whose font encoding is broken,
+    /// a page PdfPig cannot parse — with the host's OCR engine, page by page. When no page of a PDF has a usable text layer
+    /// the whole file goes to the OCR engine in one call instead. Off, such a page reads as before: a scanned page's raster
+    /// as an embedded figure, a garbled page's text as written, an unparsable page not at all.
+    /// </summary>
+    public bool OcrPagesWithoutText { get; set; } = true;
+
+    /// <summary>
+    /// Most pages of one PDF read by OCR (each one OCR call, paid with a vision model); further such pages are skipped and
+    /// the result is marked incomplete.
+    /// </summary>
+    public int MaxOcrPagesPerPdf { get; set; } = 30;
 }
