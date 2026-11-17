@@ -215,6 +215,125 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
     }
 
     /// <summary>
+    /// Whether search can tell it has no answer: every answerable case and every unanswerable question through the search
+    /// pipeline as configured, comparing the scores of their top results — the reranker's score, the vector leg's cosine
+    /// similarity — and whether the keyword leg found anything. For each signal the report lists how many answerable
+    /// cases a threshold keeps and how many unanswerable questions it turns away. It measures and does not assert; the
+    /// report goes to <c>VAULT_INDEX_EVAL_ABSTENTION_REPORT</c> or <c>index-abstention.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Measure_abstention()
+    {
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        await ClearAsync();
+        Arrange(set);
+
+        var job = GetRequiredService<IndexDocumentJob>();
+        var eventTime = new DateTime(2026, 11, 17, 0, 0, 0);
+        foreach (var document in set.Documents)
+        {
+            eventTime = eventTime.AddMinutes(1);
+            await job.ExecuteAsync(new IndexDocumentJobArgs
+            {
+                DocumentId = document.DocumentId,
+                Kind = IndexDocumentJobKind.Sync,
+                Trigger = IndexRunTrigger.Backfill,
+                EventTime = eventTime
+            });
+        }
+
+        await WaitForFullTextAsync();
+        var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
+        var pipeline = GetRequiredService<IndexSearchPipeline>();
+        var scope = new ChunkSearchScope(true, [], null);
+
+        async Task<AbstentionRow> MeasureAsync(string query, string? expectedDocument)
+        {
+            var outcome = await WithUnitOfWorkAsync(() => pipeline.RunAsync(query, scope, pipeline.DefaultSettings, EvaluationReport.Depth));
+            var top = outcome.Ranked.FirstOrDefault();
+            return new AbstentionRow(
+                query,
+                expectedDocument,
+                top?.RerankScore,
+                outcome.VectorMatches.Count == 0 ? null : 1 - outcome.VectorMatches[0].Score,
+                outcome.KeywordMatches.Count > 0,
+                top is not null && documentIds.GetValueOrDefault(top.Fused.DocumentId) == expectedDocument);
+        }
+
+        var answerable = new List<AbstentionRow>();
+        foreach (var evaluationCase in set.Cases())
+        {
+            answerable.Add(await MeasureAsync(evaluationCase.Query, evaluationCase.Document));
+        }
+
+        var unanswerable = new List<AbstentionRow>();
+        foreach (var question in set.UnanswerableQuestions)
+        {
+            unanswerable.Add(await MeasureAsync(question.Query, null));
+        }
+
+        var reranker = GetRequiredService<IndexRanker>().Reranker;
+        var serving = await WithUnitOfWorkAsync(() => GetRequiredService<IndexGenerationManager>().FindServingAsync());
+        var report = new System.Text.StringBuilder();
+        report.Append("# Vault Index abstention\n\n");
+        report.Append($"- Evaluation set version {set.Version}: {set.Documents.Count} documents; {answerable.Count} answerable cases, {unanswerable.Count} unanswerable questions\n");
+        report.Append($"- Embedding model {serving!.ModelId}; rerank model {reranker?.ModelId ?? "none"}; search as configured (keyword weight {Options.KeywordWeight}, vector weight {Options.VectorWeight})\n");
+        report.Append($"- Answerable cases whose top result is the expected document: {answerable.Count(r => r.TopIsExpected)} of {answerable.Count}\n");
+        report.Append($"- Keyword leg found nothing: {answerable.Count(r => !r.KeywordFound)} answerable, {unanswerable.Count(r => !r.KeywordFound)} unanswerable\n");
+        report.Append($"- Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC\n\n");
+
+        void Signal(string name, Func<AbstentionRow, double?> value, double[] thresholds)
+        {
+            var positives = answerable.Select(value).OfType<double>().OrderBy(v => v).ToList();
+            var correct = answerable.Where(r => r.TopIsExpected).Select(value).OfType<double>().OrderBy(v => v).ToList();
+            var negatives = unanswerable.Select(value).OfType<double>().OrderBy(v => v).ToList();
+            if (positives.Count == 0 || negatives.Count == 0)
+            {
+                report.Append($"## {name}\n\nNot measured.\n\n");
+                return;
+            }
+
+            static double Quantile(List<double> sorted, double q) => sorted[(int)Math.Clamp(Math.Round(q * (sorted.Count - 1)), 0, sorted.Count - 1)];
+            report.Append($"## {name}\n\n| Questions | Min | 5% | Median | 95% | Max |\n| --- | ---: | ---: | ---: | ---: | ---: |\n");
+            foreach (var (label, values) in new[] { ("answerable", positives), ("answerable, top correct", correct), ("unanswerable", negatives) })
+            {
+                report.Append($"| {label} | {values[0]:0.000} | {Quantile(values, 0.05):0.000} | {Quantile(values, 0.5):0.000} | {Quantile(values, 0.95):0.000} | {values[^1]:0.000} |\n");
+            }
+
+            report.Append("\n| Threshold | Answerable kept | Correct top kept | Unanswerable turned away |\n| ---: | ---: | ---: | ---: |\n");
+            foreach (var t in thresholds)
+            {
+                report.Append($"| {t:0.000} | {positives.Count(v => v >= t)} / {positives.Count} | {correct.Count(v => v >= t)} / {correct.Count} | {negatives.Count(v => v < t)} / {negatives.Count} |\n");
+            }
+
+            report.Append('\n');
+        }
+
+        Signal("Reranker score of the top result", r => r.RerankScore, [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5]);
+        Signal("Cosine similarity of the vector leg's top result", r => r.VectorSimilarity, [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]);
+
+        report.Append("## Unanswerable questions\n\n| Question | Rerank | Vector | Keyword |\n| --- | ---: | ---: | --- |\n");
+        foreach (var row in unanswerable)
+        {
+            report.Append($"| {row.Query} | {row.RerankScore:0.000} | {row.VectorSimilarity:0.000} | {(row.KeywordFound ? "found" : "none")} |\n");
+        }
+
+        report.Append("\n## Answerable cases with the lowest reranker score\n\n| Question | Rerank | Vector | Top correct |\n| --- | ---: | ---: | --- |\n");
+        foreach (var row in answerable.Where(r => r.RerankScore is not null).OrderBy(r => r.RerankScore).Take(10))
+        {
+            report.Append($"| {row.Query} | {row.RerankScore:0.000} | {row.VectorSimilarity:0.000} | {(row.TopIsExpected ? "yes" : "no")} |\n");
+        }
+
+        var text = report.ToString();
+        _output.WriteLine(text);
+        var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_ABSTENTION_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-abstention.md");
+        await File.WriteAllTextAsync(path, text);
+    }
+
+    private sealed record AbstentionRow(
+        string Query, string? ExpectedDocument, double? RerankScore, double? VectorSimilarity, bool KeywordFound, bool TopIsExpected);
+
+    /// <summary>
     /// The chunking strategies compared on the same cases. "HTML tables dropped" is how every strategy read a table
     /// written as HTML before the chunker rewrote it as Markdown: DataIngestion's reader leaves it out.
     /// </summary>

@@ -74,7 +74,12 @@ public class IndexSearchHitDto
     /// <summary>The reciprocal-rank-fusion score: only for ordering, not comparable across searches.</summary>
     public double Score { get; set; }
 
-    /// <summary>The reranker's score when it ordered the hits; only for ordering, not comparable across searches or models.</summary>
+    /// <summary>
+    /// The reranker's relevance score when it ordered the hits: for the usual cross-encoders a probability from 0 to 1,
+    /// comparable across searches with the same model, not across models. With <c>BAAI/bge-reranker-v2-m3</c> the best hit
+    /// of an answerable question scored a median 0.98 in the evaluation and that of an unanswerable one 0.006; a question
+    /// that names something only one document resembles (another invoice number) can still score high.
+    /// </summary>
     public double? RerankScore { get; set; }
 
     /// <summary>The chunk's rank in the keyword leg, from 1; <c>null</c> when that leg did not return it.</summary>

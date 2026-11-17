@@ -73,6 +73,42 @@ public class Reranking_Tests : VaultIndexTestBase<VaultIndexRerankTestModule>
     }
 
     [Fact]
+    public async Task A_score_floor_keeps_only_the_hits_the_reranker_scored_above_it()
+    {
+        await IndexAsync();
+        GetRequiredService<IOptions<VaultIndexSearchOptions>>().Value.MinRerankScore = 0.5;
+        _reranker.Prefer = "目的";
+
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        result.Reranked.ShouldBeTrue();
+        result.Hits.ShouldHaveSingleItem().HeadingPath.ShouldBe("# 賃貸借契約書 ## 第1条（目的）");
+    }
+
+    [Fact]
+    public async Task With_a_score_floor_a_question_nothing_answers_returns_no_hits()
+    {
+        await IndexAsync();
+        GetRequiredService<IOptions<VaultIndexSearchOptions>>().Value.MinRerankScore = 0.5;
+
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        result.Reranked.ShouldBeTrue();
+        result.Hits.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Without_a_floor_every_hit_is_kept()
+    {
+        await IndexAsync();
+
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        result.Hits.Count.ShouldBeGreaterThan(1);
+        result.Hits.ShouldAllBe(h => h.RerankScore < 0.5);
+    }
+
+    [Fact]
     public async Task A_failing_reranker_leaves_the_fused_order()
     {
         await IndexAsync();

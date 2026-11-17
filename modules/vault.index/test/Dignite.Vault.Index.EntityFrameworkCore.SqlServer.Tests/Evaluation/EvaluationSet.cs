@@ -29,6 +29,9 @@ public sealed class EvaluationSet
     /// <summary>Questions only several documents answer, for the agent comparison (version 4).</summary>
     public List<EvaluationCrossQuestion> CrossQuestions { get; init; } = new();
 
+    /// <summary>Questions no document answers, for measuring whether search can tell it has none (version 5).</summary>
+    public List<EvaluationUnanswerable> UnanswerableQuestions { get; init; } = new();
+
     public static EvaluationSet Load(string directory)
     {
         var json = File.ReadAllText(Path.Combine(directory, "evaluation-set.json"));
@@ -110,6 +113,14 @@ public sealed class EvaluationCrossQuestion
 
     /// <summary>The documents the answer draws on, for reading the report; not scored.</summary>
     public List<string> Documents { get; init; } = new();
+}
+
+/// <summary>A question whose answer is in no document of the corpus.</summary>
+public sealed class EvaluationUnanswerable
+{
+    public string Query { get; init; } = default!;
+
+    public string Language { get; init; } = "ja";
 }
 
 /// <param name="Heading">Part of the expected chunk's heading path; <c>null</c> when any chunk of the document will do.</param>
