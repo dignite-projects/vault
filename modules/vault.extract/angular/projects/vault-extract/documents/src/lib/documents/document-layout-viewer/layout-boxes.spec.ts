@@ -71,4 +71,32 @@ describe('readLayout', () => {
 
     expect(layout.boxes).toEqual([]);
   });
+
+  it("places each field's regions, and keeps a field whose regions cannot be drawn", () => {
+    const layout = readLayout({
+      current: true,
+      fields: [
+        { name: 'total_amount', sources: [{ page: 'page-1', polygon: square(50, 520, 120, 540) }, { page: 'page-1', polygon: square(300, 520, 545, 540) }] },
+        { name: 'scanned_field', sources: [{ page: 'page-2' }] },
+        { sources: [{ page: 'page-1', polygon: square(0, 0, 1, 1) }] },
+      ],
+      document: {
+        pages: [
+          { id: 'page-1', number: 1, unit: 'Point', origin: 'BottomLeft' },
+          { id: 'page-2', number: 2 },
+        ],
+        sections: [],
+      },
+    });
+
+    expect(layout.fields.map(field => [field.name, field.boxes.length])).toEqual([
+      ['total_amount', 2],
+      ['scanned_field', 0],
+    ]);
+    expect(layout.fields[0].boxes[1]).toMatchObject({ kind: 'field', pageNumber: 1, left: 300, right: 545 });
+  });
+
+  it('has no fields when the layout carries none', () => {
+    expect(readLayout({ current: true, document: { pages: [], sections: [] } }).fields).toEqual([]);
+  });
 });

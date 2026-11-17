@@ -50,6 +50,19 @@
   color: var(--bs-body-bg);
 }
 
+// Where a field's value was found: drawn over the element boxes, and transparent to the pointer so they stay hoverable.
+.layout-field {
+  border: 3px solid var(--bs-info);
+  background: color-mix(in srgb, var(--bs-info) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bs-info) 35%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.layout-field-row-hover {
+  background: color-mix(in srgb, var(--bs-info) 12%, transparent);
+}
+
 .layout-detail {
   position: sticky;
   top: 1rem;

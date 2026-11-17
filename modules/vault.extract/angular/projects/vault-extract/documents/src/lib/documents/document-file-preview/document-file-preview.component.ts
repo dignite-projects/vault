@@ -4,17 +4,37 @@ import {
   DestroyRef,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { LocalizationPipe } from '@abp/ng.core';
-import { DocumentDto, DocumentService } from '@dignite/ng.vault-extract';
+import { DocumentDto, DocumentService, FieldDefinitionDto, FieldDefinitionService } from '@dignite/ng.vault-extract';
+import { Subscription } from 'rxjs';
 import { DocumentFileBlobService } from '../../shared/document-file-blob.service';
 import { isImageContentType, isPdfContentType } from '../../shared/content-type';
-import { DocumentLayoutViewerComponent } from '../document-layout-viewer/document-layout-viewer.component';
+import { DocumentTypesStore } from '../../shared/document-types.store';
+import {
+  DocumentLayoutViewerComponent,
+  LayoutViewerField,
+} from '../document-layout-viewer/document-layout-viewer.component';
+
+/** A field value as one line of text beside the layout; a table or another structured value shows its label only. */
+function displayValue(value: unknown): string {
+  if (value == null || typeof value === 'object' && !Array.isArray(value)) {
+    return '';
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(item => item == null || typeof item !== 'object') ? value.join(', ') : '';
+  }
+
+  return String(value);
+}
 
 // File preview page (route documents/:id/file). Replaces the old detail-page openFile() blob new-tab
 // shortcut with a readable /vault-extract/documents/{id}/file URL that includes the document ID. The file content is
@@ -33,6 +53,10 @@ export class DocumentFilePreviewComponent implements OnInit {
   private readonly documentService = inject(DocumentService);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly fileBlob = inject(DocumentFileBlobService);
+  private readonly documentTypes = inject(DocumentTypesStore);
+  private readonly fieldDefinitionService = inject(FieldDefinitionService);
+  private readonly fieldDefinitions = signal<FieldDefinitionDto[]>([]);
+  private fieldDefinitionsRequest: Subscription | null = null;
 
   document = signal<DocumentDto | null>(null);
   isLoading = signal(true);
@@ -52,6 +76,33 @@ export class DocumentFilePreviewComponent implements OnInit {
   // file; a figure sub-document its retained image), so the preview now works for sub-documents too. This
   // gate survives as null-safety for pre-migration legacy rows; the template shows a neutral notice then.
   readonly hasSourceFile = computed(() => !!this.document()?.fileOrigin);
+
+  /**
+   * The extracted fields the layout lists, labelled and ordered as the detail page shows them. Until the type's field
+   * definitions are in (or if they cannot be read), every value is listed under its field name.
+   */
+  readonly layoutFields = computed<LayoutViewerField[]>(() => {
+    const values = this.document()?.extractedFields;
+    if (!values) {
+      return [];
+    }
+
+    const definitions = new Map(this.fieldDefinitions().map(definition => [definition.name ?? '', definition]));
+    return Object.keys(values)
+      .filter(name => definitions.size === 0 || definitions.has(name))
+      .sort((a, b) =>
+        (definitions.get(a)?.displayOrder ?? 0) - (definitions.get(b)?.displayOrder ?? 0) || a.localeCompare(b))
+      .map(name => ({ name, label: definitions.get(name)?.displayName || name, value: displayValue(values[name]) }));
+  });
+
+  constructor() {
+    // The field definitions of the document's type: once the document and the visible types are both in.
+    effect(() => {
+      const code = this.document()?.documentTypeCode;
+      const typeId = code ? this.documentTypes.value().find(type => type.typeCode === code)?.id : undefined;
+      untracked(() => this.loadFieldDefinitions(typeId));
+    });
+  }
 
   ngOnInit(): void {
     this.documentId = this.route.snapshot.paramMap.get('id')!;
@@ -79,6 +130,23 @@ export class DocumentFilePreviewComponent implements OnInit {
           this.isLoading.set(false);
           this.hasError.set(true);
         },
+      });
+  }
+
+  private loadFieldDefinitions(documentTypeId: string | undefined): void {
+    this.fieldDefinitionsRequest?.unsubscribe();
+    this.fieldDefinitionsRequest = null;
+    if (!documentTypeId) {
+      this.fieldDefinitions.set([]);
+      return;
+    }
+
+    this.fieldDefinitionsRequest = this.fieldDefinitionService
+      .getList({ documentTypeId })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: definitions => this.fieldDefinitions.set(definitions),
+        error: () => this.fieldDefinitions.set([]),
       });
   }
 

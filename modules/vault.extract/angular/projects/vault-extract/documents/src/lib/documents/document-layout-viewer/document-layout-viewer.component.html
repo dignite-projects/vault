@@ -51,21 +51,62 @@
                 (click)="select(box)"
               ></div>
             }
+            @for (box of page.fieldBoxes; track $index) {
+              @if (box.text === activeField()) {
+                <div
+                  class="layout-field position-absolute"
+                  [style.left.px]="box.x"
+                  [style.top.px]="box.y"
+                  [style.width.px]="box.w"
+                  [style.height.px]="box.h"
+                ></div>
+              }
+            }
           </div>
         }
       </div>
 
-      <aside class="layout-detail card shadow-sm">
-        <div class="card-body small">
-          @if (shown(); as box) {
-            <div class="mb-2">
-              <span class="badge layout-badge" [class]="'layout-' + box.kind">{{ box.kind }}</span>
-              <span class="text-muted ms-2">{{ 'VaultExtract::Document:LayoutPage' | abpLocalization: box.pageNumber.toString() }}</span>
+      <aside class="layout-detail d-flex flex-column gap-3">
+        @if (fieldRows().length > 0) {
+          <div class="card shadow-sm">
+            <div class="card-header py-2 small fw-semibold">{{ 'VaultExtract::Document:LayoutFields' | abpLocalization }}</div>
+            <div class="list-group list-group-flush small">
+              @for (field of fieldRows(); track field.name) {
+                <button
+                  type="button"
+                  class="list-group-item list-group-item-action"
+                  [class.active]="field.name === selectedField()"
+                  [class.layout-field-row-hover]="field.name === hoveredField() && field.name !== selectedField()"
+                  [disabled]="!field.located"
+                  (mouseenter)="hoveredField.set(field.name)"
+                  (mouseleave)="hoveredField.set(null)"
+                  (click)="selectField(field.name)"
+                >
+                  <div class="fw-semibold">{{ field.label }}</div>
+                  @if (field.value) {
+                    <div class="layout-text">{{ field.value }}</div>
+                  }
+                  @if (!field.located) {
+                    <div class="fst-italic">{{ 'VaultExtract::Document:LayoutFieldNotLocated' | abpLocalization }}</div>
+                  }
+                </button>
+              }
             </div>
-            <div class="layout-text">{{ box.text }}</div>
-          } @else {
-            <p class="text-muted mb-0">{{ 'VaultExtract::Document:LayoutHint' | abpLocalization }}</p>
-          }
+          </div>
+        }
+
+        <div class="card shadow-sm">
+          <div class="card-body small">
+            @if (shown(); as box) {
+              <div class="mb-2">
+                <span class="badge layout-badge" [class]="'layout-' + box.kind">{{ box.kind }}</span>
+                <span class="text-muted ms-2">{{ 'VaultExtract::Document:LayoutPage' | abpLocalization: box.pageNumber.toString() }}</span>
+              </div>
+              <div class="layout-text">{{ box.text }}</div>
+            } @else {
+              <p class="text-muted mb-0">{{ 'VaultExtract::Document:LayoutHint' | abpLocalization }}</p>
+            }
+          </div>
         </div>
       </aside>
     </div>

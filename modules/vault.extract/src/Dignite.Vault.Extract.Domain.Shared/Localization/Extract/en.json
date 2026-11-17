@@ -154,6 +154,8 @@
     "Document:LayoutNotCurrent": "The text was corrected after parsing: the regions show where the parse read its text, not the corrected text.",
     "Document:LayoutPage": "Page {0}",
     "Document:LayoutHint": "Point at a region to see the text read from it; click to keep it. Pages read by OCR have no regions.",
+    "Document:LayoutFields": "Fields",
+    "Document:LayoutFieldNotLocated": "Where this value was read is not known.",
     "Document:NoSourceFile": "This document has no source file.",
     "Document:Reparse": "Re-parse",
     "Document:Reparse:Hint": "Extract the text from the original file again, then classify the document and extract its fields again.",

@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regions of the paragraphs and table cells they cover. A Markdown correction clears the ranges; a re-extraction
   writes them again. New column `VaultDocuments.FieldSources` (migration `DocumentFieldSources`, default `{}`); the
   extraction response schema gains a required `sources` object. See
-  [REST API](docs/en/egress/rest-api.md#reading-a-document).
+  [REST API](docs/en/egress/rest-api.md#reading-a-document). The **Layout** view of a PDF lists the fields beside the
+  pages and outlines where each value was read when it is pointed at or clicked; the Angular proxies carry
+  `DocumentDto.fieldSources`.
 
 - **Layout view of a PDF** (`@dignite/ng.vault-extract`). The file preview of a PDF has a **Layout** switch that draws
   the pages with pdf.js (`pdfjs-dist`, a new dependency of the library, loaded only when the switch is turned on) and
