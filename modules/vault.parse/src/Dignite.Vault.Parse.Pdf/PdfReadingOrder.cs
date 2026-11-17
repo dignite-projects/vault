@@ -1473,7 +1473,11 @@ internal static class PdfReadingOrder
     /// separator (CJK text is not space-delimited, so a space would be a visible artifact at the former line
     /// break — the #407 「ウ」/「ェブサイト」 case); every other boundary keeps a single space (Latin word join).
     /// </summary>
-    private static string JoinWrappedLines(IReadOnlyList<string> lines)
+    /// <summary>Two lines of one wrapped text, joined: with a space, except between two CJK characters.</summary>
+    internal static string JoinWrapped(string previous, string current)
+        => NeedsSpaceBetween(previous, current) ? previous + " " + current : previous + current;
+
+    internal static string JoinWrappedLines(IReadOnlyList<string> lines)
     {
         if (lines.Count == 0)
         {

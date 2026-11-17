@@ -257,19 +257,23 @@ internal static class PdfTableReconstruction
             (buckets[row, column] ??= new List<Cell>()).Add(cell);
         }
 
-        // Emit the rows that carry text (a drawn-but-blank spacer row is dropped, not rendered as an empty row).
+        // Cells joined by an undrawn boundary are one merged cell (Camelot's lattice and pdfplumber's table finder
+        // read spans the same way: a cell edge exists only where a rule is drawn). Each merged region is a rectangle of
+        // grid cells; a region that is not a rectangle (an L-shaped gap in the rules) is left as separate cells.
+        var regions = MergedRegions(grid);
+
+        // Keep the rows that carry text: a drawn-but-blank spacer row is dropped, not rendered as an empty row. A merged
+        // cell keeps the kept rows it covers.
         var keptRows = new List<int>(grid.RowCount);
         for (var r = 0; r < grid.RowCount; r++)
         {
-            var hasText = false;
             for (var c = 0; c < grid.ColumnCount; c++)
             {
-                hasText |= buckets[r, c] is not null;
-            }
-
-            if (hasText)
-            {
-                keptRows.Add(r);
+                if (buckets[r, c] is not null)
+                {
+                    keptRows.Add(r);
+                    break;
+                }
             }
         }
 
@@ -278,29 +282,133 @@ internal static class PdfTableReconstruction
             return null;
         }
 
-        var table = new PdfTable(keptRows.Count, grid.ColumnCount);
+        var newRow = new int[grid.RowCount];
+        Array.Fill(newRow, -1);
         for (var i = 0; i < keptRows.Count; i++)
         {
-            var r = keptRows[i];
-            for (var c = 0; c < grid.ColumnCount; c++)
+            newRow[keptRows[i]] = i;
+        }
+
+        var table = new PdfTable(keptRows.Count, grid.ColumnCount);
+        foreach (var (top, left, bottom, right) in regions)
+        {
+            var regionRows = Enumerable.Range(top, bottom - top + 1).Where(r => newRow[r] >= 0).ToList();
+            if (regionRows.Count == 0)
             {
-                var bucket = buckets[r, c];
-                table.Cells.Add(new PdfTableCell(
-                    i, c, 1, 1, bucket is null ? string.Empty : JoinCellFragments(bucket), CellBounds(grid, r, c)));
+                continue;
             }
+
+            var fragments = new List<Cell>();
+            for (var r = top; r <= bottom; r++)
+            {
+                for (var c = left; c <= right; c++)
+                {
+                    if (buckets[r, c] is { } bucket)
+                    {
+                        fragments.AddRange(bucket);
+                    }
+                }
+            }
+
+            table.Cells.Add(new PdfTableCell(
+                newRow[regionRows[0]],
+                left,
+                regionRows.Count,
+                right - left + 1,
+                fragments.Count == 0 ? string.Empty : JoinCellFragments(fragments),
+                RegionBounds(grid, top, left, bottom, right)));
         }
 
         return new PdfTableBlock(GridBounds(grid), table);
     }
 
-    /// <summary>The drawn region of cell (<paramref name="row"/> from the top, <paramref name="column"/>) of <paramref name="grid"/>.</summary>
-    private static PdfRectangle CellBounds(PdfRulingLines.Grid grid, int row, int column)
+    /// <summary>
+    /// The merged regions of <paramref name="grid"/>, each as its top / left / bottom / right cell (rows counted from the
+    /// top): cells joined across every undrawn boundary, when the joined cells fill their bounding rectangle.
+    /// </summary>
+    private static List<(int Top, int Left, int Bottom, int Right)> MergedRegions(PdfRulingLines.Grid grid)
     {
-        var bandFromBottom = grid.RowCount - 1 - row;
-        return new PdfRectangle(
-            grid.ColumnBoundaries[column], grid.RowBoundaries[bandFromBottom],
-            grid.ColumnBoundaries[column + 1], grid.RowBoundaries[bandFromBottom + 1]);
+        const double tolerance = 3.0;
+        var rows = grid.RowCount;
+        var columns = grid.ColumnCount;
+        var parent = new int[rows * columns];
+        for (var i = 0; i < parent.Length; i++)
+        {
+            parent[i] = i;
+        }
+
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+
+            return x;
+        }
+
+        for (var r = 0; r < rows; r++)
+        {
+            var band = rows - 1 - r;
+            for (var c = 0; c < columns; c++)
+            {
+                if (c + 1 < columns && !grid.HasVerticalEdge(c, band, tolerance))
+                {
+                    parent[Find(r * columns + c)] = Find(r * columns + c + 1);
+                }
+
+                // The row below (r + 1) is the band beneath this one; the boundary between them is above that band.
+                if (r + 1 < rows && !grid.HasHorizontalEdgeAbove(c, band - 1, tolerance))
+                {
+                    parent[Find(r * columns + c)] = Find((r + 1) * columns + c);
+                }
+            }
+        }
+
+        var members = new Dictionary<int, List<(int Row, int Column)>>();
+        for (var r = 0; r < rows; r++)
+        {
+            for (var c = 0; c < columns; c++)
+            {
+                var root = Find(r * columns + c);
+                if (!members.TryGetValue(root, out var list))
+                {
+                    list = new List<(int, int)>();
+                    members[root] = list;
+                }
+
+                list.Add((r, c));
+            }
+        }
+
+        var regions = new List<(int, int, int, int)>();
+        foreach (var cells in members.Values)
+        {
+            var top = cells.Min(cell => cell.Row);
+            var bottom = cells.Max(cell => cell.Row);
+            var left = cells.Min(cell => cell.Column);
+            var right = cells.Max(cell => cell.Column);
+            if (cells.Count == (bottom - top + 1) * (right - left + 1))
+            {
+                regions.Add((top, left, bottom, right));
+            }
+            else
+            {
+                regions.AddRange(cells.Select(cell => (cell.Row, cell.Column, cell.Row, cell.Column)));
+            }
+        }
+
+        return regions.OrderBy(region => region.Item1).ThenBy(region => region.Item2).ToList();
     }
+
+    /// <summary>The drawn region of the cells from (<paramref name="top"/>, <paramref name="left"/>) to (<paramref name="bottom"/>, <paramref name="right"/>), rows counted from the top.</summary>
+    private static PdfRectangle RegionBounds(PdfRulingLines.Grid grid, int top, int left, int bottom, int right)
+        => new(
+            grid.ColumnBoundaries[left],
+            grid.RowBoundaries[grid.RowCount - 1 - bottom],
+            grid.ColumnBoundaries[right + 1],
+            grid.RowBoundaries[grid.RowCount - top]);
 
     private static PdfRectangle GridBounds(PdfRulingLines.Grid grid)
         => new(grid.ColumnBoundaries[0], grid.RowBoundaries[0], grid.ColumnBoundaries[^1], grid.RowBoundaries[^1]);
@@ -348,7 +456,7 @@ internal static class PdfTableReconstruction
     /// baselines / mixed sizes) — so a cell whose text wraps to several lines reads correctly.
     /// </summary>
     private static string JoinCellFragments(IReadOnlyList<Cell> cells)
-        => string.Join(" ", GroupIntoVisualLines(cells).SelectMany(line => line).Select(c => c.Text));
+        => PdfReadingOrder.JoinWrappedLines(GroupIntoVisualLines(cells).Select(line => string.Join(" ", line.Select(c => c.Text))).ToList());
 
     /// <summary>
     /// Splits the fragments into column bands. A flat x-projection of every fragment merges two columns whenever
@@ -682,7 +790,7 @@ internal static class PdfTableReconstruction
                 foreach (var (column, list) in byColumn)
                 {
                     var text = JoinLineCells(list);
-                    current!.Cells[column] = current.Cells[column].Length == 0 ? text : current.Cells[column] + " " + text;
+                    current!.Cells[column] = current.Cells[column].Length == 0 ? text : PdfReadingOrder.JoinWrapped(current.Cells[column], text);
                 }
 
                 current!.Bottom = lineBottom;
@@ -765,7 +873,7 @@ internal static class PdfTableReconstruction
                 {
                     host.Cells[column] = host.Cells[column].Length == 0
                         ? rows[j].Cells[column]
-                        : host.Cells[column] + " " + rows[j].Cells[column];
+                        : PdfReadingOrder.JoinWrapped(host.Cells[column], rows[j].Cells[column]);
                     host.Top = Math.Max(host.Top, rows[j].Top);
                     host.Bottom = Math.Min(host.Bottom, rows[j].Bottom);
                     consumed[j] = true;
@@ -844,7 +952,7 @@ internal static class PdfTableReconstruction
 
                         host.Cells[c] = host.Cells[c].Length == 0
                             ? rows[k].Cells[c]
-                            : host.Cells[c] + " " + rows[k].Cells[c];
+                            : PdfReadingOrder.JoinWrapped(host.Cells[c], rows[k].Cells[c]);
                     }
 
                     host.Bottom = Math.Min(host.Bottom, rows[k].Bottom);

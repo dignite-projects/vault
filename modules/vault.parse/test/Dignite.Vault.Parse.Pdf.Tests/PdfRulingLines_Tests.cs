@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using Shouldly;
@@ -228,5 +229,54 @@ public class PdfRulingLines_Tests
 
         markdown.ShouldBe("| H | H2 |\n| --- | --- |\n| wire alpha beta cont | v |");
         dropped.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Reads_an_undrawn_boundary_as_a_merged_cell()
+    {
+        // 3 columns x 3 rows, each cell drawn as its own box, except: the bottom row's first two cells are one box
+        // (a "Subtotal" label spanning two columns), and the first column's top two cells are one box (a category
+        // spanning two rows). The undrawn boundaries are the spans.
+        var bounds = new List<PdfRectangle>
+        {
+            Box(50, 200, 150, 400),                         // rows 0-1, column 0 (merged)
+            Box(150, 300, 250, 400), Box(250, 300, 350, 400),
+            Box(150, 200, 250, 300), Box(250, 200, 350, 300),
+            Box(50, 100, 250, 200),                         // row 2, columns 0-1 (merged)
+            Box(250, 100, 350, 200)
+        };
+        var grid = PdfRulingLines.DetectGrids(bounds).ShouldHaveSingleItem();
+        var cells = new List<PdfTableReconstruction.Cell>
+        {
+            Cell("Care", 60, 100, 300),
+            Cell("Item", 160, 200, 350), Cell("Price", 260, 300, 350),
+            Cell("Fix", 160, 200, 250), Cell("10", 260, 300, 250),
+            Cell("Subtotal", 120, 180, 150), Cell("10", 260, 300, 150)
+        };
+
+        var table = PdfTableReconstruction.TryReconstructLattice(cells, grid, out _)!.Table;
+
+        table.Cells.Select(c => (c.Row, c.Column, c.RowSpan, c.ColumnSpan, c.Text)).ShouldBe(
+        [
+            (0, 0, 2, 1, "Care"), (0, 1, 1, 1, "Item"), (0, 2, 1, 1, "Price"),
+            (1, 1, 1, 1, "Fix"), (1, 2, 1, 1, "10"),
+            (2, 0, 1, 2, "Subtotal"), (2, 2, 1, 1, "10")
+        ]);
+        PdfElements.ToMarkdown([new PdfTableBlock(Box(50, 100, 350, 400), table)]).ShouldBe(
+            "<table>\n<tr><th rowspan=\"2\">Care</th><th>Item</th><th>Price</th></tr>\n<tr><td>Fix</td><td>10</td></tr>\n"
+            + "<tr><td colspan=\"2\">Subtotal</td><td>10</td></tr>\n</table>");
+    }
+
+    [Fact]
+    public void Joins_a_cell_wrapped_between_cjk_characters_without_a_space()
+    {
+        var grid = new PdfRulingLines.Grid(new[] { 50.0, 150, 250 }, new[] { 100.0, 200, 300 });
+        var cells = new List<PdfTableReconstruction.Cell>
+        {
+            Cell("数", 60, 70, 260), Cell("量", 60, 70, 240), Cell("単価", 160, 200, 250),
+            Cell("1", 60, 70, 150), Cell("100", 160, 200, 150)
+        };
+
+        PdfTableReconstruction.TryRenderLattice(cells, grid, out _).ShouldBe("| 数量 | 単価 |\n| --- | --- |\n| 1 | 100 |");
     }
 }
