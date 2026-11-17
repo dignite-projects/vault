@@ -25,17 +25,86 @@ internal static class PdfRulingLines
     /// <summary>
     /// One drawn table grid: the ascending x of the vertical rules (column separators) and ascending y of the
     /// horizontal rules (row separators). N boundaries delimit N-1 cells along that axis.
+    /// <para>
+    /// <see cref="Horizontals"/> and <see cref="Verticals"/> are the drawn rules themselves. A boundary that is not drawn
+    /// between two cells merges them (a cell spanning rows or columns); without the rules every boundary counts as drawn.
+    /// </para>
     /// </summary>
     public readonly record struct Grid(IReadOnlyList<double> ColumnBoundaries, IReadOnlyList<double> RowBoundaries)
     {
         public int ColumnCount => ColumnBoundaries.Count - 1;
 
         public int RowCount => RowBoundaries.Count - 1;
+
+        public IReadOnlyList<HRule> Horizontals { get; init; } = Array.Empty<HRule>();
+
+        public IReadOnlyList<VRule> Verticals { get; init; } = Array.Empty<VRule>();
+
+        /// <summary>
+        /// Whether the vertical boundary between columns <paramref name="column"/> and <paramref name="column"/> + 1 is
+        /// drawn along most of the row band <paramref name="bandFromBottom"/> (counted from the bottom, as the rows are).
+        /// </summary>
+        public bool HasVerticalEdge(int column, int bandFromBottom, double tolerance)
+        {
+            if (Verticals.Count == 0)
+            {
+                return true;
+            }
+
+            var x = ColumnBoundaries[column + 1];
+            var low = RowBoundaries[bandFromBottom];
+            var high = RowBoundaries[bandFromBottom + 1];
+            return Covered(
+                Verticals.Where(rule => Math.Abs(rule.X - x) <= tolerance).Select(rule => (rule.Y1, rule.Y2)),
+                low,
+                high);
+        }
+
+        /// <summary>
+        /// Whether the horizontal boundary above row band <paramref name="bandFromBottom"/> (between it and the band above)
+        /// is drawn along most of column <paramref name="column"/>.
+        /// </summary>
+        public bool HasHorizontalEdgeAbove(int column, int bandFromBottom, double tolerance)
+        {
+            if (Horizontals.Count == 0)
+            {
+                return true;
+            }
+
+            var y = RowBoundaries[bandFromBottom + 1];
+            var low = ColumnBoundaries[column];
+            var high = ColumnBoundaries[column + 1];
+            return Covered(
+                Horizontals.Where(rule => Math.Abs(rule.Y - y) <= tolerance).Select(rule => (rule.X1, rule.X2)),
+                low,
+                high);
+        }
+
+        /// <summary>Whether the segments cover at least half of [<paramref name="low"/>, <paramref name="high"/>].</summary>
+        private static bool Covered(IEnumerable<(double From, double To)> segments, double low, double high)
+        {
+            var covered = 0.0;
+            var reach = low;
+            foreach (var (from, to) in segments.OrderBy(segment => segment.From))
+            {
+                var start = Math.Max(from, reach);
+                var end = Math.Min(to, high);
+                if (end > start)
+                {
+                    covered += end - start;
+                    reach = end;
+                }
+            }
+
+            return covered >= (high - low) * 0.5;
+        }
     }
 
-    private readonly record struct HRule(double Y, double X1, double X2);
+    /// <summary>A drawn horizontal rule at <see cref="Y"/> from <see cref="X1"/> to <see cref="X2"/>.</summary>
+    public readonly record struct HRule(double Y, double X1, double X2);
 
-    private readonly record struct VRule(double X, double Y1, double Y2);
+    /// <summary>A drawn vertical rule at <see cref="X"/> from <see cref="Y1"/> to <see cref="Y2"/>.</summary>
+    public readonly record struct VRule(double X, double Y1, double Y2);
 
     /// <summary>
     /// Detects every drawn table grid on the page (top-to-bottom), or an empty list when none has at least a
@@ -127,14 +196,18 @@ internal static class PdfRulingLines
 
         var rowsByComponent = new Dictionary<int, List<double>>();
         var columnsByComponent = new Dictionary<int, List<double>>();
+        var horizontalsByComponent = new Dictionary<int, List<HRule>>();
+        var verticalsByComponent = new Dictionary<int, List<VRule>>();
         for (var i = 0; i < h; i++)
         {
             AddTo(rowsByComponent, Find(i), horizontals[i].Y);
+            AddTo(horizontalsByComponent, Find(i), horizontals[i]);
         }
 
         for (var j = 0; j < v; j++)
         {
             AddTo(columnsByComponent, Find(h + j), verticals[j].X);
+            AddTo(verticalsByComponent, Find(h + j), verticals[j]);
         }
 
         var grids = new List<Grid>();
@@ -148,10 +221,22 @@ internal static class PdfRulingLines
             var columns = Cluster(columnPositions, clusterTolerance);
             var rows = Cluster(rowPositions, clusterTolerance);
 
+            // A rule's end is a cell corner even where no crossing rule is drawn: a table continued from the previous
+            // page has no top border on this one (it belonged to the row above), an open table has no outer columns.
+            // Close the grid at the farthest rule ends beyond its outermost boundaries.
+            var componentVerticals = verticalsByComponent[component];
+            var componentHorizontals = horizontalsByComponent[component];
+            ExtendOuter(rows, componentVerticals.Min(rule => rule.Y1), componentVerticals.Max(rule => rule.Y2), clusterTolerance);
+            ExtendOuter(columns, componentHorizontals.Min(rule => rule.X1), componentHorizontals.Max(rule => rule.X2), clusterTolerance);
+
             // A lattice needs >= 2 columns AND >= 2 rows (>= 3 boundaries on each axis).
             if (columns.Count >= 3 && rows.Count >= 3)
             {
-                grids.Add(new Grid(columns, rows));
+                grids.Add(new Grid(columns, rows)
+                {
+                    Horizontals = horizontalsByComponent[component],
+                    Verticals = verticalsByComponent[component]
+                });
             }
         }
 
@@ -304,16 +389,35 @@ internal static class PdfRulingLines
         }
     }
 
+    /// <summary>Adds <paramref name="low"/> / <paramref name="high"/> as boundaries when they lie beyond the outermost ones.</summary>
+    private static void ExtendOuter(List<double> boundaries, double low, double high, double tolerance)
+    {
+        if (boundaries.Count == 0)
+        {
+            return;
+        }
+
+        if (low < boundaries[0] - tolerance)
+        {
+            boundaries.Insert(0, low);
+        }
+
+        if (high > boundaries[^1] + tolerance)
+        {
+            boundaries.Add(high);
+        }
+    }
+
     /// <summary>Whether a horizontal and a vertical rule cross (within <paramref name="tolerance"/> slack).</summary>
     private static bool Crosses(HRule horizontal, VRule vertical, double tolerance)
         => vertical.X >= horizontal.X1 - tolerance && vertical.X <= horizontal.X2 + tolerance
         && horizontal.Y >= vertical.Y1 - tolerance && horizontal.Y <= vertical.Y2 + tolerance;
 
-    private static void AddTo(Dictionary<int, List<double>> map, int key, double value)
+    private static void AddTo<T>(Dictionary<int, List<T>> map, int key, T value)
     {
         if (!map.TryGetValue(key, out var list))
         {
-            list = new List<double>();
+            list = new List<T>();
             map[key] = list;
         }
 

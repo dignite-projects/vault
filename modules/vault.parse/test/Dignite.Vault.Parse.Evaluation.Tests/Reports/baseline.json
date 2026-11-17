@@ -27,7 +27,7 @@
   },
   "invoice": {
     "Block recall": 1,
-    "Cell header recall": 0.95,
+    "Cell header recall": 1,
     "Heading level agreement": 1,
     "Heading recall": 1,
     "Reading order": 1,
@@ -57,18 +57,19 @@
   },
   "pricelist": {
     "Block recall": 1,
-    "Cell header recall": 0.42,
+    "Cell header recall": 1,
     "Heading recall": 1,
     "Reading order": 1,
-    "Table cell precision": 0.968,
+    "Table cell precision": 0.989,
     "Table cell recall": 0.989,
-    "Text similarity": 0.996
+    "Text similarity": 0.992
   },
   "report": {
-    "Block recall": 0.867,
-    "Heading recall": 0,
+    "Block recall": 1,
+    "Heading level agreement": 1,
+    "Heading recall": 1,
     "Reading order": 1,
-    "Table cell precision": 0,
-    "Text similarity": 0.935
+    "Table cell precision": 1,
+    "Text similarity": 0.994
   }
 }

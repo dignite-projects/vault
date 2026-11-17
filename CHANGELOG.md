@@ -164,6 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The PDF engine reads layout** (`Dignite.Vault.Parse.Pdf`). Every element of a PDF's document tree refers to its region
+  of the page, and a drawn table's cells to theirs. A two-column body reads column after column instead of line by line
+  across the columns, and is no longer taken for a table. A drawn table keeps its merged cells (stored as an HTML
+  table), a table cut by a page break is joined into one with its repeated header dropped, and a cell wrapped between
+  CJK characters is joined without a space. Clipping paths are no longer read as table rules. On the parse evaluation
+  corpus: `report` text similarity 0.935 → 0.994 and heading recall 0 → 1, `pricelist` cell header recall 0.42 → 1,
+  `invoice` 0.95 → 1. See [Text Extraction](docs/en/text-extraction/text-extraction.md#digital-extraction--engines-picked-per-file).
 - **Vault Parse runs on `Microsoft.Extensions.DocumentExtraction`** (breaking for code that calls Parse or adds an
   engine). Every engine is a `DocumentExtractionClient` that returns a `Microsoft.Extensions.Documents` document tree:
   the PDF engine one section per page, the PowerPoint engine one per slide, the vision-LLM engine one per transcribed

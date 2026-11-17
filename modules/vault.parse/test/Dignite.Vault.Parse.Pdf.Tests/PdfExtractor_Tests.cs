@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
 using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -81,6 +83,36 @@ public class PdfExtractor_Tests
         result.ProviderName.ShouldBe(PdfExtractor.ProviderIdentifier);
         result.IsComplete.ShouldBeTrue();
         result.IncompleteReason.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Every_element_refers_to_its_region_of_the_page()
+    {
+        StubOcr("BRAVO");
+
+        var png = TinyPng.CreateSolid(32, 32);
+        var pdf = PdfFixtures.Build(
+            texts: new[] { ("ALPHA", 760.0), ("CHARLIE", 100.0) },
+            images: new[] { (png, new PdfRectangle(50, 400, 200, 550)) });
+
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
+
+        var page = result.Document.SourcePages.ShouldHaveSingleItem();
+        var elements = result.Document.Sections.ShouldHaveSingleItem().Elements;
+        elements.Count.ShouldBe(3);
+        foreach (var element in elements)
+        {
+            var source = element.Sources.ShouldHaveSingleItem();
+            source.Page.ShouldBeSameAs(page);
+            source.Polygon.Count.ShouldBe(4);
+        }
+
+        // Read top to bottom in PdfPig's frame (origin bottom-left): ALPHA, the image, CHARLIE.
+        var tops = elements.Select(element => element.Sources[0].Polygon[0].Y).ToList();
+        tops.ShouldBe(tops.OrderByDescending(top => top).ToList());
+        var image = elements[1].ShouldBeOfType<ExtractionDocumentImageElement>();
+        image.Sources[0].Polygon[0].ShouldBe(new ExtractionDocumentPoint(50, 550));
+        image.Sources[0].Polygon[2].ShouldBe(new ExtractionDocumentPoint(200, 400));
     }
 
     [Fact]
