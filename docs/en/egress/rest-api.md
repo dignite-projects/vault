@@ -46,6 +46,7 @@ curl -X POST https://your-host/api/vault-extract/documents/upload \
 | `title`, `language` | Generated title and detected language |
 | `markdown` | The document's text, the one text payload of the channel |
 | `extractedFields` | Field values keyed by field `name` (see below), or `null` |
+| `fieldSources` | Where each value was found: per field `name`, ranges of `markdown` (see below), or `null` |
 | `extractionIsComplete`, `extractionIncompleteReason` | Whether text extraction captured the whole document |
 | `fileOrigin` | Upload metadata: `originalFileName`, `contentType`, `fileSize`, `uploadedByUserName` (`null` for a sub-document) |
 | `cabinetId`, `originDocumentId`, `isContainer` | Filing and [sub-document](../documents/sub-documents.md) relations |
@@ -56,7 +57,11 @@ A caller who may not read the document gets only `id` and `rights` back.
 
 `extractedFields` values keep their type: a string for `Text` and single `Select`, a number, a boolean, a date string (`yyyy-MM-dd`, `yyyy-MM-ddTHH:mm:ss` or `yyyy-MM`, per the field's input mode), an array for `Tags` and multiple `Select`, Markdown text for long text, and for a `Table` an array of rows shaped `{ "values": { "<column>": <value> } }`. To get plain text from the Markdown, strip it on your side; `MarkdownStripper.Strip` in `Dignite.Vault.Extract.Domain.Shared` does it for .NET.
 
+`fieldSources` says where in `markdown` each value of `extractedFields` was read: `{ "<field name>": [ { "offset": 105, "length": 18 } ] }`, offsets and lengths in UTF-16 code units (what a .NET or JavaScript string indexes). Field extraction quotes the passages it read each value from, and the ranges are where those passages are, so a range covers the printed text (`発行日：2026年11月20日`), not the normalized value (`2026-11-20`). A field has no entry when its quote was not found in the text or its value was entered by hand. Every range is valid for the current Markdown: correcting the Markdown clears them until the fields are extracted again, and an edited value keeps the source of its field. The [layout](#the-layout) places them on the page.
+
 `GET /api/vault-extract/documents/{id}/blob` downloads the original file. A sub-document has none (`Extract:DocumentNoSourceBlob`); download its parent's.
+
+### The Layout
 
 `GET /api/vault-extract/documents/{id}/layout` returns where the Markdown came from: the document tree its parse produced, as JSON (`application/json`), read with the same right as the document.
 
@@ -66,6 +71,10 @@ A caller who may not read the document gets only `id` and `rights` back.
   "version": 1,
   "markdownSha256": "…",
   "current": true,
+  "fields": [
+    { "name": "total_amount", "spans": [ { "offset": 312, "length": 18 } ],
+      "sources": [ { "page": "page-1", "polygon": [ … ] }, { "page": "page-1", "polygon": [ … ] } ] }
+  ],
   "document": {
     "version": 1,
     "pages": [ { "id": "page-1", "number": 1, "width": 595.3, "height": 841.9, "unit": "Point", "origin": "BottomLeft" } ],
@@ -82,6 +91,7 @@ A caller who may not read the document gets only `id` and `rights` back.
 - Every element carries the page regions it was read from: `polygon` is the region's corners in the page's own frame (`unit`, `origin`), clockwise from top-left. A PDF's digital pages give regions for every block and every drawn table cell; an OCR'd page or image gives the page only.
 - Element types are `section`, `text` (with `role` — `heading`, `listItem`, `code`, `quote`, `markdown`, `pageHeader`, `pageFooter`, or none for a paragraph — and `headingLevel`; `text` is inline Markdown), `table` (cells with spans and `columnHeader` roles) and `image` (`text` is its OCR transcription).
 - `current` is `false` once the Markdown no longer is the one the tree rendered (an operator corrected it): the regions still point at the parse, not at the corrected text.
+- `fields` places `fieldSources` on the pages: for each field, its ranges and the regions of the narrowest elements whose text the ranges cover — the table cells, not the whole table; a quoted row reaches each cell in it. It is empty while `current` is `false`, since the ranges then belong to text the tree did not render.
 - A sub-document has no layout of its own, and a document parsed before layouts were kept has none until it is re-parsed: both fail with `Extract:DocumentNoLayout`. A re-parse replaces the layout; a permanent delete removes it.
 - .NET consumers read `document` with `ExtractionDocumentJson.Read` (`Dignite.Vault.Parse.Abstractions`) into a `Microsoft.Extensions.Documents.ExtractionDocument`.
 

@@ -401,6 +401,17 @@ public class FieldExtractionService : ITransientDependency
 
             document.SetFlexFields(fieldValues);
 
+            // Where each written value was found, as ranges of the Markdown the model read. Only while the document still
+            // holds that Markdown: a correction or a re-parse during the call would make the ranges point at other text.
+            // The guards above keep a field's name equal to its descriptor's, so the model's keys are the bag's keys.
+            document.SetFieldSources(string.Equals(document.Markdown, markdown, StringComparison.Ordinal)
+                ? FieldSourceLocator.Locate(
+                    markdown,
+                    extractionResult.Sources
+                        .Where(pair => fieldValues.ContainsKey(pair.Key))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal))
+                : null);
+
             // #527 §5/§7: persist the field validation warnings atomically with SetFlexFields below. The
             // workflow keys warnings by field name and has already normalized them (§3); here each is resolved
             // to the immutable FieldDefinitionId and passed through the SAME in-flight guards as the values — a warning

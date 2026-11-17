@@ -90,6 +90,14 @@ public class DocumentDto : EntityDto<Guid>
     /// </summary>
     public Dictionary<string, JsonElement>? ExtractedFields { get; set; }
 
+    /// <summary>
+    /// Where in <see cref="Markdown"/> each value of <see cref="ExtractedFields"/> was found: per field name, the ranges
+    /// of the text field extraction quoted for it. A field without an entry has no known source (an operator added it,
+    /// or the quote was not found). Every range is valid for the current Markdown. The layout endpoint turns them into
+    /// page regions. <c>null</c> when no field has a source.
+    /// </summary>
+    public Dictionary<string, List<DocumentTextSpanDto>>? FieldSources { get; set; }
+
     public DateTime CreationTime { get; set; }
 
     /// <summary>

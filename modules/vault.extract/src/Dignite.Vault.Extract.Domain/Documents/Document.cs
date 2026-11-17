@@ -225,6 +225,13 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
     /// </summary>
     public virtual FlexFieldDictionary FlexFields { get; protected set; } = new();
 
+    /// <summary>
+    /// Where in <see cref="Markdown"/> each value of <see cref="FlexFields"/> was found: the ranges of the text the
+    /// extraction quoted for it, keyed like the bag. A field with no entry has no known source. Every range is valid for
+    /// the current Markdown: a correction or a re-parse clears them all, and a key leaves with its value.
+    /// </summary>
+    public virtual DocumentFieldSources FieldSources { get; protected set; } = new();
+
     protected Document()
     {
     }
@@ -317,6 +324,7 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
             throw new BusinessException(VaultExtractErrorCodes.Document.NotTextExtracted);
 
         Markdown = Check.NotNullOrWhiteSpace(markdown, nameof(markdown));
+        FieldSources.Clear();
     }
 
     /// <summary>
@@ -353,6 +361,7 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
         SetLanguage(language);
         SetExtractionMetadata(extractionMetadata);
         IsSegmented = false;
+        FieldSources.Clear();
     }
 
     internal void SetTitle(string? title)
@@ -473,6 +482,49 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
                 FlexFields[pair.Key] = pair.Value;
             }
         }
+
+        // An operator's edit keeps where a field sits in the text; only a field that lost its value loses its source.
+        foreach (var name in FieldSources.Keys.Where(name => !FlexFields.ContainsKey(name)).ToList())
+        {
+            FieldSources.Remove(name);
+        }
+    }
+
+    /// <summary>
+    /// Replaces <see cref="FieldSources"/>, after <see cref="SetFlexFields"/> wrote the values they locate. A source for a
+    /// field without a value, and a range outside the current <see cref="Markdown"/>, are dropped.
+    /// </summary>
+    public void SetFieldSources(IReadOnlyDictionary<string, IReadOnlyList<DocumentTextSpan>>? sources)
+    {
+        FieldSources.Clear();
+        var length = Markdown?.Length ?? 0;
+        foreach (var (name, spans) in sources ?? new Dictionary<string, IReadOnlyList<DocumentTextSpan>>())
+        {
+            var valid = spans.Where(span => span.Offset >= 0 && span.Length > 0 && span.Offset + span.Length <= length).ToList();
+            if (FlexFields.ContainsKey(name) && valid.Count > 0)
+            {
+                FieldSources[name] = valid;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves a field's value (the kernel's <see cref="FlexFieldDictionaryExtensions.RenameField"/>) and its source to
+    /// <paramref name="newName"/>. Whether the value moved.
+    /// </summary>
+    public bool RenameField(string oldName, string newName)
+    {
+        if (!FlexFieldDictionaryExtensions.RenameField(this, oldName, newName))
+        {
+            return false;
+        }
+
+        if (FieldSources.Remove(oldName, out var spans))
+        {
+            FieldSources[newName] = spans;
+        }
+
+        return true;
     }
 
     /// <summary>

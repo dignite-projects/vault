@@ -266,7 +266,63 @@ public class FieldExtractionService_Tests
         doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldExtractionIncomplete).ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task Extraction_records_where_each_written_value_was_quoted_from()
+    {
+        const string markdown = "# 請求書\n\n合計 1,500 円";
+        var doc = ArrangeAmountAndMemo(markdown);
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FieldExtractionWorkflowResult(
+                new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement, ["memo"] = null },
+                Array.Empty<FieldValidationWarningResult>(),
+                new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["amount"] = ["合計 1,500 円", "どこにもない"],
+                    ["memo"] = ["請求書"]
+                }));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FieldSources.Keys.ShouldBe(["amount"]);
+        doc.FieldSources["amount"].ShouldBe([new DocumentTextSpan(markdown.IndexOf("合計", StringComparison.Ordinal), 10)]);
+    }
+
+    [Fact]
+    public async Task Sources_are_not_recorded_against_Markdown_corrected_while_the_model_ran()
+    {
+        var doc = ArrangeAmountAndMemo("# 請求書\n\n合計 1,500 円");
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                doc.CorrectMarkdown("# 請求書\n\n小計 1,000 円\n\n合計 1,500 円");
+                return new FieldExtractionWorkflowResult(
+                    new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement },
+                    Array.Empty<FieldValidationWarningResult>(),
+                    new Dictionary<string, IReadOnlyList<string>> { ["amount"] = ["合計 1,500 円"] });
+            });
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FlexFields["amount"].ShouldBe(1500m);
+        doc.FieldSources.ShouldBeEmpty();
+    }
+
     // ─── helpers ───────────────────────────────────────────────────────────
+
+    private Document ArrangeAmountAndMemo(string markdown)
+    {
+        var doc = CreateClassifiedDocument(typeCode: "invoice.sources", markdown: markdown);
+        SetupType("invoice.sources");
+        _documentRepository.FindAsync(doc.Id, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(doc);
+        _documentRepository.FindWithFieldValuesAsync(doc.Id, Arg.Any<CancellationToken>()).Returns(doc);
+        _fieldRepository.GetListAsync(TypeId("invoice.sources"), Arg.Any<CancellationToken>())
+            .Returns(new List<Field>
+            {
+                CreateField("invoice.sources", "amount", NumberFieldType.ControlName),
+                CreateField("invoice.sources", "memo", "Text")
+            });
+        return doc;
+    }
 
     private static FieldExtractionWorkflowResult WorkflowResult(Dictionary<string, JsonElement?> values) =>
         new(values, Array.Empty<FieldValidationWarningResult>());
