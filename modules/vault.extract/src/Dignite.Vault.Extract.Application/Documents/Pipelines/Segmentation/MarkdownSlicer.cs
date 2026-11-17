@@ -15,9 +15,10 @@ public sealed record SegmentBoundary(string StartMarker, bool IsSubDocument);
 /// A deterministically-cut span of a source document's Markdown (#346/#371). <see cref="IsFigure"/> is the span's
 /// STRUCTURAL kind — true when its opening boundary marker is an <c>*[Image OCR]*</c> marker line (the span IS a
 /// figure), false for a text span even when it embeds an inline figure block (#371: kind comes from the boundary,
-/// not from scanning the body).
+/// not from scanning the body). <see cref="Start"/> and <see cref="End"/> are the span's place in the Markdown it was
+/// cut from, <c>[Start, End)</c>, before <see cref="Text"/> was trimmed.
 /// </summary>
-public sealed record MarkdownSlice(string Text, bool IsSubDocument, int Ordinal, bool IsFigure);
+public sealed record MarkdownSlice(string Text, bool IsSubDocument, int Ordinal, bool IsFigure, int Start = 0, int End = 0);
 
 /// <summary>
 /// Deterministically cuts a container's Markdown at LLM-proposed boundaries (#346 decision: the LLM returns
@@ -85,7 +86,7 @@ public static class MarkdownSlicer
             // *[Image OCR]* marker line means the span IS a figure; a prose first line means a text span (even if
             // it embeds an inline figure block). Carry it here rather than scanning the slice body downstream.
             slices.Add(new MarkdownSlice(
-                text, boundaries[i].IsSubDocument, slices.Count, ImageOcrMarkup.IsOpenLine(boundaries[i].StartMarker)));
+                text, boundaries[i].IsSubDocument, slices.Count, ImageOcrMarkup.IsOpenLine(boundaries[i].StartMarker), start, end));
         }
 
         return slices.Count > 0;

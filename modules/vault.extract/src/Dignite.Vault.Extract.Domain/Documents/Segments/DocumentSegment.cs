@@ -86,6 +86,17 @@ public class DocumentSegment : CreationAuditedAggregateRoot<Guid>, IMultiTenant
     /// </summary>
     public virtual DocumentSegmentStatus Status { get; private set; }
 
+    /// <summary>
+    /// The pages of the source's file this constituent occupies on its own, 1-based and inclusive, or <c>null</c> when
+    /// it shares a page with another span or the source cannot be cut by page (not a PDF, no current layout). A
+    /// constituent with pages is spawned as its own file of those pages, read from the source's parse of them; one
+    /// without is seeded from <see cref="SliceText"/> and has no file.
+    /// </summary>
+    public virtual int? FirstPage { get; private set; }
+
+    /// <inheritdoc cref="FirstPage"/>
+    public virtual int? LastPage { get; private set; }
+
     protected DocumentSegment()
     {
     }
@@ -98,7 +109,9 @@ public class DocumentSegment : CreationAuditedAggregateRoot<Guid>, IMultiTenant
         string sliceText,
         int ordinal,
         DocumentSegmentKind kind,
-        DocumentSegmentStatus status = DocumentSegmentStatus.Pending)
+        DocumentSegmentStatus status = DocumentSegmentStatus.Pending,
+        int? firstPage = null,
+        int? lastPage = null)
         : base(id)
     {
         TenantId = tenantId;
@@ -108,6 +121,13 @@ public class DocumentSegment : CreationAuditedAggregateRoot<Guid>, IMultiTenant
         Ordinal = ordinal;
         Kind = kind;
         Status = status;
+        if (firstPage.HasValue != lastPage.HasValue || firstPage < 1 || lastPage < firstPage)
+        {
+            throw new ArgumentException($"Invalid page range {firstPage}-{lastPage}.", nameof(firstPage));
+        }
+
+        FirstPage = firstPage;
+        LastPage = lastPage;
     }
 
     /// <summary>

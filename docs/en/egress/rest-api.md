@@ -92,7 +92,7 @@ A caller who may not read the document gets only `id` and `rights` back.
 - Element types are `section`, `text` (with `role` — `heading`, `listItem`, `code`, `quote`, `markdown`, `pageHeader`, `pageFooter`, or none for a paragraph — and `headingLevel`; `text` is inline Markdown), `table` (cells with spans and `columnHeader` roles) and `image` (`text` is its OCR transcription).
 - `current` is `false` once the Markdown no longer is the one the tree rendered (an operator corrected it): the regions still point at the parse, not at the corrected text.
 - `fields` places `fieldSources` on the pages: for each field, its ranges and the regions of the narrowest elements whose text the ranges cover — the table cells, not the whole table; a quoted row reaches each cell in it. It is empty while `current` is `false`, since the ranges then belong to text the tree did not render.
-- A sub-document has no layout of its own, and a document parsed before layouts were kept has none until it is re-parsed: both fail with `Extract:DocumentNoLayout`. A re-parse replaces the layout; a permanent delete removes it.
+- A sub-document cut out of its parent by page has the layout of its pages, numbered from 1 like the pages of its own file. Any other sub-document has none, and neither has a document parsed before layouts were kept until it is re-parsed: both fail with `Extract:DocumentNoLayout`. A re-parse replaces the layout; a permanent delete removes it.
 - .NET consumers read `document` with `ExtractionDocumentJson.Read` (`Dignite.Vault.Parse.Abstractions`) into a `Microsoft.Extensions.Documents.ExtractionDocument`.
 
 ## Listing and Filtering Documents

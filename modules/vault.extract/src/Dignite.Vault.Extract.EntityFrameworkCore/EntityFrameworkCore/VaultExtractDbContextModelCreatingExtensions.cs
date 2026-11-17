@@ -253,8 +253,8 @@ public static class VaultExtractDbContextModelCreatingExtensions
             b.Property(x => x.SliceText).IsRequired();
             b.Property(x => x.Ordinal).IsRequired();
             // #371: which span kind this segment was carved from (Text constituent vs embedded Figure); drives the
-            // container→type retraction filter (#364). PageNumber is a nullable recovery anchor (page) for
-            // Figure-kind rows, parsed from the *[Image OCR p:N]* marker; neither is indexed.
+            // container→type retraction filter (#364). FirstPage / LastPage: the pages a constituent occupies on its
+            // own, when the source can be cut by page (R5b). None is indexed.
             b.Property(x => x.Kind).IsRequired();
             b.Property(x => x.Status).IsRequired();
 

@@ -140,8 +140,15 @@ public class DocumentParseBackgroundJob
 
         try
         {
-            ParseOutput result;
-            if (workItem.SeedMarkdown != null)
+            ParseOutput? result = null;
+            if (workItem.PageSeed is { } pageSeed)
+            {
+                // A page-range sub-document (R5b): its pages as the source parsed them, so the scan is not OCR'd a
+                // second time. Falls back to the slice seed when the source's layout is gone or no longer current.
+                result = await TryReadSourcePagesAsync(args.DocumentId, pageSeed);
+            }
+
+            if (result is null && workItem.SeedMarkdown != null)
             {
                 // Derived sub-document (#371): seed Markdown from the source DocumentSegment slice instead of
                 // re-extracting it. The slice is already (clean) Markdown — a born-digital text constituent or a
@@ -152,7 +159,7 @@ public class DocumentParseBackgroundJob
                     Language: null,
                     new DocumentParseMetadata(ScenarioBSegmentSeedProviderName));
             }
-            else
+            else if (result is null)
             {
                 // Sub-documents derived from segment SliceText always have SeedMarkdown set; a null BlobName here
                 // indicates a configuration or data inconsistency — fail fast rather than NPE on GetAsync.
@@ -188,7 +195,7 @@ public class DocumentParseBackgroundJob
             // bracketed text came from OCR. The title generated below therefore runs over the marked Markdown, which
             // is fine: the markers are ordinary italic-annotated content, exactly as a re-ingested MarkItDown document
             // already carries them.
-            var title = await TryGenerateTitleAsync(result.Markdown, _cancellationTokenProvider.Token)
+            var title = await TryGenerateTitleAsync(result!.Markdown, _cancellationTokenProvider.Token)
                 ?? MarkdownTitleExtractor.ExtractTitle(result.Markdown)
                 ?? FallbackTitleFromFileName(workItem.OriginalFileName);
 
@@ -228,6 +235,7 @@ public class DocumentParseBackgroundJob
         // so there is no content drift. Loaded inside this UoW; null (not derived, or the slice is missing/empty)
         // falls back to the normal extraction path in ExecuteAsync.
         string? seedMarkdown = null;
+        PageSeed? pageSeed = null;
         if (document.OriginDocumentId.HasValue && !string.IsNullOrEmpty(document.OriginConstituentKey))
         {
             var segment = await _documentSegmentRepository.FirstOrDefaultAsync(
@@ -235,6 +243,17 @@ public class DocumentParseBackgroundJob
             if (!string.IsNullOrEmpty(segment?.SliceText))
             {
                 seedMarkdown = segment.SliceText;
+            }
+
+            // A page-range constituent with its own file reads its pages from the source's layout; the source's
+            // Markdown is snapshotted to check the layout still renders it.
+            if (segment is { FirstPage: { } first, LastPage: { } last } && document.FileOrigin is not null)
+            {
+                var source = await DocumentRepository.FindAsync(document.OriginDocumentId.Value, includeDetails: false);
+                if (source?.Markdown is { } sourceMarkdown)
+                {
+                    pageSeed = new PageSeed(source.Id, sourceMarkdown, first, last);
+                }
             }
         }
 
@@ -245,7 +264,38 @@ public class DocumentParseBackgroundJob
             document.FileOrigin?.BlobName,
             document.FileOrigin?.ContentType,
             document.FileOrigin?.OriginalFileName,
-            seedMarkdown);
+            seedMarkdown,
+            pageSeed);
+    }
+
+    /// <summary>
+    /// A page-range sub-document's parse: its pages of the source's current layout, renumbered from 1 to match its own
+    /// file, rendered to Markdown and kept as its own layout. <c>null</c> when the source's layout cannot be used or
+    /// renders nothing for those pages.
+    /// </summary>
+    protected virtual async Task<ParseOutput?> TryReadSourcePagesAsync(Guid documentId, PageSeed seed)
+    {
+        var tree = await _layoutStore.GetCurrentTreeAsync(seed.SourceDocumentId, seed.SourceMarkdown, _cancellationTokenProvider.Token);
+        if (tree is null)
+        {
+            Logger.LogWarning(
+                "Source {SourceId} has no current layout; sub-document {DocumentId} is seeded from its slice instead of pages {FirstPage}-{LastPage}.",
+                seed.SourceDocumentId, documentId, seed.FirstPage, seed.LastPage);
+            return null;
+        }
+
+        var pages = ExtractionDocumentPages.Select(tree, seed.FirstPage, seed.LastPage);
+        var markdown = ExtractionDocumentMarkdown.Render(pages);
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            return null;
+        }
+
+        await TrySaveLayoutAsync(documentId, pages, markdown);
+        return new ParseOutput(
+            markdown,
+            pages.GetLanguage(),
+            new DocumentParseMetadata(pages.GetProvider(), pages.IsComplete(), pages.GetIncompleteReason()));
     }
 
     private async Task CompleteRunAsync(
@@ -511,7 +561,11 @@ public class DocumentParseBackgroundJob
         string? BlobName,
         string? ContentType,
         string? OriginalFileName,
-        string? SeedMarkdown);
+        string? SeedMarkdown,
+        PageSeed? PageSeed);
+
+    /// <summary>Where a page-range sub-document's pages are read from: the source, its Markdown at Begin, the range.</summary>
+    protected sealed record PageSeed(Guid SourceDocumentId, string SourceMarkdown, int FirstPage, int LastPage);
 }
 
 [BackgroundJobName("VaultExtract.DocumentParse")]

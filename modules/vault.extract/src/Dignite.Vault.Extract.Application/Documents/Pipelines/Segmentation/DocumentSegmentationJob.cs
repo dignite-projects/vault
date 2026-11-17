@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -9,10 +10,12 @@ using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Parse;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
+using Dignite.Vault.Extract.Documents.Layout;
 using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
+using Volo.Abp.BlobStoring;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Guids;
@@ -33,9 +36,17 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 /// <b>One identity model, one spawn sink.</b> Every standalone span is keyed by the SHA-256 of its clean slice
 /// text and spawned through the shared <see cref="DerivedDocumentSpawner"/>. That content-hash identity is
 /// mirrored onto the derived <see cref="Document"/> as <c>OriginConstituentKey</c> (#481: passive provenance
-/// there, Option A — no longer DB-enforced on <see cref="Document"/>). A sub-document of either kind carries no
-/// file of its own (<c>fileOrigin: null</c>): it is a Markdown slice seeded from <c>SliceText</c>, and a consumer
-/// reaches its source by following <c>OriginDocumentId</c> to the parent's blob.
+/// there, Option A — no longer DB-enforced on <see cref="Document"/>).
+/// </para>
+/// <para>
+/// <b>Page-range sub-documents (R5b).</b> A container constituent that occupies pages of the source's PDF on its own —
+/// no other span has text on them — is recorded with those pages and spawned as a file of its own: the pages cut out
+/// of the source (<see cref="ParsePageCopier"/>), with a real <c>FileOrigin</c>. Its parse reads those pages from the
+/// source's layout instead of parsing the file again (no second OCR). The pages come from the source's current layout
+/// (<see cref="ExtractionDocumentMarkdown.Map"/> leads each slice of the Markdown to the pages its elements were read
+/// from). Every other span — a constituent sharing a page, a figure, a source that is not a PDF or has no current
+/// layout — carries no file (<c>fileOrigin: null</c>) and is seeded from <c>SliceText</c>; a consumer reaches its
+/// source by following <c>OriginDocumentId</c> to the parent's blob.
 /// </para>
 /// <para>
 /// <b>Container vs embedded-document mode.</b> A container's spans become sub-documents and the split must yield
@@ -76,6 +87,9 @@ public class DocumentSegmentationJob
     private readonly VaultExtractBehaviorOptions _behaviorOptions;
     private readonly ICancellationTokenProvider _cancellationTokenProvider;
     private readonly DocumentWriteLock _documentWriteLock;
+    private readonly DocumentLayoutStore _layoutStore;
+    private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
+    private readonly IReadOnlyList<ParsePageCopier> _pageCopiers;
 
     public DocumentSegmentationJob(
         IDocumentRepository documentRepository,
@@ -88,7 +102,10 @@ public class DocumentSegmentationJob
         IUnitOfWorkManager unitOfWorkManager,
         IOptions<VaultExtractBehaviorOptions> behaviorOptions,
         ICancellationTokenProvider cancellationTokenProvider,
-        DocumentWriteLock documentWriteLock)
+        DocumentWriteLock documentWriteLock,
+        DocumentLayoutStore layoutStore,
+        IBlobContainer<VaultExtractDocumentContainer> blobContainer,
+        IEnumerable<ParsePageCopier> pageCopiers)
     {
         _documentRepository = documentRepository;
         _segmentRepository = segmentRepository;
@@ -101,6 +118,9 @@ public class DocumentSegmentationJob
         _behaviorOptions = behaviorOptions.Value;
         _cancellationTokenProvider = cancellationTokenProvider;
         _documentWriteLock = documentWriteLock;
+        _layoutStore = layoutStore;
+        _blobContainer = blobContainer;
+        _pageCopiers = pageCopiers.ToList();
     }
 
     public override async Task ExecuteAsync(DocumentSegmentationJobArgs args)
@@ -215,7 +235,8 @@ public class DocumentSegmentationJob
             markdown,
             source.IsContainer,
             alreadySegmented,
-            detection);
+            detection,
+            source.FileOrigin);
     }
 
     /// <summary>
@@ -288,6 +309,9 @@ public class DocumentSegmentationJob
             return;
         }
 
+        // The pages a container constituent occupies on its own, when the source is a PDF with a current layout.
+        var pageRanges = await FindPageRangesAsync(context, markedSlices, cancellationToken);
+
         // Build a row for each STANDALONE span only (the parent's own content / covers / element-of-parent figures
         // are never persisted): kind from the span's opening boundary, clean text + key from the seeded slice.
         var prepared = new List<PreparedSegment>();
@@ -314,10 +338,13 @@ public class DocumentSegmentationJob
                 continue;
             }
 
+            var pages = pageRanges.TryGetValue(slice.Ordinal, out var range) ? range : ((int, int)?)null;
             prepared.Add(new PreparedSegment(
                 ContentHasher.Sha256Hex(Encoding.UTF8.GetBytes(cleanText)),
                 cleanText,
-                isFigure ? DocumentSegmentKind.Figure : DocumentSegmentKind.Text));
+                isFigure ? DocumentSegmentKind.Figure : DocumentSegmentKind.Text,
+                pages?.Item1,
+                pages?.Item2));
         }
 
         // Byte-identical detection among the spawnable slices: same content -> same key -> the unique
@@ -428,7 +455,9 @@ public class DocumentSegmentationJob
                     p.CleanText,
                     ordinal++,
                     p.Kind,
-                    DocumentSegmentStatus.Pending));
+                    DocumentSegmentStatus.Pending,
+                    p.FirstPage,
+                    p.LastPage));
             }
 
             // #377: mark the document segmented in the SAME transaction as the rows — the precise resume gate, so a
@@ -475,7 +504,7 @@ public class DocumentSegmentationJob
 
         var snapshot = pending
             .OrderBy(s => s.Ordinal)
-            .Select(s => new PendingSegment(s.Id, s.SegmentKey, s.Kind))
+            .Select(s => new PendingSegment(s.Id, s.SegmentKey, s.Kind, s.FirstPage, s.LastPage))
             .ToList();
 
         await uow.CompleteAsync();
@@ -502,15 +531,17 @@ public class DocumentSegmentationJob
     private async Task SpawnDerivedDocumentAsync(
         PendingSegment segment, DetectionContext context, CancellationToken cancellationToken)
     {
+        // External phase (no UoW): a constituent with pages gets its own file, those pages cut out of the source. One
+        // without pages, or whose pages could not be cut, carries no file and is seeded from its SliceText.
+        var fileOrigin = await TryCutPagesAsync(segment, context, cancellationToken);
+
         // Shared complete-phase UoW (#358): insert the derived document, mark this segment Spawned, publish
         // DocumentUploadedEto, and queue text extraction — atomically. The reload guard is kind-aware (#371).
-        // A derived sub-document carries no file of its own (fileOrigin: null) — it seeds Markdown from
-        // segment.SliceText via DocumentParseBackgroundJob (seed precedence) instead of parsing a blob.
-        await _derivedDocumentSpawner.SpawnAsync<DocumentSegment>(
+        var spawnedId = await _derivedDocumentSpawner.SpawnAsync<DocumentSegment>(
             context.SourceDocumentId,
             context.TenantId,
             segment.SegmentKey,
-            fileOrigin: null,
+            fileOrigin,
             // #635: the sub-document inherits the source's owner, snapshotted in the load phase. This job has no
             // principal of its own, so without it the person who uploaded the bundle could not see what came out.
             ownerId: context.OwnerId,
@@ -530,7 +561,156 @@ public class DocumentSegmentationJob
                 await _segmentRepository.UpdateAsync(entity);
             },
             cancellationToken);
+
+        if (spawnedId is null && fileOrigin is not null)
+        {
+            await DeleteUnusedCutAsync(segment, fileOrigin.BlobName);
+        }
     }
+
+    /// <summary>
+    /// The pages each spawnable container constituent occupies on its own, by slice ordinal: the source must be a
+    /// file a <see cref="ParsePageCopier"/> can cut, with a layout that still renders its Markdown, and no other slice
+    /// may have text on any page of the range. Empty when any of that does not hold; those constituents keep the
+    /// slice seed.
+    /// </summary>
+    protected virtual async Task<Dictionary<int, (int First, int Last)>> FindPageRangesAsync(
+        DetectionContext context, IReadOnlyList<MarkdownSlice> slices, CancellationToken cancellationToken)
+    {
+        var ranges = new Dictionary<int, (int First, int Last)>();
+        if (!context.IsContainer || context.SourceFile is null || FindPageCopier(context.SourceFile) is null)
+        {
+            return ranges;
+        }
+
+        var tree = await _layoutStore.GetCurrentTreeAsync(context.SourceDocumentId, context.Markdown, cancellationToken);
+        if (tree is null)
+        {
+            return ranges;
+        }
+
+        var map = ExtractionDocumentMarkdown.Map(tree);
+        if (!string.Equals(map.Markdown, context.Markdown, StringComparison.Ordinal))
+        {
+            return ranges; // the renderer changed since the parse: its offsets do not line up with this Markdown
+        }
+
+        // A page belongs to the slice that holds nearly all of its text. A model's boundary often sits below a stamp or a
+        // running header ("…（写）") at the top of a document's first page; that line then counts against the previous
+        // slice, which it does not belong to, and must not cost either document its pages.
+        var text = ExtractionDocumentPages.TextPerPage(map, slices.Select(slice => (slice.Start, slice.End)).ToList());
+        var owners = text
+            .SelectMany(perPage => perPage.Keys)
+            .Distinct()
+            .ToDictionary(page => page, page =>
+            {
+                var total = text.Sum(perPage => perPage.GetValueOrDefault(page));
+                var top = Enumerable.Range(0, text.Count).MaxBy(i => text[i].GetValueOrDefault(page));
+                return text[top].GetValueOrDefault(page) >= total * PageOwnershipShare ? top : -1;
+            });
+
+        for (var i = 0; i < slices.Count; i++)
+        {
+            if (!slices[i].IsSubDocument || slices[i].IsFigure)
+            {
+                continue;
+            }
+
+            var owned = owners.Where(owner => owner.Value == i).Select(owner => owner.Key).ToList();
+            if (owned.Count == 0)
+            {
+                continue;
+            }
+
+            var first = owned.Min();
+            var last = owned.Max();
+            var contiguous = owners.All(owner => owner.Key < first || owner.Key > last || owner.Value == i);
+            var onOwnPages = text[i].Where(page => page.Key >= first && page.Key <= last).Sum(page => page.Value);
+            if (contiguous && onOwnPages >= text[i].Values.Sum() * PageOwnershipShare)
+            {
+                ranges[slices[i].Ordinal] = (first, last);
+            }
+        }
+
+        return ranges;
+    }
+
+    /// <summary>
+    /// The share of a page's text a slice must hold to own the page, and the share of a slice's text its own pages must
+    /// hold to be cut by page. A page two documents genuinely share stays below it, and both keep their slices.
+    /// </summary>
+    protected const double PageOwnershipShare = 0.8;
+
+    /// <summary>
+    /// A constituent's own file: its pages cut out of the source's file and saved under a name derived from the segment,
+    /// so a retry overwrites rather than duplicates. <c>null</c> when the segment has no pages or the cut fails on the
+    /// file itself (it is then seeded from its slice like any other); a storage failure propagates and the job retries.
+    /// </summary>
+    protected virtual async Task<FileOrigin?> TryCutPagesAsync(
+        PendingSegment segment, DetectionContext context, CancellationToken cancellationToken)
+    {
+        if (segment.FirstPage is not { } first || segment.LastPage is not { } last || context.SourceFile is not { } source
+            || FindPageCopier(source) is not { } copier)
+        {
+            return null;
+        }
+
+        byte[] bytes;
+        try
+        {
+            await using var stream = await _blobContainer.GetAsync(source.BlobName, cancellationToken);
+            bytes = await copier.CopyPagesAsync(stream, first, last, cancellationToken);
+        }
+        catch (InvalidDataException ex)
+        {
+            Logger.LogWarning(ex,
+                "Pages {FirstPage}-{LastPage} of source {SourceId} could not be cut; segment {SegmentId} is spawned from its slice.",
+                first, last, context.SourceDocumentId, segment.SegmentId);
+            return null;
+        }
+
+        var blobName = segment.SegmentId.ToString("N") + Path.GetExtension(source.BlobName);
+        await _blobContainer.SaveAsync(blobName, bytes, overrideExisting: true, cancellationToken);
+
+        return new FileOrigin(
+            blobName,
+            source.UploadedByUserName,
+            source.ContentType,
+            ContentHasher.Sha256Hex(bytes),
+            bytes.Length,
+            originalFileName: PageRangeFileName(source.OriginalFileName, first, last));
+    }
+
+    /// <summary><c>bundle.pdf</c> → <c>bundle (p3-5).pdf</c>, or <c>(p3)</c> for one page.</summary>
+    protected static string PageRangeFileName(string? sourceFileName, int first, int last)
+    {
+        var name = string.IsNullOrWhiteSpace(sourceFileName) ? "document.pdf" : sourceFileName;
+        var pages = first == last ? $"p{first}" : $"p{first}-{last}";
+        return $"{Path.GetFileNameWithoutExtension(name)} ({pages}){Path.GetExtension(name)}";
+    }
+
+    /// <summary>
+    /// The spawn did not claim the segment. Its cut is removed unless the segment was spawned after all (by a concurrent
+    /// run, which wrote the same blob name and now references it).
+    /// </summary>
+    private async Task DeleteUnusedCutAsync(PendingSegment segment, string blobName)
+    {
+        DocumentSegment? current;
+        using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
+        {
+            current = await _segmentRepository.FindAsync(segment.SegmentId);
+            await uow.CompleteAsync();
+        }
+
+        if (current is not { Status: DocumentSegmentStatus.Spawned })
+        {
+            await _blobContainer.DeleteAsync(blobName);
+        }
+    }
+
+    private ParsePageCopier? FindPageCopier(FileOrigin file)
+        => _pageCopiers.FirstOrDefault(copier => copier.CanCopy(
+            Path.GetExtension(file.OriginalFileName ?? file.BlobName).ToLowerInvariant(), file.ContentType));
 
     /// <summary>
     /// Kind-aware stale guard (#371), run inside the spawn UoW (opens none of its own): a
@@ -698,23 +878,23 @@ public class DocumentSegmentationJob
         string Markdown,
         bool IsContainer,
         bool AlreadySegmented,
-        SubDocumentDetectionContext Detection);
+        SubDocumentDetectionContext Detection,
+        FileOrigin? SourceFile = null);
 
     /// <summary>A standalone span prepared for persistence: its content key, clean slice text, and the kind taken
     /// from its opening boundary (an <c>*[Image OCR]*</c> marker line opens a <see cref="DocumentSegmentKind.Figure"/>
     /// span, prose opens a <see cref="DocumentSegmentKind.Text"/> one).</summary>
-    private sealed record PreparedSegment(string Key, string CleanText, DocumentSegmentKind Kind);
+    private sealed record PreparedSegment(string Key, string CleanText, DocumentSegmentKind Kind, int? FirstPage, int? LastPage);
 
     /// <summary>Detached snapshot of one still-Pending segment, carried across the per-segment external + UoW phases.
     /// Carries no slice text: the spawn path keys off <see cref="SegmentKey"/>, and the derived document's Markdown
     /// is seeded by <c>DocumentParseBackgroundJob</c> reading the segment's <c>SliceText</c> column fresh from the DB.
-    /// Every spawn carries a null FileOrigin regardless of <see cref="Kind"/> — a derived sub-document has no file
-    /// of its own.
+    /// A segment with pages spawns with a file of its own (those pages); every other one with a null FileOrigin.
     /// #485: dropped the write-only <c>Ordinal</c> field (projected in <see cref="LoadPendingSegmentsAsync"/> but
     /// never read back off this record) — the reading-order sort there uses the source entity's own
     /// <c>Ordinal</c> column before the projection, so carrying a copy onto this snapshot served no purpose.</summary>
     protected sealed record PendingSegment(
-        Guid SegmentId, string SegmentKey, DocumentSegmentKind Kind);
+        Guid SegmentId, string SegmentKey, DocumentSegmentKind Kind, int? FirstPage = null, int? LastPage = null);
 }
 
 [BackgroundJobName("VaultExtract.DocumentSegmentation")]

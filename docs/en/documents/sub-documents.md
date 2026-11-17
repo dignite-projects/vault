@@ -22,11 +22,19 @@ A sub-document is never itself treated as a container, so splitting does not rec
 
 ## What a Sub-Document Is
 
-- Its **Markdown** is its slice of the parent's Markdown. A transcribed embedded document stays in the parent's Markdown too.
-- It has **no file of its own** (`FileOrigin` is null). To show the source, follow `OriginDocumentId` to the parent and use the parent's file; `GET .../documents/{id}/blob` on a sub-document fails with `Extract:DocumentNoSourceBlob`.
-- It inherits the parent's **owner** (uploader), but not its cabinet.
-- It goes through the normal pipeline: `DocumentUploadedEto` (with `FileName = null`, `FileSize = 0`), text extraction from the slice, classification, field extraction, and its own `DocumentReadyEto` carrying `OriginDocumentId`.
-- It does not notify its uploader; the parent does. See [Operator Notifications](../egress/operator-notifications.md).
+A sub-document is one of two shapes, depending on whether its part can be cut out of the parent's file by page.
+
+**A part on pages of its own** (the usual case for a PDF bundle): its pages are cut out of the parent's PDF into a **file of its own**, named after the parent and the pages (`bundle (p2-3).pdf`). It is then a document like any uploaded one: `GET .../documents/{id}/blob` downloads its pages only, it has its own [layout](../egress/rest-api.md#the-layout) (the parent's parse of those pages, numbered from 1), its Markdown is rendered from those pages, and its field values carry their place on the page. Its pages are read from the parent's parse, so a scanned bundle is not OCR'd a second time.
+
+A page belongs to the part that holds at least 80% of its text, and a part is cut by page when it owns a run of consecutive pages that hold at least 80% of its own text. So a stamp or running-header line above a document's title, which the split may leave with the previous part, does not cost either part its pages; the line goes with the page.
+
+**Any other part** — two documents sharing a page, a transcribed embedded document, a bundle that is not a PDF or was parsed before layouts were kept — has **no file of its own** (`FileOrigin` is null), and its **Markdown** is its slice of the parent's Markdown. To show its source, follow `OriginDocumentId` to the parent and use the parent's file; `GET .../documents/{id}/blob` fails with `Extract:DocumentNoSourceBlob`, and it has no layout. A transcribed embedded document stays in the parent's Markdown too.
+
+Either way it:
+
+- Inherits the parent's **owner** (uploader), but not its cabinet.
+- Goes through the normal pipeline: `DocumentUploadedEto` (with its own file's name and size, or `FileName = null` and `FileSize = 0` without one), text extraction, classification, field extraction, and its own `DocumentReadyEto` carrying `OriginDocumentId`.
+- Does not notify its uploader; the parent does. See [Operator Notifications](../egress/operator-notifications.md).
 
 `DocumentDto` and the document list carry `OriginDocumentId` and `IsContainer`. To list the sub-documents of a document, filter the list by `OriginDocumentId` (REST and the MCP search tool both accept it).
 
@@ -46,7 +54,7 @@ A withdrawn sub-document cannot be restored (`Extract:DocumentRestoreSuperseded`
 
 | Operation | Rule | Error |
 | --- | --- | --- |
-| Re-parse a sub-document | Not possible; re-parse the parent | `Extract:DocumentReparseSubDocument` |
+| Re-parse a sub-document | Not possible, even with a file of its own; re-parse the parent, which splits again | `Extract:DocumentReparseSubDocument` |
 | Correct a container's Markdown | Not possible; its parts are derived from it | `Extract:CannotCorrectContainerMarkdown` |
 
 ### Deleting and Restoring
@@ -54,7 +62,7 @@ A withdrawn sub-document cannot be restored (`Extract:DocumentRestoreSuperseded`
 | Operation | Rule | Error |
 | --- | --- | --- |
 | Delete a parent | Refused while any sub-document is live | `Extract:DocumentHasSubDocuments` |
-| Permanently delete a parent | Refused while any sub-document exists, recycle bin included, because it would delete the only file they can point to | `Extract:DocumentHasSubDocumentsPermanentDelete` |
+| Permanently delete a parent | Refused while any sub-document exists, recycle bin included, because it would delete the only file a sub-document without its own can point to | `Extract:DocumentHasSubDocumentsPermanentDelete` |
 | Restore a sub-document | Refused when a live sibling already covers the same part, or the part is no longer in the parent's split | `Extract:DocumentRestoreConflict`, `Extract:DocumentRestoreSuperseded` |
 
 Delete the sub-documents first, then the parent. Neither operation cascades.
