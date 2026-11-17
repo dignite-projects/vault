@@ -8,9 +8,22 @@
     <h6 class="mb-0 ms-2 text-truncate" style="max-width: 60vw;" [title]="fileName()">
       <i class="fas fa-file me-1"></i>{{ fileName() }}
     </h6>
+    @if (isPdf() && fileBlob.blobUrl()) {
+      <button
+        type="button"
+        class="btn btn-sm ms-auto"
+        [class.btn-primary]="showLayout()"
+        [class.btn-outline-secondary]="!showLayout()"
+        [attr.aria-pressed]="showLayout()"
+        (click)="showLayout.set(!showLayout())"
+      >
+        <i class="fas fa-vector-square me-1"></i>{{ 'VaultExtract::Document:ShowLayout' | abpLocalization }}
+      </button>
+    }
     @if (fileBlob.blobUrl()) {
       <a
-        class="btn btn-outline-primary btn-sm ms-auto"
+        class="btn btn-outline-primary btn-sm"
+        [class.ms-auto]="!isPdf()"
         [href]="fileBlob.blobUrl()"
         [download]="fileName()"
         target="_blank"
@@ -47,6 +60,8 @@
         style="max-height: 85vh; object-fit: contain;"
       />
     </div>
+  } @else if (isPdf() && showLayout() && fileBlob.blobUrl()) {
+    <lib-document-layout-viewer [documentId]="documentId" [fileUrl]="fileBlob.blobUrl()!" />
   } @else if (isPdf() && fileBlob.safeResourceUrl()) {
     <iframe
       [src]="fileBlob.safeResourceUrl()"

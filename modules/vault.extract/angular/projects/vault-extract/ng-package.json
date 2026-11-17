@@ -10,6 +10,7 @@
     "@abp/ng.permission-management",
     "@abp/ng.theme.shared",
     "marked",
+    "pdfjs-dist",
     "@dignite/ng.flex-fields",
     "@dignite/ng.flex-fields-ckeditor"
   ]

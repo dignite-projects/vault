@@ -14,6 +14,7 @@ import { LocalizationPipe } from '@abp/ng.core';
 import { DocumentDto, DocumentService } from '@dignite/ng.vault-extract';
 import { DocumentFileBlobService } from '../../shared/document-file-blob.service';
 import { isImageContentType, isPdfContentType } from '../../shared/content-type';
+import { DocumentLayoutViewerComponent } from '../document-layout-viewer/document-layout-viewer.component';
 
 // File preview page (route documents/:id/file). Replaces the old detail-page openFile() blob new-tab
 // shortcut with a readable /vault-extract/documents/{id}/file URL that includes the document ID. The file content is
@@ -22,7 +23,7 @@ import { isImageContentType, isPdfContentType } from '../../shared/content-type'
 @Component({
   selector: 'lib-document-file-preview',
   templateUrl: './document-file-preview.component.html',
-  imports: [CommonModule, LocalizationPipe],
+  imports: [CommonModule, LocalizationPipe, DocumentLayoutViewerComponent],
   providers: [DocumentFileBlobService],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -35,9 +36,11 @@ export class DocumentFilePreviewComponent implements OnInit {
 
   document = signal<DocumentDto | null>(null);
   isLoading = signal(true);
+  /** A PDF shows its parse's layout drawn over its pages instead of the browser's own viewer. */
+  showLayout = signal(false);
   hasError = signal(false);
 
-  private documentId!: string;
+  protected documentId!: string;
 
   readonly fileName = computed(
     () => this.document()?.fileOrigin?.originalFileName || this.document()?.title || '',

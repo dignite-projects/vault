@@ -10,11 +10,13 @@ export class FieldDraftSuggestionService {
   apiName = 'Default';
   
 
+  
   draft = (input: DraftFieldDefinitionInput, cancellationToken: any, config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldDefinitionDraftDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/field-draft-suggestion/draft',
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }

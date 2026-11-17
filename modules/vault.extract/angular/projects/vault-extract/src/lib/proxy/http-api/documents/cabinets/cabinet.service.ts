@@ -10,36 +10,43 @@ export class CabinetService {
   apiName = 'Default';
   
 
+  
   create = (input: CreateCabinetDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, CabinetDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/cabinets',
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   delete = (id: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
       method: 'DELETE',
       url: `/api/vault-extract/cabinets/${id}`,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   getList = (config?: Partial<Rest.Config>) =>
     this.restService.request<any, CabinetDto[]>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/cabinets',
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   update = (id: string, input: UpdateCabinetDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, CabinetDto>({
       method: 'PUT',
+      headers: { Accept: 'application/json' },
       url: `/api/vault-extract/cabinets/${id}`,
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }

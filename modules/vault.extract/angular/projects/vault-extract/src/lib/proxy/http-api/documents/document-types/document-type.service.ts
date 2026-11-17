@@ -11,61 +11,74 @@ export class DocumentTypeService {
   apiName = 'Default';
   
 
+  
   create = (input: CreateDocumentTypeDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, DocumentTypeDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/document-types',
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   delete = (id: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
       method: 'DELETE',
       url: `/api/vault-extract/document-types/${id}`,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   getDeleted = (config?: Partial<Rest.Config>) =>
     this.restService.request<any, DocumentTypeDto[]>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/document-types/deleted',
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   getDuplicateScopePreview = (id: string, duplicateScope: DuplicateDetectionScope, config?: Partial<Rest.Config>) =>
     this.restService.request<any, DuplicateScopePreviewDto>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: `/api/vault-extract/document-types/${id}/duplicate-scope-preview`,
       params: { duplicateScope },
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   getVisible = (config?: Partial<Rest.Config>) =>
     this.restService.request<any, DocumentTypeDto[]>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/document-types',
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   restore = (id: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, DocumentTypeDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: `/api/vault-extract/document-types/${id}/restore`,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   update = (id: string, input: UpdateDocumentTypeDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, DocumentTypeDto>({
       method: 'PUT',
+      headers: { Accept: 'application/json' },
       url: `/api/vault-extract/document-types/${id}`,
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }

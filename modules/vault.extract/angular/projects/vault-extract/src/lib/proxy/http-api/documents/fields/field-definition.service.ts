@@ -10,53 +10,64 @@ export class FieldDefinitionService {
   apiName = 'Default';
   
 
+  
   create = (input: CreateFieldDefinitionDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldDefinitionDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/field-definitions',
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   delete = (id: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
       method: 'DELETE',
       url: `/api/vault-extract/field-definitions/${id}`,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   getFieldTypes = (config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldTypeDto[]>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/field-definitions/field-types',
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   getList = (input: GetFieldDefinitionListInput, config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldDefinitionDto[]>({
       method: 'GET',
+      headers: { Accept: 'application/json' },
       url: '/api/vault-extract/field-definitions',
       params: { documentTypeId: input.documentTypeId, onlyDeleted: input.onlyDeleted },
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   restore = (id: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldDefinitionDto>({
       method: 'POST',
+      headers: { Accept: 'application/json' },
       url: `/api/vault-extract/field-definitions/${id}/restore`,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
   
 
+  
   update = (id: string, input: UpdateFieldDefinitionDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, FieldDefinitionDto>({
       method: 'PUT',
+      headers: { Accept: 'application/json' },
       url: `/api/vault-extract/field-definitions/${id}`,
       body: input,
     },
-    { apiName: this.apiName,...config });
+      { apiName: this.apiName,...config });
 }

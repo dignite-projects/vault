@@ -16,6 +16,7 @@
     "@dignite/ng.flex-fields": "10.7.6",
     "@dignite/ng.flex-fields-ckeditor": "10.7.6",
     "marked": "^18.0.0",
+    "pdfjs-dist": "^6.5.438",
     "tslib": "^2.1.0"
   },
   "peerDependencies": {
