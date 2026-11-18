@@ -128,6 +128,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             var readPages = new List<(PageFrame Page, PdfTableContinuation.Page Blocks)>(pages.Count);
             var imageBudget = _options.MaxImagesPerPdf;
             var droppedByCap = 0;
+            var oversized = 0;
             var undecodable = 0;
             var truncatedOcr = 0;
             var failedFigureOcr = 0;
@@ -250,6 +251,16 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                         continue;
                     }
 
+                    if (IsTooLarge(image))
+                    {
+                        // Decoding it could take gigabytes, whatever its stream weighs.
+                        Logger.LogWarning(
+                            "Skipping an embedded PDF image of {Width}x{Height} samples on page {Page}: over the pixel cap.",
+                            image.WidthInSamples, image.HeightInSamples, pageContent.Frame.Number);
+                        oversized++;
+                        continue;
+                    }
+
                     (byte[] Bytes, string ContentType)? payload;
                     try
                     {
@@ -362,7 +373,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             // that could drift when a new counter is added).
             var incompleteReason = BuildIncompleteReason(
                 failedPages, pagesWithSkippedImages, droppedByCap, undecodable, truncatedOcr, failedFigureOcr,
-                latticeDroppedFragments, failedPageOcr, truncatedPageOcr, pagesOverOcrCap);
+                latticeDroppedFragments, failedPageOcr, truncatedPageOcr, pagesOverOcrCap, oversized);
             var complete = incompleteReason is null;
             if (!complete)
             {
@@ -378,6 +389,13 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     {
         var pixels = (long)image.WidthInSamples * image.HeightInSamples;
         return pixels < _options.MinImagePixels;
+    }
+
+    /// <summary>Whether an embedded image is over the <see cref="PdfExtractorOptions.MaxImagePixels"/> cap, read from its dictionary before decoding.</summary>
+    protected virtual bool IsTooLarge(IPdfImage image)
+    {
+        var pixels = (long)image.WidthInSamples * image.HeightInSamples;
+        return pixels > _options.MaxImagePixels;
     }
 
     /// <summary>
@@ -575,7 +593,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     /// </summary>
     internal static string? BuildIncompleteReason(
         int failedPages, int pagesWithSkippedImages, int droppedByCap, int undecodable, int truncatedOcr, int failedFigureOcr,
-        int latticeDroppedFragments, int failedPageOcr = 0, int truncatedPageOcr = 0, int pagesOverOcrCap = 0)
+        int latticeDroppedFragments, int failedPageOcr = 0, int truncatedPageOcr = 0, int pagesOverOcrCap = 0, int oversized = 0)
     {
         var parts = new List<string>();
         if (failedPages > 0)
@@ -606,6 +624,11 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
         if (undecodable > 0)
         {
             parts.Add($"{undecodable} embedded image(s) could not be decoded to a supported image format");
+        }
+
+        if (oversized > 0)
+        {
+            parts.Add($"{oversized} embedded image(s) were skipped for a decoded size over the pixel cap");
         }
 
         if (failedFigureOcr > 0)

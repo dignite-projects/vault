@@ -8,7 +8,7 @@ namespace Dignite.Vault.Parse.Pdf;
 /// Joins a table that a page break cut in two: when a page ends with a table and the next page starts with one of the
 /// same columns, the second is the first's continuation and its rows are appended to it. The rules follow RAGFlow's
 /// cross-page table merge (<c>internal/deepdoc/parser/pdf/table/table_merge.go</c>, Apache-2.0): consecutive pages,
-/// overlapping horizontally, a header that agrees (here: not a different row that reads as a header, since no header is detected), a repeated header dropped, columns mapped by position. Where RAGFlow
+/// overlapping horizontally, a header that agrees (here read from the rows, see <see cref="HasHeader"/>), a repeated header dropped, columns mapped by position. Where RAGFlow
 /// measures the gap to the page edges, this reads the page's blocks: the table must be the last thing on its page and
 /// the continuation the first on the next (running headers and footers are already removed).
 /// </summary>
@@ -62,16 +62,45 @@ internal static class PdfTableContinuation
             return false;
         }
 
-        // RAGFlow keeps tables apart whose detected headers disagree. Nothing here detects a header, so a first row
-        // counts as one when it reads like one: two or more labels and no number. Two such rows that differ are two
-        // tables; a continuation opening on data, or on the header repeated, joins.
-        var header = RowText(table.Table, 0);
-        var opening = RowText(next.Table, 0);
-        return !(ReadsAsHeader(header) && ReadsAsHeader(opening) && !header.SequenceEqual(opening));
+        // RAGFlow keeps tables apart whose detected headers disagree. Two tables that each open on a header, and not the
+        // same one, are two tables; a continuation opening on data, or on the header repeated, joins. Where no header can
+        // be told from the rows (a table of text only), it joins: a table cut by a page break is the common case.
+        return !(HasHeader(table.Table) && HasHeader(next.Table) && !RowText(table.Table, 0).SequenceEqual(RowText(next.Table, 0)));
     }
 
-    private static bool ReadsAsHeader(IReadOnlyList<string> row)
-        => row.Count(text => text.Length > 0) >= 2 && !row.Any(text => text.Any(char.IsDigit));
+    /// <summary>
+    /// Whether <paramref name="table"/> opens on a header, decided as Python's <c>csv.Sniffer.has_header</c> decides it
+    /// (CPython <c>Lib/csv.py</c>, PSF-2.0): a header differs from the rows under it. Each column whose cells below the
+    /// first row (up to twenty) agree on a kind, all numbers or all text of one length, votes: a first cell of another
+    /// kind for a header, one of the same kind against. A column whose cells disagree, or a table without rows under the
+    /// first, does not vote, and a tie is no header. So a row of text over rows of text of varying length is not a
+    /// header: nothing tells it from the data under it.
+    /// </summary>
+    private static bool HasHeader(PdfTable table)
+    {
+        var rows = Enumerable.Range(0, Math.Min(table.RowCount, SniffedRows + 1)).Select(row => RowText(table, row)).ToList();
+        var votes = 0;
+        for (var column = 0; column < table.ColumnCount; column++)
+        {
+            var first = rows[0][column];
+            var kinds = rows.Skip(1).Select(row => row[column]).Where(text => text.Length > 0).Select(KindOf).Distinct().ToList();
+            if (first.Length == 0 || kinds.Count != 1)
+            {
+                continue;
+            }
+
+            votes += KindOf(first) == kinds[0] ? -1 : 1;
+        }
+
+        return votes > 0;
+    }
+
+    /// <summary>How many rows under the first <see cref="HasHeader"/> reads, as <c>csv.Sniffer</c> does.</summary>
+    private const int SniffedRows = 20;
+
+    /// <summary>A cell's kind: a number (any text with a digit: an amount, a date, a code) or text of its length.</summary>
+    private static (bool Number, int Length) KindOf(string text)
+        => text.Any(char.IsDigit) ? (true, 0) : (false, text.Length);
 
     /// <summary>
     /// <paramref name="table"/> with the rows of <paramref name="next"/> (found on page <paramref name="pageNumber"/>)

@@ -22,6 +22,15 @@ public class PdfExtractorOptions
     public int MinImagePixels { get; set; } = 64 * 64;
 
     /// <summary>
+    /// Maximum pixel count (<c>WidthInSamples * HeightInSamples</c>) for an embedded image to be decoded. A raster's
+    /// decoded size does not follow its stream: a bitmap of one colour compresses a thousandfold, so a small file can
+    /// declare an image that takes gigabytes to decode. A larger image is skipped before decoding and the result marked
+    /// incomplete. The default is Pillow's decompression-bomb limit (<c>Image.MAX_IMAGE_PIXELS</c>, about 89.5
+    /// megapixels, a quarter gigabyte as 24-bit colour), above an A3 page scanned at 400 dpi.
+    /// </summary>
+    public long MaxImagePixels { get; set; } = 89_478_485;
+
+    /// <summary>
     /// Whether to skip the full-page scan background of a searchable / "sandwich" PDF (#309). Such PDFs
     /// store, per page, the full-page scan raster plus an (often invisible) OCR text layer over it; without
     /// this guard the raster is re-OCR'd as a figure, duplicating the already-extracted text and burning a
