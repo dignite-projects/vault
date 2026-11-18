@@ -148,6 +148,21 @@ public class PdfPageOcr_Tests
     [InlineData("The quick brown fox jumps over the lazy dog again", false)] // lowercase runs
     [InlineData("請求書 株式会社サンプル商事 御中 下記のとおり", false)]          // CJK runs
     [InlineData("INV 2026 1120 TOTAL 473000 TAX 43000 DUE 20261231", false)] // a digit-dense line is content
+    [InlineData("INVOICE BILL TO SHIP TO DESCRIPTION QUANTITY UNIT PRICE AMOUNT", false)] // a form in capitals
     public void Judges_scan_noise(string text, bool noise)
         => PdfPageText.IsScanNoise(text).ShouldBe(noise);
+
+    [Fact]
+    public void A_table_of_contents_with_dot_leaders_is_not_a_broken_font()
+    {
+        const string font = "ABCDEF+Arial";
+        var toc = string.Concat(Enumerable.Repeat("Introduction..................1\nScope.........................2\n", 3));
+
+        PdfPageText.IsBrokenFontEncoding(toc.Where(c => !char.IsWhiteSpace(c)).Select(c => (c.ToString(), (string?)font)).ToList())
+            .ShouldBeFalse();
+
+        // Punctuation that is not laid out in runs still reads as a font mapped to the wrong codes.
+        PdfPageText.IsBrokenFontEncoding("!#%&()*+,-./:;<=>?@[]^_{|}~a!#%&()*+,-./".Select(c => (c.ToString(), (string?)font)).ToList())
+            .ShouldBeTrue();
+    }
 }

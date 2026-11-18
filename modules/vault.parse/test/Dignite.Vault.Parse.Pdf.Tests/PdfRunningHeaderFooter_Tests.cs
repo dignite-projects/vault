@@ -67,6 +67,26 @@ public class PdfRunningHeaderFooter_Tests
     }
 
     [Fact]
+    public async Task Keeps_lines_whose_numbers_change_from_page_to_page_unlike_a_page_number()
+    {
+        // Every page ends with a subtotal and starts with a ledger row: the same template on every page, but the
+        // numbers are the page's data, not its number. Only the page-number footer goes.
+        var pdf = PdfFixtures.BuildMultiPage(new[]
+        {
+            Page("2026/01/05 10,000 250,000", "- 1 -", "Ledger page one", "Subtotal 12,345"),
+            Page("2026/02/11 7,500 180,000", "- 2 -", "Ledger page two", "Subtotal 9,870"),
+            Page("2026/03/02 3,200 95,000", "- 3 -", "Ledger page three", "Subtotal 41,002")
+        });
+
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "ledger.pdf", "application/pdf");
+
+        result.Markdown.ShouldContain("2026/02/11 7,500 180,000");
+        result.Markdown.ShouldContain("Subtotal 12,345");
+        result.Markdown.ShouldContain("Subtotal 41,002");
+        result.Markdown.ShouldNotContain("- 2 -");
+    }
+
+    [Fact]
     public async Task Preserves_a_non_repeating_signature_and_total_at_the_page_bottom()
     {
         // The critical safety case: a signature block and a total sit in the FOOTER band of the last page but

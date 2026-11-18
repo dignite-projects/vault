@@ -17,7 +17,9 @@ namespace Dignite.Vault.Parse.Pdf;
 /// header / footer band). A candidate is dropped only when its <b>digit-normalized</b> text
 /// (so "第 1 页" / "第 2 页" collapse to one template, and "Page 1 of 10" matches "Page 2 of 10")
 /// repeats in the <b>same band</b> across at least <see cref="MinRepeatPageFraction"/> of the pages
-/// (floor <see cref="MinRepeatPageCount"/>). This is deliberately <b>not</b> "delete anything in the
+/// (floor <see cref="MinRepeatPageCount"/>), and its numbers behave like chrome: the same on every page, or a page
+/// number, which grows with the page (<see cref="NumbersAreChrome"/>). A subtotal or a ledger row in the band has the
+/// same template on every page but numbers of its own, and stays. This is deliberately <b>not</b> "delete anything in the
 /// margin band": a per-page signature block / seal / total / footnote sits in the band on a single page,
 /// never repeats, and is therefore preserved — honouring the PdfPig stack's non-lossy discipline
 /// (cf. <see cref="PdfExtractor.IsFullPageScanBackground"/> erring toward keeping).
@@ -101,12 +103,12 @@ internal static class PdfRunningHeaderFooter
 
                 if (isTop)
                 {
-                    Register(candidates, pagesByKey, page, TopBand, normalized, lines[i].Words);
+                    Register(candidates, pagesByKey, page, TopBand, normalized, lines[i].Text, lines[i].Words);
                 }
 
                 if (isBottom)
                 {
-                    Register(candidates, pagesByKey, page, BottomBand, normalized, lines[i].Words);
+                    Register(candidates, pagesByKey, page, BottomBand, normalized, lines[i].Text, lines[i].Words);
                 }
             }
         }
@@ -115,6 +117,7 @@ internal static class PdfRunningHeaderFooter
         var runningKeys = pagesByKey
             .Where(kv => kv.Value.Count >= threshold)
             .Select(kv => kv.Key)
+            .Where(key => NumbersAreChrome(candidates.Where(c => c.Key == key).ToList()))
             .ToHashSet();
 
         if (runningKeys.Count == 0)
@@ -157,10 +160,11 @@ internal static class PdfRunningHeaderFooter
         int page,
         char band,
         string normalized,
+        string text,
         IReadOnlyList<Word> words)
     {
         var key = band + normalized;
-        candidates.Add(new Candidate(page, key, words));
+        candidates.Add(new Candidate(page, key, text, words));
         if (!pagesByKey.TryGetValue(key, out var pages))
         {
             pages = new HashSet<int>();
@@ -182,7 +186,55 @@ internal static class PdfRunningHeaderFooter
         return normalized.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Whether the numbers of one template's lines are chrome's: each number either the same on every page (a date in a
+    /// header, the "10" of "of 10") or a page number, its value minus the page's index the same on every page (so it
+    /// may start anywhere and skip a page). A number that changes otherwise is the page's own data.
+    /// </summary>
+    private static bool NumbersAreChrome(IReadOnlyList<Candidate> lines)
+    {
+        var numbers = lines.Select(line => DigitRun.Matches(line.Text).Select(m => Value(m.Value)).ToList()).ToList();
+        var count = numbers[0].Count;
+        if (numbers.Any(n => n.Count != count))
+        {
+            return false;
+        }
+
+        for (var run = 0; run < count; run++)
+        {
+            var values = numbers.Select(n => n[run]).ToList();
+            if (values.Distinct().Count() == 1)
+            {
+                continue;
+            }
+
+            if (values.Any(v => v is null) || lines.Select((line, i) => values[i] - line.Page).Distinct().Count() != 1)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>The value of a run of ASCII or full-width digits; null when it is too long to be a page number.</summary>
+    private static long? Value(string digits)
+    {
+        if (digits.Length > 9)
+        {
+            return null;
+        }
+
+        long value = 0;
+        foreach (var c in digits)
+        {
+            value = value * 10 + (c >= '0' && c <= '9' ? c - '0' : c - '０');
+        }
+
+        return value;
+    }
+
     private static readonly IReadOnlySet<Word> EmptyWordSet = new HashSet<Word>();
 
-    private readonly record struct Candidate(int Page, string Key, IReadOnlyList<Word> Words);
+    private readonly record struct Candidate(int Page, string Key, string Text, IReadOnlyList<Word> Words);
 }

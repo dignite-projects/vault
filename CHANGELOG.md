@@ -385,6 +385,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **PDF reading (from the refactor review).**
+  - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is
+    taken, outside the per-page guard. The page is dropped and the document marked incomplete.
+  - A line repeated at the page edge is dropped as a running header or footer only when its numbers are the same on
+    every page or a page number. Per-page subtotals and ledger rows at the top or bottom of each page were dropped.
+  - An HTML table cell keeps text its entities encode as angle brackets (`p &lt; 0.05`): tags are removed before the
+    entities are decoded.
+  - A table that starts the next page under a different header row is a table of its own, not the previous one's
+    continuation.
+  - A page in capitals or a table of contents with dot leaders is no longer taken for a garbled text layer and sent
+    to OCR.
 - **Index chunking and pages (from the refactor review).**
   - With the by-page template, pages that arrive after the first indexing (a re-parse rendering the same Markdown)
     now re-chunk the document; before, it stayed chunked by headings.

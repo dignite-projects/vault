@@ -217,8 +217,9 @@ public static partial class MarkdownDocumentReader
                     }
                 }
 
-                var text = WebUtility.HtmlDecode(BreakTag().Replace(td.InnerHtml, "\n").Trim());
-                anchors.Add((rowIndex, column, rowSpan, columnSpan, HtmlTag().Replace(text, string.Empty).Trim(), td.Name == "th"));
+                // Tags out first, entities decoded after: a decoded "&lt; 0.05, n &gt;" would otherwise read as a tag.
+                var text = WebUtility.HtmlDecode(HtmlTag().Replace(BreakTag().Replace(td.InnerHtml, "\n"), string.Empty)).Trim();
+                anchors.Add((rowIndex, column, rowSpan, columnSpan, text, td.Name == "th"));
                 column += columnSpan;
             }
 
