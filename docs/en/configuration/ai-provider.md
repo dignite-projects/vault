@@ -182,6 +182,9 @@ The host calls the rerank API that Cohere introduced and Jina, SiliconFlow and v
 | `VectorWeight` | `1` | The vector leg's weight |
 | `RerankCandidateCount` | `30` | Fused candidates the reranker reads (at most 100) |
 | `MinRerankScore` | unset | After a rerank, the lowest score a hit may have; below it a hit is dropped, so a question nothing answers returns no hits. Unset keeps every hit. No effect without a reranker |
+| `QueryEmbeddingTimeout` | `00:00:10` | How long a search waits for its query's embedding. Past it, or when the embedding model fails, the search answers from the keyword leg alone with `vectorSearchFailed: true` |
+
+The query is embedded by the index embedding model, through the HTTP client ingestion uses: its retries are sized for a throttled bulk run and its circuit breaker opens for every caller when ingestion reaches the provider's limit. `QueryEmbeddingTimeout` keeps a search from waiting on that; a search whose caller hangs up stops with it.
 
 Keep the weights equal. Down-weighting the keyword leg helped paraphrased questions on the evaluation set without a reranker, but at a keyword weight of 0.5 or less a chunk only the keyword leg finds ranks below every vector candidate. That is how an invoice number or a name gets lost in a large corpus. A reranker fixes the paraphrase case without that cost.
 

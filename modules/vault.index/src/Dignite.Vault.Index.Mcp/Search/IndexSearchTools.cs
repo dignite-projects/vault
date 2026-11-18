@@ -40,6 +40,8 @@ public sealed class IndexSearchTools
         + "document's sections. When textTruncated is true the hit shows only the start of its chunk. "
         + "When the hits were reranked, rerankScore is each hit's relevance to the query from 0 to 1: a best hit far "
         + "below 0.1 usually means no document answers the question, so say that rather than answer from it. "
+        + "When vectorSearchFailed is true, semantic search was unavailable this time and the hits only share words with "
+        + "the query: try the document's own wording before concluding that nothing answers. "
         + "Returns evidence, never an answer: cite the document, heading path and pages of what you use. "
         + UntrustedText)]
     public static async Task<IndexSearchToolResult> SearchAsync(
@@ -95,7 +97,8 @@ public sealed class IndexSearchTools
                 VectorRank = h.VectorRank,
                 RerankScore = h.RerankScore
             }).ToList(),
-            Reranked = result.Reranked
+            Reranked = result.Reranked,
+            VectorSearchFailed = result.VectorSearchFailed
         };
     }
 
@@ -247,6 +250,9 @@ public sealed record IndexSearchToolResult
 
     /// <summary>A rerank model ordered the hits.</summary>
     public bool Reranked { get; init; }
+
+    /// <summary>The query could not be embedded, so the hits come from the keyword leg alone.</summary>
+    public bool VectorSearchFailed { get; init; }
 }
 
 public sealed record IndexSearchToolHit

@@ -74,12 +74,20 @@ public sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embeddi
     /// <summary>Runs inside the model call, where an index job spends its time: the place a concurrent event lands.</summary>
     public Func<Task>? DuringGenerate { get; set; }
 
+    /// <summary>How long each call takes, cancellable as a real model call is: a slow or throttled model.</summary>
+    public TimeSpan? Delay { get; set; }
+
     public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
         IEnumerable<string> values,
         EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         Calls++;
+        if (Delay is { } delay)
+        {
+            await Task.Delay(delay, cancellationToken);
+        }
+
         if (DuringGenerate is { } during)
         {
             DuringGenerate = null;

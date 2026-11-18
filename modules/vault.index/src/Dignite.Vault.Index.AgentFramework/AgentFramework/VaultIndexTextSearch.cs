@@ -8,6 +8,7 @@ using Dignite.Vault.Index.Search;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Volo.Abp.DependencyInjection;
+using Volo.Abp.Threading;
 
 namespace Dignite.Vault.Index.AgentFramework;
 
@@ -55,11 +56,16 @@ public class VaultIndexTextSearch : ITransientDependency
 
     private readonly IIndexSearchAppService _searchAppService;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ICancellationTokenProvider _cancellationTokenProvider;
 
-    public VaultIndexTextSearch(IIndexSearchAppService searchAppService, ILoggerFactory loggerFactory)
+    public VaultIndexTextSearch(
+        IIndexSearchAppService searchAppService,
+        ILoggerFactory loggerFactory,
+        ICancellationTokenProvider cancellationTokenProvider)
     {
         _searchAppService = searchAppService;
         _loggerFactory = loggerFactory;
+        _cancellationTokenProvider = cancellationTokenProvider;
     }
 
     /// <summary>
@@ -100,12 +106,19 @@ public class VaultIndexTextSearch : ITransientDependency
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var result = await _searchAppService.SearchAsync(new IndexSearchInput
+
+        // The search reads its token from the provider, in process and through the HTTP client proxies alike: a run that
+        // is cancelled stops the search with it.
+        IndexSearchResultDto result;
+        using (_cancellationTokenProvider.Use(cancellationToken))
         {
-            Query = query,
-            DocumentTypeCode = options?.DocumentTypeCode,
-            MaxResultCount = options?.MaxResultCount
-        });
+            result = await _searchAppService.SearchAsync(new IndexSearchInput
+            {
+                Query = query,
+                DocumentTypeCode = options?.DocumentTypeCode,
+                MaxResultCount = options?.MaxResultCount
+            });
+        }
 
         IEnumerable<IndexSearchHitDto> hits = result.Hits;
         if (result.Reranked && options?.MinRerankScore is { } floor)

@@ -69,6 +69,8 @@ A disabled chunk stays disabled across a rebuild as long as its text is unchange
 - its rank in the keyword leg with the full-text score, and in the vector leg with the cosine distance (smaller is nearer);
 - the rerank score, for the candidates the reranker read.
 
+With `Vault:IndexSearch:MinRerankScore` set, the page shows the floor and still lists every candidate: the ones under it, which search drops, are marked and come last. When the query could not be embedded, the page says so and shows the keyword leg alone, as search would answer.
+
 The table can be ordered by any of these, which answers most "why is this passage not found" questions: whether a leg found it at all, and where fusion or the reranker put it. The leg weights, the candidates per leg, whether to rerank and how many candidates to rerank can be changed for one run; empty boxes take the host's values (`Vault:IndexSearch`), and nothing is saved. A run that reranks calls the rerank model, like a search.
 
 ## Index Profiles
@@ -81,7 +83,7 @@ The table can be ordered by any of these, which answers most "why is this passag
 | By tokens | A fixed token count with overlap, ignoring headings. Chunks carry no heading path, so a hit cites only the document | Text without headings |
 | Whole document | The document as one chunk while it fits the chunk size, so a question about two parts of it (the customer at the top of an invoice, the bank account at the bottom) finds both in one hit; a longer document is chunked by headings at the same size. The chunk carries no heading path | Invoices, receipts, quotes and other short documents |
 | By table row | Every data row of a table as its own chunk, holding the heading path, the header row and the row; a row with no text is skipped and a table with no data row stays with the text. A row longer than the chunk size is still one chunk. Everything else is chunked by headings. A spreadsheet of more than `MaxChunksPerDocument` rows (5,000) fails to index | Price lists, ledgers, rosters, spreadsheets |
-| By page | Every page of the document's file as a chunk, cut where the page's text starts in the Markdown (a table the parse joined across a page break stays whole on the page it starts on); a page larger than the chunk size is chunked by headings. Pages that arrive later (a re-parse) re-chunk the document. A document without pages (no layout, or Markdown corrected after the parse) is chunked by headings. Page chunks carry no heading path | Slides, forms, catalogues |
+| By page | Every page of the document's file as a chunk, cut where the page's text starts in the Markdown (a table the parse joined across a page break stays whole on the page it starts on); a page larger than the chunk size is chunked by headings. Pages that arrive later (a re-parse) re-chunk the document; pages that could not be read this time leave its chunks as they were cut. A document without pages (no layout, or Markdown corrected after the parse) is chunked by headings. Page chunks carry no heading path | Slides, forms, catalogues |
 
 The last three are RAGFlow's `one`, `table` and `presentation` chunk methods. A document outline is built from heading paths, so a type chunked whole or by page has an outline only where a chunk was split by headings.
 

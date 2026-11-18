@@ -296,6 +296,32 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task By_page_pages_that_cannot_be_read_this_time_leave_the_chunks_as_they_were_cut()
+    {
+        await WithUnitOfWorkAsync(() => Repo<IndexProfile>().InsertAsync(
+            new IndexProfile(Guid.NewGuid(), null, TypeA, ChunkingStrategy.Page, 400, 0)));
+        var dto = Dto(Contract, TypeA);
+        dto.Pages = [new() { PageNumber = 1, Spans = [new() { Offset = 0, Length = Contract.Length }] }];
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        var byPage = (await ChunksAsync()).Select(c => c.Id).ToList();
+        var calls = _model.Calls;
+
+        // Same text, but Extract could not read the layout this time (it fails open with no pages): not a change.
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        _model.Calls.ShouldBe(calls);
+        (await ChunksAsync()).Select(c => c.Id).ShouldBe(byPage);
+        (await ChunksAsync()).ShouldAllBe(c => c.FirstPage == 1);
+
+        // And the pages that come back cut where they did: still nothing to redo.
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T3);
+        _model.Calls.ShouldBe(calls);
+    }
+
+    [Fact]
     public async Task A_reclassification_moves_the_read_scope_facts_and_ends_the_withhold()
     {
         ExtractReturns(Contract, TypeA);

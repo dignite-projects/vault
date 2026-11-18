@@ -78,10 +78,12 @@ export interface IndexSearchInput {
 export interface IndexSearchResultDto {
   hits?: IndexSearchHitDto[];
   reranked?: boolean;
+  vectorSearchFailed?: boolean;
 }
 
 export interface IndexSearchTestCandidateDto {
   rank?: number;
+  belowScoreFloor?: boolean;
   fusedRank?: number;
   fusedScore?: number;
   keywordRank?: number | null;
@@ -120,6 +122,8 @@ export interface IndexSearchTestResultDto {
   rerankAvailable?: boolean;
   reranked?: boolean;
   rerankModelId?: string | null;
+  minRerankScore?: number | null;
+  vectorSearchFailed?: boolean;
   keywordCandidateCount?: number;
   vectorCandidateCount?: number;
   keywordMilliseconds?: number;

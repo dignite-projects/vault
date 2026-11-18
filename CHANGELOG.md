@@ -420,7 +420,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A table row is no longer placed on the next table's pages when that table repeats the same header.
   - Placing chunks no longer scans to the end of the document for every line; the search stops at its reach.
   - A sync that cannot read the layout this time (Extract fails open) keeps the chunks' pages instead of clearing them.
+    With the by-page template it also keeps the chunks: they were re-chunked by headings and re-embedded, and stayed so
+    until the document's next event. Where the chunks were cut by page is now stored apart from the text's hash
+    (`IndexedDocument.PageCutsHash`).
   - A zero-width space in a document's own text no longer keeps its line from being placed.
+- **Index search (from the refactor review).**
+  - A search no longer fails, or waits minutes, on the embedding model. The query is embedded through the HTTP client
+    ingestion uses, whose retries are sized for a throttled bulk run and whose circuit breaker opens for every caller
+    when a backfill reaches the provider's limit. Past `Vault:IndexSearch:QueryEmbeddingTimeout` (10 seconds), or when
+    the model fails, the search answers from the keyword leg alone and says so: `vectorSearchFailed` on the REST
+    result, the MCP search tool and the retrieval test. A search whose caller hangs up, or whose Agent Framework run is
+    cancelled, now stops with it.
+  - With `MinRerankScore` set, the retrieval test lists every candidate again, marks the ones search drops and shows
+    the floor. It showed only the hits above it, so the floor could not be measured where the docs say to measure it.
+  - Reading on from a chunk steps over a disabled chunk. `nextPointer` was `null` before one, as at the document's end.
 
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
   (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every
@@ -558,6 +571,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Index chunk pages.** The Index migration `ChunkPages` adds two nullable columns to `VaultIndexChunks`. Chunks
   indexed before it have no pages until their document is synced again. The next event for the document places them
   without re-chunking or re-embedding; **Rebuild** on the index status page does it at once, re-embedding the document.
+
+- **Index page cuts.** The Index migration `IndexedDocumentPageCuts` adds the nullable `PageCutsHash` to
+  `VaultIndexedDocuments`. A document of a by-page profile indexed before it is chunked and embedded once more on its
+  next sync, since the text hash no longer includes the pages.
 
 - **Background job names.** Jobs queued before the upgrade carry the old names, and the new host abandons them. Let
   the queue drain first, or rename them in the `Default` database before starting the new host:

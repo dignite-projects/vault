@@ -183,6 +183,11 @@
             {{ 'VaultIndex::SearchTest:NotReranked' | abpLocalization }}
           }
         </span>
+        @if (r.minRerankScore !== null && r.minRerankScore !== undefined) {
+          <span>
+            {{ 'VaultIndex::SearchTest:ScoreFloor' | abpLocalization: (r.minRerankScore | number: '1.0-4') ?? '' : '' + belowFloorCount() }}
+          </span>
+        }
         <span class="text-muted">
           {{ 'VaultIndex::SearchTest:Timings' | abpLocalization: '' + r.keywordMilliseconds : '' + r.vectorMilliseconds : '' + r.rerankMilliseconds }}
         </span>
@@ -198,6 +203,12 @@
         </select>
       </div>
 
+      @if (r.vectorSearchFailed) {
+        <div class="alert alert-warning small rounded-0 mb-0 py-2" role="status">
+          <i class="fas fa-triangle-exclamation me-2"></i>{{ 'VaultIndex::SearchTest:VectorSearchFailed' | abpLocalization }}
+        </div>
+      }
+
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0 small">
           <thead>
@@ -212,8 +223,13 @@
           </thead>
           <tbody>
             @for (c of candidates(); track c.chunkId) {
-              <tr>
-                <td class="text-end fw-semibold">{{ c.rank }}</td>
+              <tr [class.opacity-50]="c.belowScoreFloor">
+                <td class="text-end fw-semibold">
+                  {{ c.rank }}
+                  @if (c.belowScoreFloor) {
+                    <div><span class="badge text-bg-secondary fw-normal">{{ 'VaultIndex::SearchTest:BelowFloor' | abpLocalization }}</span></div>
+                  }
+                </td>
                 <td class="text-end">
                   {{ c.fusedRank }}
                   <div class="text-muted">{{ c.fusedScore | number: '1.4-4' }}</div>

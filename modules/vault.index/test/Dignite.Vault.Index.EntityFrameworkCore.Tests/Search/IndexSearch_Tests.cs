@@ -1,14 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Extract.Documents.Integration;
+using Dignite.Vault.Index.Chunks;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Ingestion;
 using Dignite.Vault.Index.Permissions;
 using Dignite.Vault.Index.Profiles;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
@@ -345,6 +350,51 @@ public class IndexSearch_Tests : VaultIndexTestBase<VaultIndexIngestionTestModul
     public async Task Nothing_indexed_finds_nothing()
     {
         (await _search.SearchAsync(new IndexSearchInput { Query = "賃料" })).Hits.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_query_the_model_cannot_embed_is_answered_by_the_keyword_leg()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "賃貸借契約書");
+        _model.FailWith = new HttpRequestException("Too Many Requests", null, HttpStatusCode.TooManyRequests);
+
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        result.VectorSearchFailed.ShouldBeTrue();
+        result.Hits.ShouldHaveSingleItem().HeadingPath.ShouldBe("# 賃貸借契約書 ## 第2条（賃料）");
+        result.Hits.ShouldAllBe(h => h.KeywordRank != null && h.VectorRank == null);
+    }
+
+    [Fact]
+    public async Task A_query_embedding_slower_than_its_timeout_is_given_up()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "賃貸借契約書");
+        GetRequiredService<IOptions<VaultIndexSearchOptions>>().Value.QueryEmbeddingTimeout = TimeSpan.FromMilliseconds(100);
+        _model.Delay = TimeSpan.FromMinutes(5);
+
+        var watch = Stopwatch.StartNew();
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+        result.VectorSearchFailed.ShouldBeTrue();
+        result.Hits.ShouldHaveSingleItem().KeywordRank.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_disabled_chunk_is_stepped_over_when_reading_on()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "賃貸借契約書");
+        var chunks = await WithUnitOfWorkAsync(async () =>
+            (await GetRequiredService<IRepository<Chunk, Guid>>().GetListAsync(c => c.DocumentId == LeaseDoc)).OrderBy(c => c.Ordinal).ToList());
+        chunks.Count.ShouldBe(3);
+        await GetRequiredService<IIndexChunkAppService>().DisableAsync(chunks[1].Id);
+
+        var first = await _search.ReadAsync(new IndexReadInput { Pointer = IndexPointer.ForChunk(chunks[0].Id).ToString() });
+        var last = await _search.ReadAsync(new IndexReadInput { Pointer = IndexPointer.ForChunk(chunks[2].Id).ToString() });
+
+        first.NextPointer.ShouldBe(IndexPointer.ForChunk(chunks[2].Id).ToString());
+        last.PreviousPointer.ShouldBe(IndexPointer.ForChunk(chunks[0].Id).ToString());
+        last.NextPointer.ShouldBeNull();
     }
 
     private async Task<List<Guid>> DocumentsFoundAsync(string query, string? typeCode = null, List<DocumentFieldFilter>? fieldFilters = null)

@@ -68,6 +68,13 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     public virtual string? ContentHash { get; protected set; }
 
     /// <summary>
+    /// SHA-256 of where the current chunks were cut by page (<c>ChunkingStrategy.Page</c>, from the document's pages);
+    /// <c>null</c> when they were not cut by page. Apart from <see cref="ContentHash"/>, so that pages which arrive or
+    /// move re-chunk the same text, and pages which could not be read this time leave the chunks as they are.
+    /// </summary>
+    public virtual string? PageCutsHash { get; protected set; }
+
+    /// <summary>
     /// The effective chunking settings the current chunks were built with (<c>ResolvedIndexProfile.Stamp</c>). Not a
     /// profile id or version: switching a type from its own profile to the layer default changes nothing if the
     /// settings are the same, and must not re-chunk.
@@ -178,10 +185,12 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         string? title,
         string? language,
         DateTime now,
-        bool clearLifecycleMarks)
+        bool clearLifecycleMarks,
+        string? pageCutsHash = null)
     {
         ContentHash = Check.NotNullOrWhiteSpace(contentHash, nameof(contentHash));
         ProfileStamp = Check.NotNullOrWhiteSpace(profileStamp, nameof(profileStamp));
+        PageCutsHash = pageCutsHash;
         GenerationId = generationId;
         ChunkCount = Check.Range(chunkCount, nameof(chunkCount), 0, int.MaxValue);
         DocumentTypeId = documentTypeId;

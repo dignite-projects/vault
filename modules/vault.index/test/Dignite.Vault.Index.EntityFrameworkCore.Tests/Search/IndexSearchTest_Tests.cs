@@ -8,6 +8,7 @@ using Dignite.Vault.Extract.Documents.Integration;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Ingestion;
 using Dignite.Vault.Index.Permissions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.Authorization;
@@ -92,6 +93,28 @@ public class IndexSearchTest_Tests : VaultIndexTestBase<VaultIndexRerankTestModu
         rent.KeywordScore.ShouldNotBeNull();
         test.Candidates.ShouldAllBe(c => c.VectorRank != null && c.VectorDistance != null && c.DocumentTypeCode == "lease");
         rent.DocumentTitle.ShouldBe("賃貸借契約書（本店）");
+    }
+
+    [Fact]
+    public async Task Under_a_score_floor_every_candidate_is_shown_and_the_ones_search_drops_are_marked()
+    {
+        await IndexAsync();
+        GetRequiredService<IOptions<VaultIndexSearchOptions>>().Value.MinRerankScore = 0.5;
+        _reranker.Prefer = "目的";
+
+        var test = await _test.RunAsync(new IndexSearchTestInput { Query = "賃料" });
+        var search = await _search.SearchAsync(new IndexSearchInput { Query = "賃料", MaxResultCount = IndexSearchConsts.MaxResultCount });
+
+        test.MinRerankScore.ShouldBe(0.5);
+        test.Candidates.Count.ShouldBe(3);
+        test.Candidates.Select(c => c.BelowScoreFloor).ShouldBe([false, true, true]);
+        test.Candidates.Where(c => !c.BelowScoreFloor).Select(c => c.Pointer).ShouldBe(search.Hits.Select(h => h.Pointer));
+        search.Hits.ShouldHaveSingleItem().HeadingPath.ShouldBe("# 賃貸借契約書 ## 第1条（目的）");
+
+        // Without a rerank the floor has nothing to judge, and the run says none applied.
+        var unranked = await _test.RunAsync(new IndexSearchTestInput { Query = "賃料", Rerank = false });
+        unranked.MinRerankScore.ShouldBeNull();
+        unranked.Candidates.ShouldAllBe(c => !c.BelowScoreFloor);
     }
 
     [Fact]

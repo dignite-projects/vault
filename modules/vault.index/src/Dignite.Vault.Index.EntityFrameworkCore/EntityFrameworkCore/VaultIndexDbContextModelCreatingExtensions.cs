@@ -43,6 +43,7 @@ public static class VaultIndexDbContextModelCreatingExtensions
             // The id is Extract's document id, assigned by the caller, never generated here.
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ContentHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
+            b.Property(x => x.PageCutsHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
             b.Property(x => x.ProfileStamp).HasMaxLength(IndexingConsts.MaxProfileStampLength);
             b.Property(x => x.Title).HasMaxLength(IndexingConsts.MaxTitleLength);
             b.Property(x => x.Language).HasMaxLength(IndexingConsts.MaxLanguageLength);

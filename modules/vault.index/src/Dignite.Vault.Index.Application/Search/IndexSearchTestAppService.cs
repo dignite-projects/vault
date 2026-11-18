@@ -69,19 +69,24 @@ public class IndexSearchTestAppService : VaultIndexAppService, IIndexSearchTestA
 
         result.Reranked = outcome.Reranked;
         result.RerankModelId = outcome.RerankModelId;
+        result.MinRerankScore = outcome.ScoreFloor;
+        result.VectorSearchFailed = outcome.VectorSearchFailed;
         result.KeywordCandidateCount = outcome.KeywordMatches.Count;
         result.VectorCandidateCount = outcome.VectorMatches.Count;
         result.KeywordMilliseconds = (long)outcome.KeywordTime.TotalMilliseconds;
         result.VectorMilliseconds = (long)outcome.VectorTime.TotalMilliseconds;
         result.RerankMilliseconds = (long)outcome.RerankTime.TotalMilliseconds;
 
-        foreach (var (candidate, rerankScore) in outcome.Ranked)
+        // Every candidate, those under the floor too: the page is where an operator sees what a floor would turn away.
+        foreach (var ranked in outcome.Ranked)
         {
+            var (candidate, rerankScore) = ranked;
             var chunk = outcome.Chunks[candidate.ChunkId];
             var text = TextTruncator.AtCharBoundary(chunk.Text, IndexSearchConsts.MaxTestTextLength);
             result.Candidates.Add(new IndexSearchTestCandidateDto
             {
                 Rank = result.Candidates.Count + 1,
+                BelowScoreFloor = !outcome.Passes(ranked),
                 FusedRank = fusedRanks[candidate.ChunkId],
                 FusedScore = candidate.Score,
                 KeywordRank = candidate.KeywordRank,
