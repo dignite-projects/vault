@@ -129,17 +129,14 @@ public class VisionLlmImageDownscalerTests
     [Fact]
     public void An_image_declaring_more_pixels_than_the_input_cap_is_refused_from_its_header()
     {
-        // 400 megapixels in a PNG of a few hundred kilobytes; PNG has no reduced-size decode, so shrinking it would
-        // decode all of it.
-        var bomb = DecompressionBomb.Png(20_000, 20_000);
+        // Ten billion pixels, 40 GB decoded, and PNG has no reduced-size decode: had the size been checked after
+        // decoding, the allocation would fail and this would throw instead of answering TooLarge.
+        var bomb = DecompressionBomb.HeaderOnlyPng(100_000, 100_000);
 
-        var peak = DecompressionBomb.PeakWorkingSet();
         var result = VisionLlmImageDownscaler.Downscale(bomb, Budget);
-        var growth = DecompressionBomb.PeakWorkingSet() - peak;
 
-        growth.ShouldBeLessThan(128L * 1024 * 1024);
         result.Status.ShouldBe(ImageDownscaleStatus.TooLarge);
-        (result.OriginalWidth, result.OriginalHeight).ShouldBe((20_000, 20_000));
+        (result.OriginalWidth, result.OriginalHeight).ShouldBe((100_000, 100_000));
         result.Data.ShouldBeNull();
     }
 

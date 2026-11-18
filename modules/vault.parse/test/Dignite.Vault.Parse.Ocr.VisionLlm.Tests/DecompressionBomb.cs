@@ -1,6 +1,5 @@
 using System;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -8,33 +7,31 @@ using System.Text;
 namespace Dignite.Vault.Parse.Ocr.VisionLlm;
 
 /// <summary>
-/// An image whose decoded size has nothing to do with its file: a PNG of one grey level compresses about a
-/// thousandfold, so a few hundred kilobytes can declare hundreds of megapixels.
+/// An image whose decoded size has nothing to do with its file: the header declares the size, and decoding allocates
+/// it before reading a pixel.
 /// </summary>
 internal static class DecompressionBomb
 {
     /// <summary>
-    /// An 8-bit greyscale PNG of <paramref name="width"/> × <paramref name="height"/> black pixels: 20,000 × 20,000 is
-    /// 389 KB.
+    /// A PNG whose header declares <paramref name="width"/> × <paramref name="height"/> RGB pixels, with pixel data for
+    /// one row only. SkiaSharp reads the header (libpng accepts up to 1,000,000 a side) and decodes RGB to four bytes a
+    /// pixel, so 100,000 × 100,000 is a file of under a kilobyte that would take 40 GB to decode. No machine running the
+    /// tests allocates that: code that decodes before checking the size fails, whatever ran before it in the process.
     /// </summary>
-    public static byte[] Png(int width, int height)
+    public static byte[] HeaderOnlyPng(int width, int height)
     {
         var pixels = new MemoryStream();
         using (var zlib = new ZLibStream(pixels, CompressionLevel.Optimal, leaveOpen: true))
         {
-            // Each row is a filter-type byte (0, none) followed by one byte a pixel.
-            var row = new byte[width + 1];
-            for (var y = 0; y < height; y++)
-            {
-                zlib.Write(row);
-            }
+            // One row: a filter-type byte (0, none) and three bytes a pixel.
+            zlib.Write(new byte[1 + 3 * width]);
         }
 
         var header = new byte[13];
         BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(0), width);
         BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
         header[8] = 8;  // bits per sample
-        header[9] = 0;  // greyscale
+        header[9] = 2;  // RGB
         // compression, filter and interlace methods: 0
 
         var png = new MemoryStream();
@@ -43,16 +40,6 @@ internal static class DecompressionBomb
         WriteChunk(png, "IDAT", pixels.ToArray());
         WriteChunk(png, "IEND", Array.Empty<byte>());
         return png.ToArray();
-    }
-
-    /// <summary>
-    /// The most memory this process has had resident so far. A decoder allocates its bitmap natively, outside the
-    /// managed heap, so <see cref="GC.GetAllocatedBytesForCurrentThread"/> does not see it; the resident peak does.
-    /// </summary>
-    public static long PeakWorkingSet()
-    {
-        using var process = Process.GetCurrentProcess();
-        return process.PeakWorkingSet64;
     }
 
     private static void WriteChunk(Stream png, string type, byte[] data)
@@ -70,7 +57,7 @@ internal static class DecompressionBomb
         png.Write(number);
     }
 
-    // PNG's CRC (ISO 3309, polynomial 0xEDB88320), bit by bit: the chunks here are a few hundred kilobytes at most.
+    // PNG's CRC (ISO 3309, polynomial 0xEDB88320), bit by bit: the chunks here are a few hundred bytes.
     private static uint Crc32(uint crc, byte[] data)
     {
         foreach (var b in data)
