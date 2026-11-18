@@ -273,7 +273,10 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var profile = await _profileResolver.ResolveAsync(document.DocumentTypeId);
         profile = profile with { Enrichment = _enricherProvider.Effective(profile.Enrichment) };
         var text = _chunker.Prepare(document.Markdown);
-        var contentHash = Sha256(text);
+        // By page, the chunks follow the pages too: a layout that arrives (or moves) re-chunks the same text.
+        var contentHash = profile.Strategy == ChunkingStrategy.Page && document.Pages is { Count: > 0 }
+            ? Sha256(text + "\npages:" + string.Join(',', IndexChunker.PageStarts(document.Markdown, document.Pages)))
+            : Sha256(text);
         var modelId = _embedder.GetModelId();
         var current = await _generationManager.FindTargetAsync(modelId);
 
@@ -447,12 +450,16 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             }
 
             // Same text, but the pages may be new: a re-parse that rendered the same Markdown, or chunks indexed before
-            // pages were placed.
-            existing ??= (await _chunkRepository.GetListAsync(c => c.DocumentId == document.Id)).OrderBy(c => c.Ordinal).ToList();
-            var moved = PlaceOnPages(document, existing);
-            if (moved.Count > 0)
+            // pages were placed. With no pages at all the text still matches its layout, so they could not be read this
+            // time (Extract fails open): the chunks keep the pages they have.
+            if (document.Pages is { Count: > 0 })
             {
-                await _chunkRepository.UpdateManyAsync(moved);
+                existing ??= (await _chunkRepository.GetListAsync(c => c.DocumentId == document.Id)).OrderBy(c => c.Ordinal).ToList();
+                var moved = PlaceOnPages(document, existing);
+                if (moved.Count > 0)
+                {
+                    await _chunkRepository.UpdateManyAsync(moved);
+                }
             }
         }
 

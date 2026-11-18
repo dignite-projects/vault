@@ -65,6 +65,21 @@ public sealed class NormalizedMarkdown
     public int IndexOf(string key, int from = 0)
         => key.Length == 0 || from >= Text.Length ? -1 : Text.IndexOf(key, Math.Max(from, 0), StringComparison.Ordinal);
 
+    /// <summary>
+    /// The first occurrence of <paramref name="key"/> that starts at or after <paramref name="from"/> and lies within the
+    /// <paramref name="count"/> normalized characters from there; -1 when there is none. The search reads no further.
+    /// </summary>
+    public int IndexOf(string key, int from, int count)
+    {
+        from = Math.Max(from, 0);
+        if (key.Length == 0 || from >= Text.Length || count < key.Length)
+        {
+            return -1;
+        }
+
+        return Text.IndexOf(key, from, Math.Min(count, Text.Length - from), StringComparison.Ordinal);
+    }
+
     /// <summary>The original range covering normalized characters <paramref name="start"/> to <paramref name="end"/> (exclusive).</summary>
     public (int Offset, int Length) ToSource(int start, int end)
     {
@@ -104,7 +119,8 @@ public sealed class NormalizedMarkdown
             }
 
             var width = char.IsHighSurrogate(c) && i + 1 < source.Length && char.IsLowSurrogate(source[i + 1]) ? 2 : 1;
-            if (width == 1 && (char.IsWhiteSpace(c) || "|*_#>`\\~".Contains(c)))
+            // A zero-width space or a byte-order mark is invisible: re-rendered text (Index's chunks) drops it.
+            if (width == 1 && (char.IsWhiteSpace(c) || c == (char)0x200B || c == (char)0xFEFF || "|*_#>`\\~".Contains(c)))
             {
                 i++;
                 continue;

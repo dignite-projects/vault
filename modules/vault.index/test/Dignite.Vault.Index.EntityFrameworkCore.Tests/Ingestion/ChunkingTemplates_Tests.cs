@@ -104,6 +104,25 @@ public class ChunkingTemplates_Tests
     }
 
     [Fact]
+    public async Task Page_keeps_a_table_joined_across_a_page_break_whole_on_the_page_it_starts()
+    {
+        // A table the parse joined across the break, written as HTML for its merged cell: page 2's first text is a row
+        // inside it. Cutting there would leave rows no reader takes for a table.
+        const string markdown = "# 価格表\n\n<table><tr><th>区分</th><th>品名</th></tr><tr><td rowspan=\"2\">保守</td><td>定期点検</td></tr>"
+            + "<tr><td>障害対応</td></tr></table>\n\n注記：価格は税抜です。";
+        var row = markdown.IndexOf("<tr><td>障害対応", StringComparison.Ordinal);
+        var pages = new List<DocumentPageSpansDto> { Page(1, 0, row), Page(2, row, markdown.Length) };
+
+        var chunks = await _chunker.ChunkAsync(markdown, "doc", Profile(ChunkingStrategy.Page, 400), pages: pages);
+
+        chunks.ShouldNotContain(c => c.Text.Contains("<tr") || c.Text.Contains("<td"));
+        chunks[0].Text.ShouldContain("定期点検");
+        chunks[0].Text.ShouldContain("障害対応");
+        IndexChunker.PageStarts(markdown, pages).ShouldBe([0, markdown.IndexOf("</table>", StringComparison.Ordinal) + "</table>".Length]);
+        chunks[^1].Text.ShouldStartWith("注記");
+    }
+
+    [Fact]
     public async Task Page_without_pages_chunks_by_headings()
     {
         var page = await _chunker.ChunkAsync(Invoice, "doc", Profile(ChunkingStrategy.Page, 400));
