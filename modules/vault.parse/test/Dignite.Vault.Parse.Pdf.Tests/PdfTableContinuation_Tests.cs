@@ -62,6 +62,19 @@ public class PdfTableContinuation_Tests
     }
 
     [Fact]
+    public void Leaves_apart_a_table_that_starts_the_next_page_under_a_header_of_its_own()
+    {
+        // Same columns, back to back across the break, but the second opens with a different header: another table.
+        var first = new PdfTableContinuation.Page(1, [Table(["Item", "Price"], ["A", "1"])]);
+        var second = new PdfTableContinuation.Page(2, [Table(["Name", "Role"], ["Sato", "Lead"])]);
+
+        PdfTableContinuation.Join([first, second]);
+
+        Rows(first.Blocks[^1]).ShouldBe([["Item", "Price"], ["A", "1"]]);
+        Rows(second.Blocks.ShouldHaveSingleItem()).ShouldBe([["Name", "Role"], ["Sato", "Lead"]]);
+    }
+
+    [Fact]
     public void Leaves_tables_apart_when_something_comes_between_or_the_columns_differ()
     {
         var first = new PdfTableContinuation.Page(1, [Table(["Item", "Price"], ["A", "1"]), Paragraph("total")]);

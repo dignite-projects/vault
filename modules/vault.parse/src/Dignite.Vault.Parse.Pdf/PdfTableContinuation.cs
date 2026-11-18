@@ -8,7 +8,7 @@ namespace Dignite.Vault.Parse.Pdf;
 /// Joins a table that a page break cut in two: when a page ends with a table and the next page starts with one of the
 /// same columns, the second is the first's continuation and its rows are appended to it. The rules follow RAGFlow's
 /// cross-page table merge (<c>internal/deepdoc/parser/pdf/table/table_merge.go</c>, Apache-2.0): consecutive pages,
-/// overlapping horizontally, a header that agrees, a repeated header dropped, columns mapped by position. Where RAGFlow
+/// overlapping horizontally, a header that agrees (here: not a different row that reads as a header, since no header is detected), a repeated header dropped, columns mapped by position. Where RAGFlow
 /// measures the gap to the page edges, this reads the page's blocks: the table must be the last thing on its page and
 /// the continuation the first on the next (running headers and footers are already removed).
 /// </summary>
@@ -57,8 +57,21 @@ internal static class PdfTableContinuation
 
         var left = Math.Max(Math.Min(table.Bounds.Left, table.Bounds.Right), Math.Min(next.Bounds.Left, next.Bounds.Right));
         var right = Math.Min(Math.Max(table.Bounds.Left, table.Bounds.Right), Math.Max(next.Bounds.Left, next.Bounds.Right));
-        return right > left;
+        if (right <= left)
+        {
+            return false;
+        }
+
+        // RAGFlow keeps tables apart whose detected headers disagree. Nothing here detects a header, so a first row
+        // counts as one when it reads like one: two or more labels and no number. Two such rows that differ are two
+        // tables; a continuation opening on data, or on the header repeated, joins.
+        var header = RowText(table.Table, 0);
+        var opening = RowText(next.Table, 0);
+        return !(ReadsAsHeader(header) && ReadsAsHeader(opening) && !header.SequenceEqual(opening));
     }
+
+    private static bool ReadsAsHeader(IReadOnlyList<string> row)
+        => row.Count(text => text.Length > 0) >= 2 && !row.Any(text => text.Any(char.IsDigit));
 
     /// <summary>
     /// <paramref name="table"/> with the rows of <paramref name="next"/> (found on page <paramref name="pageNumber"/>)

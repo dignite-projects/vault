@@ -101,6 +101,14 @@ internal static partial class PdfPageText
     /// punctuation and has no CJK — what a CJK subset font with a broken ToUnicode map reads as.
     /// </summary>
     internal static bool IsBrokenFontEncoding(IReadOnlyList<Letter> letters)
+        => IsBrokenFontEncoding(letters.Select(letter => (letter.Value, letter.FontName)).ToList());
+
+    /// <summary>
+    /// The same over each glyph's text and font name, in content order. A run of three or more of one punctuation
+    /// character (the dot leaders of a table of contents, a rule of dashes or underscores) is layout, not text, and is
+    /// not counted.
+    /// </summary>
+    internal static bool IsBrokenFontEncoding(IReadOnlyList<(string Value, string? FontName)> letters)
     {
         var subset = letters.Count(letter => SubsetFontPrefix().IsMatch(letter.FontName ?? string.Empty));
         if (subset < letters.Count * SubsetFontRatio)
@@ -109,12 +117,37 @@ internal static partial class PdfPageText
         }
 
         var cjk = letters.Count(letter => letter.Value.Length > 0 && IsCjkLike(letter.Value[0]));
-        var punctuation = letters.Count(letter => letter.Value.Length > 0 && char.IsAscii(letter.Value[0]) && (char.IsPunctuation(letter.Value[0]) || char.IsSymbol(letter.Value[0])));
+        var punctuation = 0;
+        for (var i = 0; i < letters.Count; i++)
+        {
+            var value = letters[i].Value;
+            if (value.Length == 0 || !char.IsAscii(value[0]) || !(char.IsPunctuation(value[0]) || char.IsSymbol(value[0])))
+            {
+                continue;
+            }
+
+            var run = 1;
+            for (var j = i - 1; j >= 0 && letters[j].Value == value; j--)
+            {
+                run++;
+            }
+
+            for (var j = i + 1; j < letters.Count && letters[j].Value == value; j++)
+            {
+                run++;
+            }
+
+            if (run < 3)
+            {
+                punctuation++;
+            }
+        }
+
         return cjk < letters.Count * MaxCjkRatio && punctuation > letters.Count * MinPunctuationRatio;
     }
 
     /// <summary>
-    /// Scan noise: enough characters, few digits, and not one word-like run — four lowercase Latin letters in a row, two
+    /// Scan noise: enough characters, few digits, and not one word-like run — four Latin letters in a row, two
     /// CJK characters, or four non-ASCII letters.
     /// </summary>
     internal static bool IsScanNoise(string text)
@@ -136,7 +169,8 @@ internal static partial class PdfPageText
                 digits++;
             }
 
-            lower = char.IsLower(c) && char.IsAscii(c) ? lower + 1 : 0;
+            // Either case: a form, a cover or a title block in capitals reads as words too.
+            lower = char.IsAsciiLetter(c) ? lower + 1 : 0;
             cjk = IsCjkLike(c) && !IsFullwidthForm(c) ? cjk + 1 : 0;
             other = char.IsLetter(c) && !char.IsAscii(c) ? other + 1 : 0;
             if (lower >= 4 || cjk >= 2 || other >= 4)

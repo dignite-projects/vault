@@ -88,29 +88,32 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
         {
             var pages = new List<PageContent>();
             var failedPages = 0;
-            foreach (var page in document.GetPages())
+            for (var number = 1; number <= document.NumberOfPages; number++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                Page page;
                 List<Word> words;
                 try
                 {
+                    // PdfPig runs a page's content stream when the page is taken, so a corrupt stream or a font the
+                    // page's resources lack faults in GetPage, not when the document opens. The page is read by OCR
+                    // like a scanned one; without OCR it is skipped and the result marked incomplete rather than
+                    // failing the whole document (#268).
+                    page = document.GetPage(number);
                     words = page.GetWords().ToList();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    // PdfPig parses content streams lazily, so a corrupt page / malformed font faults here (on access),
-                    // not at Open. The page is read by OCR like a scanned one; without OCR it is skipped and the result
-                    // marked incomplete rather than failing the whole document (#268).
-                    Logger.LogWarning(ex, "Failed to parse the text layer of a PDF page; reading it by OCR.");
-                    pages.Add(new PageContent(page, Array.Empty<Word>(), PdfPageTextQuality.Missing, TextLayerFailed: true));
+                    Logger.LogWarning(ex, "Failed to parse the text layer of PDF page {PageNumber}; reading it by OCR.", number);
+                    pages.Add(new PageContent(null, new PageFrame(number, 0, 0), Array.Empty<Word>(), PdfPageTextQuality.Missing, TextLayerFailed: true));
                     continue;
                 }
 
                 // A page with no text, or text that does not say what the page shows (a broken font encoding, scan
                 // noise), is read by OCR instead.
                 var quality = PdfPageText.Judge(words);
-                pages.Add(new PageContent(page, words, quality));
+                pages.Add(new PageContent(page, new PageFrame(page.Number, page.Width, page.Height), words, quality));
             }
 
             // No usable text layer anywhere → a scanned / image-only (or wholly garbled) PDF. Return empty so the
@@ -122,7 +125,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             }
 
             var extracted = new ExtractionDocument(identifier).SetProvider(ProviderIdentifier);
-            var readPages = new List<(Page Page, PdfTableContinuation.Page Blocks)>(pages.Count);
+            var readPages = new List<(PageFrame Page, PdfTableContinuation.Page Blocks)>(pages.Count);
             var imageBudget = _options.MaxImagesPerPdf;
             var droppedByCap = 0;
             var undecodable = 0;
@@ -179,7 +182,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                         }
 
                         ocrPageBudget--;
-                        var read = await OcrPageAsync(document, pageContent.Page.Number, identifier, languageHints, cancellationToken);
+                        var read = await OcrPageAsync(document, pageContent.Frame.Number, identifier, languageHints, cancellationToken);
                         if (read is null)
                         {
                             failedPageOcr++;
@@ -194,9 +197,9 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                         var elements = read.Sections.SelectMany(section => section.Elements).ToList();
                         if (elements.Count > 0)
                         {
-                            readPages.Add((pageContent.Page, new PdfTableContinuation.Page(
-                                pageContent.Page.Number,
-                                [new PdfElementsBlock(new PdfRectangle(0, 0, pageContent.Page.Width, pageContent.Page.Height), elements)])));
+                            readPages.Add((pageContent.Frame, new PdfTableContinuation.Page(
+                                pageContent.Frame.Number,
+                                [new PdfElementsBlock(new PdfRectangle(0, 0, pageContent.Frame.Width, pageContent.Frame.Height), elements)])));
                         }
 
                         continue;
@@ -208,7 +211,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                 List<IPdfImage> images;
                 try
                 {
-                    images = pageContent.Page.GetImages().ToList();
+                    images = pageContent.Page!.GetImages().ToList();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -230,7 +233,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                         continue;
                     }
 
-                    if (IsFullPageScanBackground(pageContent.Page, image, pageContent.Words))
+                    if (IsFullPageScanBackground(pageContent.Page!, image, pageContent.Words))
                     {
                         // Searchable / "sandwich" PDF (#309): this image is the full-page scan raster and the
                         // page's text layer is its OCR transcription. Re-OCRing it would duplicate text already
@@ -307,7 +310,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                         // figure span — its transcription + page — travels in Document.Markdown (the markers stay in
                         // the egress); the unified sub-document detection pass routes it from there.
                         figures.Add(new PdfReadingOrder.Figure(
-                            image.BoundingBox, transcription, pageContent.Page.Number));
+                            image.BoundingBox, transcription, pageContent.Frame.Number));
                     }
                 }
 
@@ -326,7 +329,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                 try
                 {
                     // Only what is drawn: a clipping path (the text frame's clip rectangle, say) is not a rule.
-                    rulingBounds = pageContent.Page.Paths
+                    rulingBounds = pageContent.Page!.Paths
                         .Where(path => !path.IsClipping && (path.IsStroked || path.IsFilled))
                         .SelectMany(path => path)
                         .Select(subpath => subpath.GetBoundingRectangle())
@@ -346,7 +349,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                 latticeDroppedFragments += pageLatticeDropped;
                 if (pageBlocks.Count > 0)
                 {
-                    readPages.Add((pageContent.Page, new PdfTableContinuation.Page(pageContent.Page.Number, pageBlocks)));
+                    readPages.Add((pageContent.Frame, new PdfTableContinuation.Page(pageContent.Frame.Number, pageBlocks)));
                 }
             }
 
@@ -531,7 +534,7 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     /// referring to their region of the page in PdfPig's frame (points, origin bottom-left). A page a table's continuation
     /// filled has no section of its own; the table refers to it.
     /// </summary>
-    private static void AddPages(ExtractionDocument document, IReadOnlyList<(Page Page, PdfTableContinuation.Page Blocks)> pages)
+    private static void AddPages(ExtractionDocument document, IReadOnlyList<(PageFrame Page, PdfTableContinuation.Page Blocks)> pages)
     {
         var sources = new Dictionary<int, ExtractionDocumentSourcePage>();
         foreach (var (page, _) in pages)
@@ -629,7 +632,10 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     }
 
     private readonly record struct PageContent(
-        Page Page, IReadOnlyList<Word> Words, PdfPageTextQuality Quality, bool TextLayerFailed = false);
+        Page? Page, PageFrame Frame, IReadOnlyList<Word> Words, PdfPageTextQuality Quality, bool TextLayerFailed = false);
+
+    /// <summary>A page's number and size; zero size for a page PdfPig could not read.</summary>
+    private readonly record struct PageFrame(int Number, double Width, double Height);
 
     /// <summary>
     /// Page <paramref name="pageNumber"/> read by the OCR engine, as a one-page PDF (PdfPig copies the page), or
