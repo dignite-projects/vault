@@ -190,14 +190,15 @@ public class VisionLlmOcrClient : ParseOcrClient, ITransientDependency
     /// Shrinks an image that is over <see cref="VisionLlmOcrOptions.MaxImagePixels"/> before it is sent (#692):
     /// a large photo makes the vision model loop, and the repetition guard then discards the whole page.
     /// Fail-open — an image this step cannot read or resize is sent as it is, because a shrink problem must
-    /// never fail the OCR call.
+    /// never fail the OCR call. The one refusal is an image over <see cref="VisionLlmOcrOptions.MaxInputImagePixels"/>,
+    /// which throws <see cref="InvalidDataException"/> before anything is decoded.
     /// </summary>
     protected virtual (byte[] Bytes, string MediaType) PrepareImage(byte[] imageBytes, string mediaType)
     {
         ImageDownscaleResult result;
         try
         {
-            result = VisionLlmImageDownscaler.Downscale(imageBytes, _options.MaxImagePixels);
+            result = VisionLlmImageDownscaler.Downscale(imageBytes, _options.MaxImagePixels, _options.MaxInputImagePixels);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
@@ -222,6 +223,16 @@ public class VisionLlmOcrClient : ParseOcrClient, ITransientDependency
                     "VisionLlm OCR could not read a {MediaType} image of {Bytes} bytes to check its size; sending it as it is.",
                     mediaType, imageBytes.Length);
                 break;
+
+            case ImageDownscaleStatus.TooLarge:
+                // Refused from the header: decoding it to shrink it would take memory in proportion to the pixels it
+                // declares, not to its file (a decompression bomb). InvalidDataException, like the MaxPdfPages refusal:
+                // the size is a permanent property of this input under the current configuration, so a consumer's retry
+                // policy ends the run instead of retrying it. An engine that sent the image as a figure drops it.
+                throw new InvalidDataException(
+                    $"VisionLlm OCR: the image is {result.OriginalWidth}x{result.OriginalHeight} pixels, over the configured " +
+                    $"MaxInputImagePixels={_options.MaxInputImagePixels}. Shrinking it for the vision model means decoding it whole; " +
+                    "raise VisionLlmOcr:MaxInputImagePixels to read larger images.");
         }
 
         return (imageBytes, mediaType);

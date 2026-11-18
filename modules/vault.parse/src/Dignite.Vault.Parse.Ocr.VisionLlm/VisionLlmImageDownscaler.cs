@@ -12,7 +12,14 @@ public enum ImageDownscaleStatus
     Downscaled,
 
     /// <summary>Not an image SkiaSharp can read (HEIC, a corrupt file, ...): send it as it is.</summary>
-    Unreadable
+    Unreadable,
+
+    /// <summary>
+    /// Over the budget and declaring more pixels than the input cap: refused from its header, before anything is
+    /// decoded. <see cref="ImageDownscaleResult.OriginalWidth"/> and <see cref="ImageDownscaleResult.OriginalHeight"/>
+    /// give the declared size.
+    /// </summary>
+    TooLarge
 }
 
 /// <param name="Status">What happened to the image.</param>
@@ -46,17 +53,33 @@ public sealed record ImageDownscaleResult(
 /// according to its EXIF orientation, because the copy carries no EXIF and a photo taken sideways would
 /// otherwise reach the model on its side.
 /// </para>
+/// <para>
+/// Decoding takes memory in proportion to the pixel count the header declares, whatever the file weighs. So an image
+/// over <c>maxInputPixels</c> is refused from its header (Pillow checks <c>Image.MAX_IMAGE_PIXELS</c> when it opens an
+/// image, sharp <c>limitInputPixels</c>), and a JPEG or WebP is decoded straight at a reduced size (Pillow's
+/// <c>draft</c>, libvips' shrink-on-load); other formats decode at full size and are then resized.
+/// </para>
 /// </summary>
 public static class VisionLlmImageDownscaler
 {
     /// <summary>About 1.5 million pixels (1140 x 1315): a little under the largest size that read correctly.</summary>
     public const int DefaultMaxPixels = 1_500_000;
 
+    /// <summary>
+    /// Pillow's decompression-bomb limit (<c>Image.MAX_IMAGE_PIXELS</c>, about 89.5 megapixels, a quarter gigabyte as
+    /// 24-bit colour), the cap <c>PdfExtractorOptions.MaxImagePixels</c> also uses.
+    /// </summary>
+    public const long DefaultMaxInputPixels = 89_478_485;
+
     private const int JpegQuality = 90;
 
     /// <param name="data">The encoded image.</param>
     /// <param name="maxPixels">The most pixels (width times height) to send. Zero or less switches shrinking off.</param>
-    public static ImageDownscaleResult Downscale(ReadOnlyMemory<byte> data, int maxPixels)
+    /// <param name="maxInputPixels">
+    /// The most pixels an image over <paramref name="maxPixels"/> may declare to be decoded; a larger one is
+    /// <see cref="ImageDownscaleStatus.TooLarge"/>. Zero or less switches the cap off.
+    /// </param>
+    public static ImageDownscaleResult Downscale(ReadOnlyMemory<byte> data, int maxPixels, long maxInputPixels = DefaultMaxInputPixels)
     {
         if (maxPixels <= 0)
         {
@@ -81,15 +104,21 @@ public static class VisionLlmImageDownscaler
             return new ImageDownscaleResult(ImageDownscaleStatus.WithinBudget, seenWidth, seenHeight);
         }
 
-        using var source = SKBitmap.Decode(codec);
+        if (maxInputPixels > 0 && pixels > maxInputPixels)
+        {
+            return new ImageDownscaleResult(ImageDownscaleStatus.TooLarge, seenWidth, seenHeight);
+        }
+
+        var scale = Math.Sqrt((double)maxPixels / pixels);
+        var scaledWidth = Math.Max(1, (int)Math.Floor(codec.Info.Width * scale));
+        var scaledHeight = Math.Max(1, (int)Math.Floor(codec.Info.Height * scale));
+
+        using var source = Decode(codec, DecodeSize(codec, scale, scaledWidth, scaledHeight));
         if (source is null)
         {
             return new ImageDownscaleResult(ImageDownscaleStatus.Unreadable);
         }
 
-        var scale = Math.Sqrt((double)maxPixels / pixels);
-        var scaledWidth = Math.Max(1, (int)Math.Floor(source.Width * scale));
-        var scaledHeight = Math.Max(1, (int)Math.Floor(source.Height * scale));
         using var scaled = source.Resize(
             new SKImageInfo(scaledWidth, scaledHeight, source.ColorType, source.AlphaType),
             new SKSamplingOptions(SKCubicResampler.Mitchell));
@@ -113,6 +142,32 @@ public static class VisionLlmImageDownscaler
             asPng ? "image/png" : "image/jpeg",
             upright.Width,
             upright.Height);
+    }
+
+    /// <summary>
+    /// The size to decode <paramref name="codec"/> at: the smallest it can produce that is not below the target, so the
+    /// resize that follows only shrinks. libjpeg-turbo decodes a JPEG at k/8 of its size and Skia rounds a requested
+    /// scale to the nearest eighth, so the request is the eighth at or above <paramref name="scale"/>; a WebP decodes at
+    /// any size; every other codec answers with its full size.
+    /// </summary>
+    internal static SKSizeI DecodeSize(SKCodec codec, double scale, int targetWidth, int targetHeight)
+    {
+        var full = codec.Info.Size;
+        var size = codec.GetScaledDimensions((float)(Math.Ceiling(scale * 8) / 8));
+        return size.Width >= targetWidth && size.Height >= targetHeight && size.Width <= full.Width && size.Height <= full.Height
+            ? size
+            : full;
+    }
+
+    /// <summary>
+    /// Decodes <paramref name="codec"/> at <paramref name="size"/>, in the codec's colour type, with premultiplied alpha
+    /// and no colour space, as <see cref="SKBitmap.Decode(SKCodec)"/> does at full size.
+    /// </summary>
+    internal static SKBitmap? Decode(SKCodec codec, SKSizeI size)
+    {
+        var info = codec.Info;
+        var alphaType = info.AlphaType == SKAlphaType.Unpremul ? SKAlphaType.Premul : info.AlphaType;
+        return SKBitmap.Decode(codec, new SKImageInfo(size.Width, size.Height, info.ColorType, alphaType));
     }
 
     /// <summary>

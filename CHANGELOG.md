@@ -412,6 +412,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     declaring a 12,000 × 12,000 raster of one colour took 1 GB to read.
   - A page in capitals or a table of contents with dot leaders is no longer taken for a garbled text layer and sent
     to OCR.
+- **Vision-LLM OCR: images too large to decode.** An image the engine has to shrink is refused from its header when it
+  declares more pixels than `VisionLlmOcr:MaxInputImagePixels` (new, default 89,478,485, the limit PDF images use):
+  the engine throws `InvalidDataException`, so the parse run ends Failed without automatic retries, and a PDF or Office
+  figure is dropped with the document marked incomplete. A 389 KB PNG of one grey level declaring 20,000 × 20,000
+  pixels took 400 MB to shrink, and any user who can upload could send one. A JPEG or WebP is now decoded straight at
+  a reduced size instead of at full size, and a scanned PDF page that would be over the cap at 300 dpi (an A0 drawing
+  is 139 megapixels) is rendered at the resolution that fits it. See
+  [Vision-LLM OCR](docs/en/text-extraction/ocr-vision-llm.md#images-too-large-to-decode).
 - **Index chunking and pages (from the refactor review).**
   - With the by-page template, pages that arrive after the first indexing (a re-parse rendering the same Markdown)
     now re-chunk the document; before, it stayed chunked by headings.

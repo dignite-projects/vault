@@ -126,6 +126,81 @@ public class VisionLlmImageDownscalerTests
         VisionLlmImageDownscaler.Downscale(jpeg, budget).Status.ShouldBe(ImageDownscaleStatus.WithinBudget);
     }
 
+    [Fact]
+    public void An_image_declaring_more_pixels_than_the_input_cap_is_refused_from_its_header()
+    {
+        // 400 megapixels in a PNG of a few hundred kilobytes; PNG has no reduced-size decode, so shrinking it would
+        // decode all of it.
+        var bomb = DecompressionBomb.Png(20_000, 20_000);
+
+        var peak = DecompressionBomb.PeakWorkingSet();
+        var result = VisionLlmImageDownscaler.Downscale(bomb, Budget);
+        var growth = DecompressionBomb.PeakWorkingSet() - peak;
+
+        growth.ShouldBeLessThan(128L * 1024 * 1024);
+        result.Status.ShouldBe(ImageDownscaleStatus.TooLarge);
+        (result.OriginalWidth, result.OriginalHeight).ShouldBe((20_000, 20_000));
+        result.Data.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(5_999_999, ImageDownscaleStatus.TooLarge)]
+    [InlineData(6_000_000, ImageDownscaleStatus.Downscaled)]
+    [InlineData(0, ImageDownscaleStatus.Downscaled)]
+    [InlineData(-1, ImageDownscaleStatus.Downscaled)]
+    public void The_input_cap_counts_declared_pixels_and_zero_or_less_switches_it_off(long cap, ImageDownscaleStatus expected)
+    {
+        var jpeg = Encode(Solid(3000, 2000, SKColors.Gray), SKEncodedImageFormat.Jpeg);
+
+        VisionLlmImageDownscaler.Downscale(jpeg, Budget, cap).Status.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void An_image_within_the_budget_is_sent_whatever_the_input_cap()
+    {
+        var jpeg = Encode(Solid(1200, 1000, SKColors.Gray), SKEncodedImageFormat.Jpeg);
+
+        VisionLlmImageDownscaler.Downscale(jpeg, Budget, maxInputPixels: 1).Status.ShouldBe(ImageDownscaleStatus.WithinBudget);
+    }
+
+    [Theory]
+    [InlineData(0.25, 1000, 750)]   // exactly an eighth: decoded at that eighth
+    [InlineData(0.30, 1500, 1125)]  // between 2/8 and 3/8: the eighth above, never below the target
+    [InlineData(0.05, 500, 375)]    // under 1/8: the smallest libjpeg-turbo produces
+    public void A_jpeg_is_decoded_at_the_eighth_at_or_above_the_scale(double scale, int width, int height)
+    {
+        using var codec = Codec(Encode(Solid(4000, 3000, SKColors.Gray), SKEncodedImageFormat.Jpeg));
+        var target = ((int)Math.Floor(4000 * scale), (int)Math.Floor(3000 * scale));
+
+        var size = VisionLlmImageDownscaler.DecodeSize(codec, scale, target.Item1, target.Item2);
+        using var bitmap = VisionLlmImageDownscaler.Decode(codec, size);
+
+        (bitmap!.Width, bitmap.Height).ShouldBe((width, height));
+    }
+
+    [Fact]
+    public void A_webp_is_decoded_at_a_reduced_size()
+    {
+        using var codec = Codec(Encode(Solid(4000, 3000, SKColors.Gray), SKEncodedImageFormat.Webp));
+
+        var size = VisionLlmImageDownscaler.DecodeSize(codec, 0.25, 1000, 750);
+        using var bitmap = VisionLlmImageDownscaler.Decode(codec, size);
+
+        (bitmap!.Width, bitmap.Height).ShouldBe((1000, 750));
+    }
+
+    [Fact]
+    public void A_png_is_decoded_at_full_size()
+    {
+        using var codec = Codec(Encode(Solid(4000, 3000, SKColors.Gray), SKEncodedImageFormat.Png));
+
+        var size = VisionLlmImageDownscaler.DecodeSize(codec, 0.25, 1000, 750);
+
+        (size.Width, size.Height).ShouldBe((4000, 3000));
+    }
+
+    private static SKCodec Codec(byte[] encoded) => SKCodec.Create(new MemoryStream(encoded));
+
     private static bool IsRed(SKColor color) => color.Red > 180 && color.Blue < 80;
 
     private static bool IsBlue(SKColor color) => color.Blue > 180 && color.Red < 80;

@@ -83,4 +83,16 @@ public class VisionLlmOcrOptions
     /// loop that discards the whole page (#692). Zero or less sends images as they are.
     /// </summary>
     public int MaxImagePixels { get; set; } = VisionLlmImageDownscaler.DefaultMaxPixels;
+
+    /// <summary>
+    /// The most pixels (width times height) an image may declare for this engine to decode it. Shrinking an image
+    /// means decoding it, and a decoded bitmap's size follows its pixel count, not its file: a one-colour PNG of a few
+    /// hundred kilobytes can declare gigabytes. An image over this that would have to be shrunk is refused from its
+    /// header with an <see cref="System.IO.InvalidDataException"/>, which ends Vault Extract's parse run instead of
+    /// retrying it; a PDF or Office engine that sent it as an embedded figure drops the figure and marks the document
+    /// incomplete. A scanned PDF page is rendered at 300 dpi, or at the lower resolution that keeps it within this.
+    /// The default is Pillow's decompression-bomb limit (<c>Image.MAX_IMAGE_PIXELS</c>, about 89.5 megapixels), as
+    /// for <c>PdfExtractorOptions.MaxImagePixels</c>. Zero or less switches the cap off.
+    /// </summary>
+    public long MaxInputImagePixels { get; set; } = VisionLlmImageDownscaler.DefaultMaxInputPixels;
 }

@@ -79,6 +79,7 @@ Provider behaviour knobs (the model id / endpoint / key are host `ConfigureAI` c
 | `Temperature` | `0` | Deterministic transcription; reduces hallucination/looping |
 | `MaxPdfPages` | `30` | Max pages rasterized per PDF. Exceeding it throws (fails loudly) rather than silently dropping pages: the parse run ends **Failed** without automatic retries, and **Retry** works once the limit is raised |
 | `MaxImagePixels` | `1500000` | Most pixels (width × height) of an image sent to the model; a larger one is [scaled down](#large-images-are-shrunk-first) first. `0` or less sends images as they are |
+| `MaxInputImagePixels` | `89478485` | Most pixels an image may declare for the provider to decode it. An image that needs shrinking and declares more is [refused from its header](#images-too-large-to-decode): the parse run ends **Failed** without automatic retries. A scanned PDF page is rendered within it. Pillow's decompression-bomb limit; `0` or less switches it off |
 | `MaxConsecutiveRepeatedLines` | `24` | Guard heuristic 1: trip on this many identical consecutive lines. Values below 2 are treated as 2 (strictest); set a very large value to disable |
 | `MinDistinctLineRatio` | `0.3` | Guard heuristic 2: trip if distinct/total line ratio drops below this over a large body |
 | `MinLinesForRatioCheck` | `40` | Guard heuristic 2: minimum lines before the distinct-ratio check applies |
@@ -96,12 +97,21 @@ So the provider scales an image down before the call when it is over `MaxImagePi
 - **Within the budget** the original bytes are sent untouched, with no re-encoding.
 - **Over the budget** the image is scaled to at most that many pixels, keeping its aspect ratio. A PNG (a screenshot, a rasterized PDF page) stays a PNG so the text stays sharp; anything else becomes a JPEG (quality 90).
 - The EXIF orientation is applied, because the smaller copy carries no EXIF and a photo taken sideways would otherwise reach the model on its side.
-- An image SkiaSharp cannot read (HEIC, corrupt data), or any failure while shrinking, **sends the original** and logs a warning; shrinking never fails the OCR call.
+- An image SkiaSharp cannot read (HEIC, corrupt data), or any failure while shrinking, **sends the original** and logs a warning; shrinking never fails the OCR call, except for an image [too large to decode](#images-too-large-to-decode).
 - Only the copy sent to the model is smaller; the stored original is untouched. One information line logs each shrink (original and new size).
 
 This applies to uploaded images, to the pages of a scanned PDF (PDFtoImage renders at 300 dpi, an A4 page is about 8.7 megapixels), and to images embedded in a PDF that the Markdown providers send here.
 
 The budget was measured on one image and one model, so treat 1.5 megapixels as usable rather than generous: a phone photo of a bank passbook and card statement at that size took 94 s. Lower it if your model loops on dense forms.
+
+### Images Too Large to Decode
+
+Shrinking an image means decoding it, and a decoded bitmap takes memory for every pixel the header declares, whatever the file weighs: a PNG of one grey level declaring 20,000 × 20,000 pixels is 389 KB and took 400 MB to shrink. So, as Pillow (`Image.MAX_IMAGE_PIXELS`) and sharp (`limitInputPixels`) do:
+
+- An image over the budget that declares more than `MaxInputImagePixels` (default 89,478,485, Pillow's limit and the one [PDF images](text-extraction.md#extractor-options) use) is **refused from its header**, before anything is decoded. The provider throws `InvalidDataException`, so the parse run ends **Failed** without automatic retries and **Retry** works once the limit is raised. A PDF or Office engine that sent the image as an embedded figure drops that figure and marks the document incomplete.
+- A **JPEG or WebP** is decoded straight at a reduced size (the eighth of its size at or above the target, for a JPEG) and then resized, as Pillow's `draft` and libvips' shrink-on-load do; a PNG and other formats decode at full size first.
+- A **scanned PDF page** is rendered at 300 dpi, or at the lower resolution that keeps it within `MaxInputImagePixels`: an A0 drawing is 139 megapixels at 300 dpi, and a page is as large as its MediaBox says.
+- Images that need no shrinking are not decoded, so the cap does not apply to them, nor to anything when `MaxImagePixels` is `0` or less.
 
 ## Hallucination / Repetition-Loop Guard
 
