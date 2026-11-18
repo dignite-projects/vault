@@ -87,6 +87,16 @@ public class IndexRanker : ITransientDependency
             return null;
         }
 
+        // IReranker is the host's to implement: an answer without one score per text cannot be matched to the texts,
+        // and is a failed rerank like any other.
+        if (result.Scores.Count != documents.Count)
+        {
+            Logger.LogWarning(
+                "Reranking with {Model} returned {Scores} scores for {Documents} texts; search returns the fused order.",
+                reranker.ModelId, result.Scores.Count, documents.Count);
+            return null;
+        }
+
         var reranked = scored
             .Select((c, i) => new RankedChunk(c, result.Scores[i]))
             .OrderByDescending(r => r.RerankScore)

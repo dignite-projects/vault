@@ -121,6 +121,22 @@ public class Reranking_Tests : VaultIndexTestBase<VaultIndexRerankTestModule>
         result.Hits.ShouldAllBe(h => h.RerankScore == null);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public async Task A_reranker_that_answers_with_the_wrong_number_of_scores_leaves_the_fused_order(int extra)
+    {
+        // IReranker is the host's to implement: one score short (or over) cannot be matched to the texts.
+        await IndexAsync();
+        _reranker.ScoreCountOffset = extra;
+
+        var result = await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        result.Reranked.ShouldBeFalse();
+        result.Hits[0].HeadingPath.ShouldBe("# 賃貸借契約書 ## 第2条（賃料）");
+        result.Hits.ShouldAllBe(h => h.RerankScore == null);
+    }
+
     [Fact]
     public async Task A_reranker_that_times_out_leaves_the_fused_order()
     {
@@ -195,6 +211,9 @@ public sealed class FakeReranker : IReranker
 
     public Exception? FailWith { get; set; }
 
+    /// <summary>Scores this many more (or, negative, fewer) than the texts it was given: a broken implementation.</summary>
+    public int ScoreCountOffset { get; set; }
+
     public int Calls { get; private set; }
 
     public string? LastQuery { get; private set; }
@@ -211,9 +230,17 @@ public sealed class FakeReranker : IReranker
             throw FailWith;
         }
 
-        return Task.FromResult(new RerankResult(
-            documents.Select(d => Prefer is not null && d.Contains(Prefer) ? 1d : 0.1).ToList(),
-            documents.Count));
+        var scores = documents.Select(d => Prefer is not null && d.Contains(Prefer) ? 1d : 0.1).ToList();
+        if (ScoreCountOffset < 0)
+        {
+            scores.RemoveRange(scores.Count + ScoreCountOffset, -ScoreCountOffset);
+        }
+        else
+        {
+            scores.AddRange(Enumerable.Repeat(0.5, ScoreCountOffset));
+        }
+
+        return Task.FromResult(new RerankResult(scores, documents.Count));
     }
 }
 

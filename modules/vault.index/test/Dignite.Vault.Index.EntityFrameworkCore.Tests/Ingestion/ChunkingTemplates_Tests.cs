@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.Integration;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Profiles;
+using Microsoft.Extensions.DataIngestion;
 using Shouldly;
+using Volo.Abp;
 using Xunit;
 
 namespace Dignite.Vault.Index.Ingestion;
@@ -33,6 +37,52 @@ public class ChunkingTemplates_Tests
         """;
 
     private readonly IndexChunker _chunker = new();
+
+    [Fact]
+    public async Task A_document_over_the_chunk_cap_fails_before_the_enricher_reads_a_chunk()
+    {
+        // An enricher calls the model for every chunk: a spreadsheet of thousands of rows would pay for all of them and
+        // then fail on the cap anyway.
+        var enricher = new CountingProcessor();
+
+        var error = await Should.ThrowAsync<BusinessException>(() =>
+            _chunker.ChunkAsync(Invoice, "doc", Profile(ChunkingStrategy.TableRow, 400), enricher, maxChunks: 3));
+
+        error.Code.ShouldBe(VaultIndexErrorCodes.TooManyChunks);
+        error.Data["Count"].ShouldBe(4);
+        enricher.Read.ShouldBe(0);
+
+        var within = await _chunker.ChunkAsync(Invoice, "doc", Profile(ChunkingStrategy.TableRow, 400), enricher, maxChunks: 4);
+        within.Count.ShouldBe(4);
+        enricher.Read.ShouldBe(4);
+    }
+
+    [Fact]
+    public void Page_starts_on_the_second_line_of_a_text_that_opens_with_a_newline()
+    {
+        // The line before the second is the empty first line: there is no newline before it to search back from.
+        const string markdown = "\n| a | b |\n| --- | --- |\n| 1 | 2 |";
+        var pages = new List<DocumentPageSpansDto> { Page(1, 1, markdown.Length) };
+
+        IndexChunker.PageStarts(markdown, pages).ShouldBe([0]);
+    }
+
+    /// <summary>Passes the chunks on unchanged and counts how many it read.</summary>
+    private sealed class CountingProcessor : IngestionChunkProcessor<string>
+    {
+        public int Read { get; private set; }
+
+        public override async IAsyncEnumerable<IngestionChunk<string>> ProcessAsync(
+            IAsyncEnumerable<IngestionChunk<string>> chunks,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await foreach (var chunk in chunks.WithCancellation(cancellationToken))
+            {
+                Read++;
+                yield return chunk;
+            }
+        }
+    }
 
     [Fact]
     public async Task Whole_keeps_a_document_that_fits_in_one_chunk()

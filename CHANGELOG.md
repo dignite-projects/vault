@@ -442,6 +442,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - With `MinRerankScore` set, the retrieval test lists every candidate again, marks the ones search drops and shows
     the floor. It showed only the hits above it, so the floor could not be measured where the docs say to measure it.
   - Reading on from a chunk steps over a disabled chunk. `nextPointer` was `null` before one, as at the document's end.
+  - A host's own `IReranker` that answers with more or fewer scores than texts is a failed rerank: the fused order is
+    kept. One score short made the search fail with an index error; a surplus was ignored.
+  - A document over `MaxChunksPerDocument` fails before the enricher reads any chunk. It was counted after enrichment,
+    so a spreadsheet of thousands of rows indexed by table row paid a model call for every ten rows and then failed.
+  - A by-page cut no longer fails the document when its Markdown opens with an empty line and a page starts on a
+    table line right after it.
 
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
   (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every
