@@ -139,6 +139,8 @@
     "Chunks:DocumentHidden": "検索対象外",
     "Chunks:Counts": "{0} チャンク、うち無効 {1}",
     "Chunks:Hint": "無効にしたチャンクは検索・アウトライン・読み取りから外れ、テキストが変わらない限り再構築後も無効のままです。テキストを直すには Extract で文書の Markdown を修正してください。",
+    "Chunks:Page": "{0} ページ",
+    "Chunks:Pages": "{0}–{1} ページ",
     "Chunks:Expand": "すべて表示",
     "Chunks:Collapse": "折りたたむ",
     "Chunks:IsDisabled": "無効",

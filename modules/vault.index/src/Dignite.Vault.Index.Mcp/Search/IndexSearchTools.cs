@@ -34,12 +34,13 @@ public sealed class IndexSearchTools
         + "type, metadata or extracted field values. To search only the documents whose extracted fields meet conditions "
         + "(an amount range, a date, a counterparty), pass documentTypeCode and fieldFilters: the passages then come only "
         + "from those documents. Returns hits best first (at most 20): each with a pointer, the "
-        + "document id, title and type code, the heading path, and the chunk text. Pass a hit's pointer to "
+        + "document id, title and type code, the heading path, the pages of the document's file it was read from "
+        + "(firstPage, lastPage; absent when unknown), and the chunk text. Pass a hit's pointer to "
         + "vault_index_read for the full chunk and its neighbours, or its documentId to vault_index_outline for the "
         + "document's sections. When textTruncated is true the hit shows only the start of its chunk. "
         + "When the hits were reranked, rerankScore is each hit's relevance to the query from 0 to 1: a best hit far "
         + "below 0.1 usually means no document answers the question, so say that rather than answer from it. "
-        + "Returns evidence, never an answer: cite the document and heading path of what you use. "
+        + "Returns evidence, never an answer: cite the document, heading path and pages of what you use. "
         + UntrustedText)]
     public static async Task<IndexSearchToolResult> SearchAsync(
         [Description("What to look for, in natural language or keywords, up to 1000 characters.")]
@@ -86,6 +87,8 @@ public sealed class IndexSearchTools
                 DocumentTitle = PromptBoundary.WrapField(h.DocumentTitle),
                 DocumentTypeCode = h.DocumentTypeCode,
                 HeadingPath = PromptBoundary.WrapField(h.HeadingPath),
+                FirstPage = h.FirstPage,
+                LastPage = h.LastPage,
                 Text = PromptBoundary.WrapDocument(h.Text),
                 TextTruncated = h.TextTruncated,
                 KeywordRank = h.KeywordRank,
@@ -226,6 +229,8 @@ public sealed class IndexSearchTools
             DocumentTitle = PromptBoundary.WrapField(read.DocumentTitle),
             DocumentTypeCode = read.DocumentTypeCode,
             HeadingPath = PromptBoundary.WrapField(read.HeadingPath),
+            FirstPage = read.FirstPage,
+            LastPage = read.LastPage,
             Text = PromptBoundary.WrapDocument(read.Text),
             TextTruncated = read.TextTruncated,
             TextTotalLength = read.TextTotalLength,
@@ -257,6 +262,10 @@ public sealed record IndexSearchToolHit
 
     /// <summary>Wrapped with PromptBoundary.WrapField.</summary>
     public string? HeadingPath { get; init; }
+
+    public int? FirstPage { get; init; }
+
+    public int? LastPage { get; init; }
 
     /// <summary>Wrapped with PromptBoundary.WrapDocument, after the cut.</summary>
     public required string Text { get; init; }
@@ -338,6 +347,10 @@ public sealed record IndexReadToolResult
     public string? DocumentTypeCode { get; init; }
 
     public string? HeadingPath { get; init; }
+
+    public int? FirstPage { get; init; }
+
+    public int? LastPage { get; init; }
 
     public required string Text { get; init; }
 

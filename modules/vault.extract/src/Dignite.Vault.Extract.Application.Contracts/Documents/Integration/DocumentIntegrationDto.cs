@@ -38,4 +38,11 @@ public class DocumentIntegrationDto : EntityDto<Guid>
     /// <c>null</c> when the document has none.
     /// </summary>
     public Dictionary<string, JsonElement>? ExtractedFields { get; set; }
+
+    /// <summary>
+    /// Which ranges of <see cref="Markdown"/> were read from which page of the file, by page number: what places a
+    /// passage on its pages. <c>null</c> when the document has no layout (a file without pages, a parse before layouts
+    /// were kept) or the Markdown was corrected after the parse, which leaves the ranges describing other text.
+    /// </summary>
+    public List<DocumentPageSpansDto>? Pages { get; set; }
 }

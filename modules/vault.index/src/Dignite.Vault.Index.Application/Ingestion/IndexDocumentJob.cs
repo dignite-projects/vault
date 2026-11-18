@@ -418,6 +418,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                         d.Ordinal, d.HeadingPath, d.Text, hash, row.IsHidden, disabled.Contains(hash), d.Keywords, d.Questions);
                 })
                 .ToList();
+            PlaceOnPages(document, chunks);
             await _chunkRepository.InsertManyAsync(chunks);
 
             // The old chunks' vectors go from every generation; the new ones into each generation they were computed for.
@@ -443,6 +444,15 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             {
                 // Same text, but a new type or owner (a reclassification), or back in retrieval: only the read-scope facts move.
                 await CopyFiltersAsync(row);
+            }
+
+            // Same text, but the pages may be new: a re-parse that rendered the same Markdown, or chunks indexed before
+            // pages were placed.
+            existing ??= (await _chunkRepository.GetListAsync(c => c.DocumentId == document.Id)).OrderBy(c => c.Ordinal).ToList();
+            var moved = PlaceOnPages(document, existing);
+            if (moved.Count > 0)
+            {
+                await _chunkRepository.UpdateManyAsync(moved);
             }
         }
 
@@ -472,6 +482,27 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         await uow.CompleteAsync();
         return rerun;
+    }
+
+    /// <summary>
+    /// Sets each chunk's pages from the Markdown ranges Extract read from each page (<see cref="IndexChunkLocator"/>).
+    /// Returns the chunks whose pages changed.
+    /// </summary>
+    protected virtual List<Chunk> PlaceOnPages(DocumentIntegrationDto document, IReadOnlyList<Chunk> chunks)
+    {
+        var pages = IndexChunkLocator.Pages(document.Markdown, document.Pages, chunks.Select(c => (c.HeadingPath, c.Text)).ToList());
+        var moved = new List<Chunk>();
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            var (first, last) = pages[i];
+            if (chunks[i].FirstPage != first || chunks[i].LastPage != last)
+            {
+                chunks[i].SetPages(first, last);
+                moved.Add(chunks[i]);
+            }
+        }
+
+        return moved;
     }
 
     /// <summary>Records a failure. Returns whether it is terminal, so the caller knows not to rethrow.</summary>

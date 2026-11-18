@@ -186,6 +186,47 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task Chunks_are_placed_on_the_pages_Extract_read_their_text_from()
+    {
+        // Page 1 holds the preamble and Article 1, page 2 Article 2.
+        var breakAt = Contract.IndexOf("## 第2条", StringComparison.Ordinal);
+        var pages = new List<DocumentPageSpansDto>
+        {
+            new() { PageNumber = 1, Spans = [new() { Offset = 0, Length = breakAt }] },
+            new() { PageNumber = 2, Spans = [new() { Offset = breakAt, Length = Contract.Length - breakAt }] }
+        };
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        (await ChunksAsync()).ShouldAllBe(c => c.FirstPage == null && c.LastPage == null);
+        var calls = _model.Calls;
+
+        // The same text again, now with a layout (a re-parse that rendered the same Markdown): no new chunks or
+        // embeddings, only the pages.
+        var dto = Dto(Contract, TypeA);
+        dto.Pages = pages;
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        _model.Calls.ShouldBe(calls);
+        var chunks = await ChunksAsync();
+        chunks.Single(c => c.Text.Contains("住居として賃貸する")).ShouldSatisfyAllConditions(
+            c => c.FirstPage.ShouldBe(1),
+            c => c.LastPage.ShouldBe(1));
+        chunks.Single(c => c.Text.Contains("賃料を支払う")).ShouldSatisfyAllConditions(
+            c => c.FirstPage.ShouldBe(2),
+            c => c.LastPage.ShouldBe(2));
+
+        // Changed text is placed as it is chunked.
+        var changed = Contract + "\n\n## 第3条（期間）\n\n契約期間は二年とする。";
+        dto = Dto(changed, TypeA);
+        dto.Pages = [pages[0], new() { PageNumber = 2, Spans = [new() { Offset = breakAt, Length = changed.Length - breakAt }] }];
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T3);
+
+        (await ChunksAsync()).Single(c => c.Text.Contains("二年")).LastPage.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task Changed_text_replaces_the_chunks_and_vectors()
     {
         ExtractReturns(Contract, TypeA);

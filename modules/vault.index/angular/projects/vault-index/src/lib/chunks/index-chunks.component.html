@@ -27,8 +27,10 @@
           <div class="d-flex align-items-start gap-2">
             <span class="badge bg-secondary">#{{ chunk.ordinal }}</span>
             <div class="flex-grow-1" style="min-width: 0">
-              @if (chunk.headingPath) {
-                <div class="small text-muted text-break">{{ chunk.headingPath }}</div>
+              @if (chunk.headingPath || chunk.firstPage) {
+                <div class="small text-muted text-break">{{ chunk.headingPath }}@if (chunk.firstPage) {
+                <span class="ms-2">{{ chunk.firstPage === chunk.lastPage ? ('VaultIndex::Chunks:Page' | abpLocalization: chunk.firstPage + '') : ('VaultIndex::Chunks:Pages' | abpLocalization: chunk.firstPage + '' : chunk.lastPage + '') }}</span>
+              }</div>
               }
               <div
                 class="small text-break"

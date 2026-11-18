@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Threading;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.FlexFields;
@@ -7,11 +9,29 @@ using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Extract.Documents.Fields;
 using Dignite.Vault.Extract.Documents.Integration;
+using Dignite.Vault.Extract.Documents.Layout;
+using Dignite.Vault.Parse;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Documents;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using Shouldly;
+using Volo.Abp.BlobStoring;
+using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
 using Xunit;
 
 namespace Dignite.Vault.Extract.EntityFrameworkCore.Documents;
+
+/// <summary>The layout store reads the blob container: a substitute the paged test fills.</summary>
+[DependsOn(typeof(VaultExtractEntityFrameworkCoreTestModule))]
+public class DocumentIntegrationServiceTestModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        context.Services.AddSingleton(Substitute.For<IBlobContainer<VaultExtractDocumentContainer>>());
+    }
+}
 
 /// <summary>
 /// <see cref="IDocumentIntegrationService"/> against the real database, because both of its boundaries are query
@@ -19,7 +39,7 @@ namespace Dignite.Vault.Extract.EntityFrameworkCore.Documents;
 /// <c>IMultiTenant</c> / <c>ISoftDelete</c> filters. Every document seeded here except two is withheld for a
 /// different reason, so each term of the predicate and each filter has a row that only it excludes.
 /// </summary>
-public class DocumentIntegrationService_Tests : VaultExtractEntityFrameworkCoreTestBase
+public class DocumentIntegrationService_Tests : VaultExtractTestBase<DocumentIntegrationServiceTestModule>
 {
     private static readonly Guid TypeId = DocumentTestData.DeterministicGuid("integration:type");
     private static readonly Guid FieldId = DocumentTestData.DeterministicGuid("integration:field");
@@ -130,6 +150,52 @@ public class DocumentIntegrationService_Tests : VaultExtractEntityFrameworkCoreT
 
         var remaining = first.Items[0] == seeded.Ready ? seeded.SecondReady : seeded.Ready;
         second.Items.ShouldBe(new[] { remaining });
+    }
+
+    [Fact]
+    public async Task FindReadyAsync_gives_the_Markdown_ranges_read_from_each_page()
+    {
+        var seeded = await SeedAsync();
+        var id = DocumentTestData.DeterministicGuid("integration:paged");
+        var tree = new ExtractionDocument("paged");
+        foreach (var (number, text) in new[] { (1, "請求書"), (2, "明細") })
+        {
+            var page = new ExtractionDocumentSourcePage("p" + number, number);
+            tree.SourcePages.Add(page);
+            var element = new ExtractionDocumentTextElement(new TextContent(text));
+            element.Sources.Add(new ExtractionDocumentSourceReference(page));
+            var section = new ExtractionDocumentSection();
+            section.Elements.Add(element);
+            tree.Sections.Add(section);
+        }
+
+        var markdown = ExtractionDocumentMarkdown.Render(tree);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var document = new Document(id, null, DocumentTestData.NewFileOrigin(id));
+            document.SetMarkdown(markdown);
+            DocumentTestData.MarkClassified(document, TypeId);
+            DocumentTestData.SetLifecycleStatus(document, DocumentLifecycleStatus.Ready);
+            await _documentRepository.InsertAsync(document, autoSave: true);
+        });
+        var blobs = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
+        byte[]? stored = null;
+        await blobs.SaveAsync(DocumentLayoutStore.BlobName(id), Arg.Do<Stream>(stream =>
+        {
+            using var copy = new MemoryStream();
+            stream.CopyTo(copy);
+            stored = copy.ToArray();
+        }), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await GetRequiredService<DocumentLayoutStore>().SaveAsync(id, tree, markdown);
+        blobs.GetOrNullAsync(DocumentLayoutStore.BlobName(id), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(new MemoryStream(stored!)));
+
+        var dto = await _integrationService.FindReadyAsync(id);
+
+        dto!.Pages.ShouldNotBeNull();
+        dto.Pages!.Select(p => p.PageNumber).ShouldBe([1, 2]);
+        dto.Pages.Select(p => markdown.Substring(p.Spans.Single().Offset, p.Spans.Single().Length)).ShouldBe(["請求書", "明細"]);
+        (await _integrationService.FindReadyAsync(seeded.Ready))!.Pages.ShouldBeNull("no layout was kept");
     }
 
     private async Task<SeededIds> SeedAsync()

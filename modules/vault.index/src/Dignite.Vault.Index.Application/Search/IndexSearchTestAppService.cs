@@ -95,6 +95,8 @@ public class IndexSearchTestAppService : VaultIndexAppService, IIndexSearchTestA
                 DocumentTitle = outcome.Documents.GetValueOrDefault(chunk.DocumentId)?.Title,
                 DocumentTypeCode = types.GetValueOrDefault(chunk.DocumentTypeId),
                 HeadingPath = chunk.HeadingPath,
+                FirstPage = chunk.FirstPage,
+                LastPage = chunk.LastPage,
                 Text = text,
                 TextTruncated = text.Length < chunk.Text.Length
             });
