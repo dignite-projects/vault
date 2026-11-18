@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\..\..\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dignite.Vault.Index</RootNamespace>
+    <Description>Dignite Vault Index as a knowledge source for Microsoft Agent Framework agents: the search behind a TextSearchProvider, in-process or through the Index HTTP client.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <ProjectReference Include="..\Dignite.Vault.Index.Application.Contracts\Dignite.Vault.Index.Application.Contracts.csproj" />
+    <!-- PromptBoundary, shared with the MCP tools rather than copied. -->
+    <ProjectReference Include="..\..\..\vault.extract\src\Dignite.Vault.Extract.Application.Contracts\Dignite.Vault.Extract.Application.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

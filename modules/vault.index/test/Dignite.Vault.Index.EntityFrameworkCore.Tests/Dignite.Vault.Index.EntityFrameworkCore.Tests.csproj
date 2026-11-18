@@ -15,6 +15,7 @@
     <ProjectReference Include="..\..\src\Dignite.Vault.Index.Application\Dignite.Vault.Index.Application.csproj" />
     <ProjectReference Include="..\..\src\Dignite.Vault.Index.Reranking.Http\Dignite.Vault.Index.Reranking.Http.csproj" />
     <ProjectReference Include="..\..\src\Dignite.Vault.Index.Mcp\Dignite.Vault.Index.Mcp.csproj" />
+    <ProjectReference Include="..\..\src\Dignite.Vault.Index.AgentFramework\Dignite.Vault.Index.AgentFramework.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Index.TestBase\Dignite.Vault.Index.TestBase.csproj" />
   </ItemGroup>
 

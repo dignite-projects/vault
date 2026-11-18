@@ -97,6 +97,10 @@
         <PackageVersion Include="Microsoft.Extensions.AI" Version="11.0.0" />
         <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="11.0.0" />
         <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.0" />
+        <!-- Vault Index's knowledge source for Agent Framework agents (Dignite.Vault.Index.AgentFramework). 1.28.0 was
+             built against Microsoft.Extensions.AI 10.11 and runs on the 11.0.0 above; Agent Framework's main moved to
+             11.0.0 on 2026-11-16, so take the next release. -->
+        <PackageVersion Include="Microsoft.Agents.AI" Version="1.28.0" />
         <!-- Vault Index ingestion. Pre-release until Microsoft ships a stable Microsoft.Extensions.DataIngestion. -->
         <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="11.0.0-preview.1.26560.3" />
         <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="11.0.0-preview.1.26560.3" />

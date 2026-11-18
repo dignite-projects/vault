@@ -108,3 +108,29 @@ A pointer stays valid until the document is indexed again (its text or chunking 
 ## MCP Specifics
 
 The four tools are on the host's shared `/mcp` endpoint, next to Extract's `vault_extract_*` tools, with the same authentication; see [MCP Server](mcp-server.md). Their descriptions are compile-time constants. Titles, heading paths, node titles and summaries come back wrapped in `<field>` tags and chunk text in `<document>` tags: document content is untrusted data, never instructions. The tools use the ambient tenant only; they take no `tenantId`.
+
+## Agent Framework Agents
+
+`Dignite.Vault.Index.AgentFramework` makes Index a knowledge source for [Microsoft Agent Framework](https://learn.microsoft.com/agent-framework/agents/rag) agents. Agent Framework connects any search service through its `TextSearchProvider` and a delegate that returns `TextSearchResult`s; `VaultIndexTextSearch` is that delegate over `IIndexSearchAppService`, so the search runs as the current principal and returns only its read scope.
+
+Depend on `VaultIndexAgentFrameworkModule` next to either the Index application module (Index in the same application) or `VaultIndexHttpApiClientModule` (Index behind its REST API; the base URL comes from `RemoteServices:VaultIndex`, else `RemoteServices:Default`). Then:
+
+```csharp
+var provider = textSearch.CreateProvider(new VaultIndexTextSearchOptions
+{
+    DocumentTypeCode = "policy",        // optional: one document type
+    MinRerankScore = 0.05,              // optional: drop weak passages
+    SourceLink = hit => $"https://crm.example/documents/{hit.DocumentId}"
+});
+
+AIAgent agent = new ChatClientAgent(chatClient, new ChatClientAgentOptions { AIContextProviders = [provider] });
+```
+
+- By default the provider searches before every run with the request's text and adds the passages to it. Pass `configure: o => o.SearchTime = TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling` to give the agent a `vault_search_passages` tool instead; `configure` runs after Vault's defaults and can change any provider option.
+- Past Index's 1000-character query limit (a provider with `RecentMessageMemoryLimit` puts recent messages before the request), only the latest text is searched. A blank turn searches nothing.
+- Passages, titles and headings reach the model in `<document>` and `<field>` tags, and Vault's default context prompt says they are data, never instructions. A truncated passage says so.
+- Before a run, a failed search (an expired token, a missing permission) is logged by the provider and the run continues without passages; as a tool, the error reaches the model.
+- `MinRerankScore` matters most before a run, where every turn searches: with it, a turn no passage answers ("thanks") adds nothing. See [Reranking](../configuration/ai-provider.md#rerank-model-index) for what the floor costs.
+- In-process, create the provider in the scope that runs the agent (a request), not in a singleton: the application service it calls is scoped.
+
+An agent that should page through outlines and read neighbouring chunks uses the [MCP tools](#mcp-specifics) through Agent Framework's MCP client instead.
