@@ -19,7 +19,7 @@ Payloads are thin (ID + key metadata); a consumer pulls the details through REST
 | `DocumentClassifiedEto` | classification completed | No |
 | `DocumentReadyEto` | the pipeline is complete and no blocking review reason is set; fires again when field extraction re-runs on a Ready document, or an operator edits its fields or corrects its Markdown | **Yes** |
 
-A derived sub-document (`OriginDocumentId` set) has no blob of its own, so its `DocumentUploadedEto` carries `FileName = null`, `FileSize = 0`, `ContentType = null`. A consumer that sums `FileSize` for storage or quota therefore does not count the parent's bytes again.
+A derived sub-document (`OriginDocumentId` set) seeded from a slice of its parent's text has no blob of its own, so its `DocumentUploadedEto` carries `FileName = null`, `FileSize = 0`, `ContentType = null`. One cut by page from a PDF bundle has a file of its own (those pages, `bundle (p2-3).pdf`) and carries its name, size and type: a consumer that sums `FileSize` for storage or quota counts those pages twice, once in the bundle and once in the cut; the upload event does not carry `OriginDocumentId` (`DocumentReadyEto` does).
 
 ## Lifecycle events
 

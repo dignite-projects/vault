@@ -38,6 +38,18 @@ public class DocumentFieldSources_Tests : VaultExtractDomainTestBase<VaultExtrac
     }
 
     [Fact]
+    public async Task Clearing_every_field_clears_every_source()
+    {
+        // A reclassification or a turn into a container clears the fields with SetFlexFields(null).
+        var document = await ExtractedAsync();
+        document.SetFieldSources(Source("total", 7, 9));
+
+        document.SetFlexFields(null);
+
+        document.FieldSources.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task A_Markdown_correction_clears_every_source()
     {
         var document = await ExtractedAsync();

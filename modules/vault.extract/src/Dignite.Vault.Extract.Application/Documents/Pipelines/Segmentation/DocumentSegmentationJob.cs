@@ -537,30 +537,41 @@ public class DocumentSegmentationJob
 
         // Shared complete-phase UoW (#358): insert the derived document, mark this segment Spawned, publish
         // DocumentUploadedEto, and queue text extraction — atomically. The reload guard is kind-aware (#371).
-        var spawnedId = await _derivedDocumentSpawner.SpawnAsync<DocumentSegment>(
-            context.SourceDocumentId,
-            context.TenantId,
-            segment.SegmentKey,
-            fileOrigin,
-            // #635: the sub-document inherits the source's owner, snapshotted in the load phase. This job has no
-            // principal of its own, so without it the person who uploaded the bundle could not see what came out.
-            ownerId: context.OwnerId,
-            reloadClaimable: async () =>
-            {
-                var entity = await _segmentRepository.FindAsync(segment.SegmentId);
-                if (entity is not { Status: DocumentSegmentStatus.Pending })
+        // A spawn that throws (a concurrency conflict, the database) has written the cut already; a retry cuts again
+        // under the same name, but a retry that never comes (the source re-parsed meanwhile) would leave it behind.
+        Guid? spawnedId;
+        try
+        {
+            spawnedId = await _derivedDocumentSpawner.SpawnAsync<DocumentSegment>(
+                context.SourceDocumentId,
+                context.TenantId,
+                segment.SegmentKey,
+                fileOrigin,
+                // #635: the sub-document inherits the source's owner, snapshotted in the load phase. This job has no
+                // principal of its own, so without it the person who uploaded the bundle could not see what came out.
+                ownerId: context.OwnerId,
+                reloadClaimable: async () =>
                 {
-                    return null;
-                }
+                    var entity = await _segmentRepository.FindAsync(segment.SegmentId);
+                    if (entity is not { Status: DocumentSegmentStatus.Pending })
+                    {
+                        return null;
+                    }
 
-                return await IsStillSpawnableAsync(context.SourceDocumentId, entity.Kind) ? entity : null;
-            },
-            markSpawned: async (entity, derivedId) =>
-            {
-                entity.MarkSpawned(derivedId);
-                await _segmentRepository.UpdateAsync(entity);
-            },
-            cancellationToken);
+                    return await IsStillSpawnableAsync(context.SourceDocumentId, entity.Kind) ? entity : null;
+                },
+                markSpawned: async (entity, derivedId) =>
+                {
+                    entity.MarkSpawned(derivedId);
+                    await _segmentRepository.UpdateAsync(entity);
+                },
+                cancellationToken);
+        }
+        catch (Exception) when (fileOrigin is not null)
+        {
+            await DeleteUnusedCutAsync(segment, fileOrigin.BlobName);
+            throw;
+        }
 
         if (spawnedId is null && fileOrigin is not null)
         {
@@ -625,8 +636,17 @@ public class DocumentSegmentationJob
             var first = owned.Min();
             var last = owned.Max();
             var contiguous = owners.All(owner => owner.Key < first || owner.Key > last || owner.Value == i);
+            var own = text[i].Values.Sum();
             var onOwnPages = text[i].Where(page => page.Key >= first && page.Key <= last).Sum(page => page.Value);
-            if (contiguous && onOwnPages >= text[i].Values.Sum() * PageOwnershipShare)
+
+            // A child cut by page is read from those pages, so whatever of its slice lies elsewhere leaves it and whatever
+            // of other slices lies on them joins it. Only a stray line may move (the stamp above a title); a tail of the
+            // previous document (its total, its signature) must not, so the constituent keeps its slice instead.
+            var foreign = Enumerable.Range(0, text.Count)
+                .Where(j => j != i)
+                .Sum(j => text[j].Where(page => page.Key >= first && page.Key <= last).Sum(page => page.Value));
+            var moved = own - onOwnPages + foreign;
+            if (contiguous && onOwnPages >= own * PageOwnershipShare && moved <= Math.Min(MaxMovedCharacters, own * (1 - PageOwnershipShare)))
             {
                 ranges[slices[i].Ordinal] = (first, last);
             }
@@ -640,6 +660,11 @@ public class DocumentSegmentationJob
     /// hold to be cut by page. A page two documents genuinely share stays below it, and both keep their slices.
     /// </summary>
     protected const double PageOwnershipShare = 0.8;
+
+    /// <summary>
+    /// The most text a cut by page may move into or out of a constituent: a stamp or a running line, not a paragraph.
+    /// </summary>
+    protected const int MaxMovedCharacters = 40;
 
     /// <summary>
     /// A constituent's own file: its pages cut out of the source's file and saved under a name derived from the segment,

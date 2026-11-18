@@ -928,7 +928,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
 
         EnsureNotDeleted(document);
 
-        // A sub-document's text is a slice of its parent's Markdown and it has no file of its own (#487); re-parsing
+        // A sub-document's content comes from its parent's split (#487), even one cut with a file of its own; re-parsing
         // the parent re-splits it.
         if (document.OriginDocumentId.HasValue)
         {

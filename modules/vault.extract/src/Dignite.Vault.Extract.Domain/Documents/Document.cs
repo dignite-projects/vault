@@ -469,6 +469,7 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
 
         if (values == null)
         {
+            FieldSources.Clear();
             return;
         }
 

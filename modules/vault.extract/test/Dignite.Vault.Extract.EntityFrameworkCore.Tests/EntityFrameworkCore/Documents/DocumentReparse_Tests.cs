@@ -109,6 +109,7 @@ public class DocumentReparse_Tests : VaultExtractTestBase<DocumentReparseTestMod
         await ReparseAsync(arranged.DocumentId, NewMarkdown);
 
         await AssertReparsedAsync(arranged, withdrawnCount: 3);
+        await LayoutWrites(arranged.DocumentId, 1);
     }
 
     [Fact]
@@ -179,6 +180,8 @@ public class DocumentReparse_Tests : VaultExtractTestBase<DocumentReparseTestMod
         await Should.ThrowAsync<InvalidOperationException>(() => _parseJob.ExecuteAsync(args));
 
         await AssertUntouchedAsync(arranged, args.PipelineRunId!.Value);
+        // The layout of the text that stays is kept: a refused re-parse writes none of its own over it.
+        await LayoutWrites(arranged.DocumentId, 0);
         await WithUnitOfWorkAsync(async () =>
             (await _runRepository.FindLatestByDocumentAndCodeAsync(arranged.DocumentId, VaultExtractPipelines.Classification))!
                 .AttemptNumber.ShouldBe(1));
@@ -439,6 +442,11 @@ public class DocumentReparse_Tests : VaultExtractTestBase<DocumentReparseTestMod
         });
         return runId;
     }
+
+    /// <summary>Asserts how many times the document's layout blob was written.</summary>
+    private Task LayoutWrites(Guid documentId, int count)
+        => _blobContainer.Received(count).SaveAsync(
+            Dignite.Vault.Extract.Documents.Layout.DocumentLayoutStore.BlobName(documentId), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
 
     private void StubExtraction(string markdown)
     {

@@ -1107,6 +1107,31 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
     }
 
     [Fact]
+    public async Task A_documents_tail_on_the_next_documents_first_page_keeps_both_on_their_slices()
+    {
+        // A's last lines (its total and signature) sit at the top of page 3, where B begins. B holds most of page 3 and A
+        // most of its text on pages 1-2, but cutting by page would move A's tail into B: both keep their slices.
+        var items = string.Concat(Enumerable.Repeat("Line item text of the invoice. ", 6));
+        var tail = "A total due 473,000 yen, signed by the issuer.";
+        var articles = string.Concat(Enumerable.Repeat("Article text of the agreement. ", 8));
+        var tree = Bundle(["Invoice A", items], [items], [tail, "Contract B", articles], [articles]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        StubSplit(("Invoice A", true), ("Contract B", true));
+        // Page shares need real page text; this class caps the Markdown far below that for its bound tests.
+        GetRequiredService<Microsoft.Extensions.Options.IOptions<VaultExtractBehaviorOptions>>().Value.MaxSegmentationMarkdownLength = 10_000;
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId);
+            segments.Count.ShouldBe(2);
+            segments.ShouldAllBe(s => s.FirstPage == null && s.LastPage == null);
+        });
+    }
+
+    [Fact]
     public async Task Constituents_sharing_a_page_keep_the_slice_and_carry_no_file()
     {
         var tree = Bundle(["Invoice A", "Invoice B"], ["B total"]);
