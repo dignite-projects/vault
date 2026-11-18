@@ -139,6 +139,8 @@
     "Chunks:DocumentHidden": "不在检索中",
     "Chunks:Counts": "共 {0} 块,已停用 {1} 块",
     "Chunks:Hint": "停用的块不参与检索、大纲和读取,只要正文不变,重建后仍保持停用。要改正文,请在 Extract 里修正文档的 Markdown。",
+    "Chunks:Page": "第 {0} 页",
+    "Chunks:Pages": "第 {0}–{1} 页",
     "Chunks:Expand": "展开",
     "Chunks:Collapse": "收起",
     "Chunks:IsDisabled": "已停用",

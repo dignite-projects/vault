@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search hits carry their pages.** Every Index chunk records the pages of the document's file its text was read from,
+  and search hits, reads, the MCP tools, the chunk view and the retrieval test show them (`firstPage`, `lastPage`).
+  Extract's `DocumentIntegrationDto` gains `Pages`, the ranges of the Markdown read from each page (the shape of Azure
+  Document Intelligence's `pages[].spans`), from the layout the parse kept; Index finds each chunk in the Markdown and
+  takes the pages of what it found. dotnet/extensions#7904, which would let the chunker report its source elements, is
+  unreleased with no date, so Index locates the chunks itself; when that lands, the locating step goes. See
+  [Index Search](docs/en/egress/index-search.md#pages).
+
 - **Index as an Agent Framework knowledge source.** `Dignite.Vault.Index.AgentFramework` provides
   `VaultIndexTextSearch`, the search behind Agent Framework's `TextSearchProvider` (before every run or as a
   `vault_search_passages` tool), with passages wrapped as untrusted document data, an optional rerank-score floor, and
@@ -371,6 +379,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
+  (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text, so every document with one ended
+  indexing failed (in the local corpus 5 of 16 Ready documents, invoices and price lists among them). Index now holds
+  such cells open with a zero-width space while the reader parses and drops it from the chunks; their text and
+  search results are unchanged. Documents that failed this way index on their next sync or **Rebuild**.
+
 - **A date field lost its value whenever the model wrote a time.** The field-extraction prompt named every `DateTime`
   field by its type, whatever its input mode, so the model answered a Date-mode field as `2026-11-20T00:00:00` and the
   date reader rejected it; the schema's pattern would have refused that, but SiliconFlow does not enforce patterns.
@@ -485,6 +499,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
 
 ### Deploy note
+
+- **Index chunk pages.** The Index migration `ChunkPages` adds two nullable columns to `VaultIndexChunks`. Chunks
+  indexed before it have no pages until their document is synced again. The next event for the document places them
+  without re-chunking or re-embedding; **Rebuild** on the index status page does it at once, re-embedding the document.
 
 - **Background job names.** Jobs queued before the upgrade carry the old names, and the new host abandons them. Let
   the queue drain first, or rename them in the `Default` database before starting the new host:

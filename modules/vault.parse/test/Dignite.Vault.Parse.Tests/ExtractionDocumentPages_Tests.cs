@@ -61,6 +61,25 @@ public class ExtractionDocumentPages_Tests
         var map = ExtractionDocumentMarkdown.Map(document);
 
         ExtractionDocumentPages.TextPerPage(map, [(0, map.Markdown.Length)])[0][1].ShouldBe("品名".Length + "金額".Length);
+
+        // The cells are one range of the page: only table markup lies between them.
+        var range = ExtractionDocumentPages.Spans(map)[1].ShouldHaveSingleItem();
+        map.Markdown.Substring(range.Offset, range.Length).ShouldStartWith("品名");
+        map.Markdown.Substring(range.Offset, range.Length).ShouldEndWith("金額");
+    }
+
+    [Fact]
+    public void Each_page_lists_the_ranges_of_the_Markdown_read_from_it()
+    {
+        var map = ExtractionDocumentMarkdown.Map(ThreePages());
+        string Text((int Offset, int Length) span) => map.Markdown.Substring(span.Offset, span.Length);
+
+        var pages = ExtractionDocumentPages.Spans(map);
+
+        pages.Keys.ShouldBe([1, 2, 3]);
+        pages[1].Select(Text).ShouldBe(["請求書"]);
+        pages[2].Select(Text).ShouldBe(["納品書\n\n品名 数量"]);
+        pages[3].Select(Text).ShouldBe(["契約書"]);
     }
 
     /// <summary>An invoice on page 1, a delivery note on page 2, a contract on page 3: one section per page.</summary>

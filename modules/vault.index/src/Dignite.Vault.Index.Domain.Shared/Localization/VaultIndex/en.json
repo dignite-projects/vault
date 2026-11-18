@@ -139,6 +139,8 @@
     "Chunks:DocumentHidden": "Out of retrieval",
     "Chunks:Counts": "{0} chunks, {1} disabled",
     "Chunks:Hint": "A disabled chunk is left out of search, outline and read, and stays disabled after a rebuild while its text is unchanged. To correct the text, correct the document's Markdown in Extract.",
+    "Chunks:Page": "Page {0}",
+    "Chunks:Pages": "Pages {0}–{1}",
     "Chunks:Expand": "Show all",
     "Chunks:Collapse": "Show less",
     "Chunks:IsDisabled": "Disabled",

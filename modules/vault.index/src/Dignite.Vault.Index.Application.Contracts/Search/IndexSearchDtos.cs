@@ -64,6 +64,15 @@ public class IndexSearchHitDto
     /// <summary>The headings above the chunk, outermost first, as Markdown heading markers.</summary>
     public string? HeadingPath { get; set; }
 
+    /// <summary>
+    /// The first page of the document's file the text was read from; <c>null</c> when unknown (no pages, no current
+    /// layout, or a chunk indexed before pages were placed).
+    /// </summary>
+    public int? FirstPage { get; set; }
+
+    /// <summary>The last page the text was read from; equal to <see cref="FirstPage"/> on one page.</summary>
+    public int? LastPage { get; set; }
+
     /// <summary>The chunk's text, cut at <see cref="IndexSearchConsts.MaxHitTextLength"/> characters.</summary>
     public string Text { get; set; } = default!;
 
@@ -211,6 +220,15 @@ public class IndexReadResultDto
 
     /// <summary>The heading path of the chunk, or of the node's own heading.</summary>
     public string? HeadingPath { get; set; }
+
+    /// <summary>
+    /// The first page of the document's file the text (for a node, any of its chunks) was read from; <c>null</c> when unknown (no pages, no current
+    /// layout, or a chunk indexed before pages were placed).
+    /// </summary>
+    public int? FirstPage { get; set; }
+
+    /// <summary>The last page the text (for a node, any of its chunks) was read from; equal to <see cref="FirstPage"/> on one page.</summary>
+    public int? LastPage { get; set; }
 
     /// <summary>The text Index stored, cut at <see cref="IndexSearchConsts.MaxReadTextLength"/> characters.</summary>
     public string Text { get; set; } = default!;

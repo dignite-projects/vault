@@ -12,6 +12,8 @@ export interface IndexChunkDto {
   pointer?: string;
   ordinal?: number;
   headingPath?: string | null;
+  firstPage?: number | null;
+  lastPage?: number | null;
   text?: string;
   isDisabled?: boolean;
   keywords?: string | null;

@@ -41,6 +41,8 @@ export interface IndexReadResultDto {
   documentTitle?: string | null;
   documentTypeCode?: string | null;
   headingPath?: string | null;
+  firstPage?: number | null;
+  lastPage?: number | null;
   text?: string;
   textTruncated?: boolean;
   textTotalLength?: number;
@@ -55,6 +57,8 @@ export interface IndexSearchHitDto {
   documentTitle?: string | null;
   documentTypeCode?: string | null;
   headingPath?: string | null;
+  firstPage?: number | null;
+  lastPage?: number | null;
   text?: string;
   textTruncated?: boolean;
   textTotalLength?: number;
@@ -91,6 +95,8 @@ export interface IndexSearchTestCandidateDto {
   documentTitle?: string | null;
   documentTypeCode?: string | null;
   headingPath?: string | null;
+  firstPage?: number | null;
+  lastPage?: number | null;
   text?: string;
   textTruncated?: boolean;
 }

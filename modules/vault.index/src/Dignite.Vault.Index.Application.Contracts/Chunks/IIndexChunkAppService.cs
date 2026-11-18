@@ -65,6 +65,12 @@ public class IndexChunkDto
 
     public string? HeadingPath { get; set; }
 
+    /// <summary>The first page of the document's file the chunk was read from; <c>null</c> when unknown.</summary>
+    public int? FirstPage { get; set; }
+
+    /// <summary>The last page the chunk was read from.</summary>
+    public int? LastPage { get; set; }
+
     public string Text { get; set; } = default!;
 
     public bool IsDisabled { get; set; }

@@ -51,6 +51,8 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
       "documentTitle": "建物賃貸借契約書",
       "documentTypeCode": "lease",
       "headingPath": "# 建物賃貸借契約書 ## 第2条(賃料)",
+      "firstPage": 2,
+      "lastPage": 2,
       "text": "# 建物賃貸借契約書 ## 第2条(賃料)\n賃料は月額 185,000 円とし、…",
       "textTruncated": false,
       "textTotalLength": 92,
@@ -66,6 +68,7 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
 
 - The vector leg always returns the nearest chunks, so a search returns hits even when nothing matches the words; `keywordRank` is `null` for a hit only the vector leg found.
 - A hit's `text` is cut at 2,000 characters (`textTruncated`, `textTotalLength`); read the pointer for the whole chunk.
+- `firstPage` and `lastPage` are the pages of the document's file the chunk's text was read from, for a citation such as "p. 2". See [Pages](#pages) for when they are `null`.
 - `reranked` says whether the reranker ordered the hits: it is `false` without a rerank model, and when the rerank call failed and the fused order was kept. `score` only orders the hits of one search.
 - `rerankScore` is the reranker's relevance, a probability from 0 to 1 for the usual cross-encoders, comparable across searches with the same model. A best hit far below 0.1 usually means no document answers the question (on the evaluation set a median 0.98 for answerable questions, 0.006 for unanswerable ones); the MCP search tool tells agents so. With `Vault:IndexSearch:MinRerankScore` set, hits below it are dropped and such a search returns none. See [Reranking](../configuration/ai-provider.md#rerank-model-index).
 - The keyword leg lags writes by about five seconds; the vector leg sees a document as soon as it is indexed.
@@ -103,7 +106,15 @@ The catalog is built when it is read, from the same scope as search. A caller wh
 
 Accepts only the pointers search and outline return: `chunk:{id}` for one chunk, `node:{documentId}/{path}` for a section with its subsections. Anything else is refused with `VaultIndex:InvalidPointer`; a pointer outside the caller's scope is not found. The text is Index's stored copy, cut at 40,000 characters (`textTruncated`, `textTotalLength`). A chunk read also returns `previousPointer` and `nextPointer` to read on.
 
-A pointer stays valid until the document is indexed again (its text or chunking changes), when search and outline return new ones. Pointers are not character ranges of the source Markdown, so citations name a document and a heading path, not a page.
+A pointer stays valid until the document is indexed again (its text or chunking changes), when search and outline return new ones. Pointers are not character ranges of the source Markdown; a read carries `firstPage` and `lastPage` like a hit (for a section, the pages of all its chunks).
+
+## Pages
+
+Every chunk records the pages its text was read from, so a hit or a read can be cited by page. Extract keeps the layout of each parse: which range of the document's Markdown came from which page ([layout](rest-api.md#the-layout)). When Index chunks a document, it finds each chunk's text in the Markdown and takes the pages of the range it found.
+
+- The chunker re-renders the Markdown it splits: a chunk starts with its heading path, repeats a split table's header row, and writes HTML tables as Markdown tables. So the text is matched line by line, ignoring whitespace, Markdown and table markup, compatibility forms (full-width digits) and case, in document order. On the evaluation corpus every chunk was found, with 96% (120-token chunks) to 99.7% (the default 400) of each chunk's text inside the range found; what falls outside is mostly the header row a split table repeats, which does not move a chunk onto the page before.
+- `firstPage` and `lastPage` are `null` when the document has no layout (a file without pages, or a parse from before layouts were kept), when its Markdown was corrected after the parse (the layout then describes other text), and for a chunk whose text was not found.
+- They follow the layout: a re-parse that renders the same Markdown updates them without re-chunking or re-embedding the document.
 
 ## MCP Specifics
 

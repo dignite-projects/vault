@@ -1,6 +1,10 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using Dignite.Vault.Extract.Documents.Layout;
+using Dignite.Vault.Parse;
+using Microsoft.Extensions.Logging;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
 
@@ -25,13 +29,16 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly DocumentReferenceMaps _referenceMaps;
+    private readonly DocumentLayoutStore _layoutStore;
 
     public DocumentIntegrationService(
         IDocumentRepository documentRepository,
-        DocumentReferenceMaps referenceMaps)
+        DocumentReferenceMaps referenceMaps,
+        DocumentLayoutStore layoutStore)
     {
         _documentRepository = documentRepository;
         _referenceMaps = referenceMaps;
+        _layoutStore = layoutStore;
     }
 
     public virtual async Task<DocumentIntegrationDto?> FindReadyAsync(Guid id)
@@ -58,8 +65,46 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
             Title = document.Title,
             Language = document.Language,
             Markdown = document.Markdown ?? string.Empty,
-            ExtractedFields = _referenceMaps.AssembleExtractedFields(document, fieldsByType)
+            ExtractedFields = _referenceMaps.AssembleExtractedFields(document, fieldsByType),
+            Pages = await GetPagesAsync(document)
         };
+    }
+
+    /// <summary>
+    /// The Markdown's ranges per page, from the layout the parse kept, while the Markdown is still the one it rendered.
+    /// Fails open: a layout that cannot be read leaves the pages out and the document usable.
+    /// </summary>
+    protected virtual async Task<List<DocumentPageSpansDto>?> GetPagesAsync(Document document)
+    {
+        try
+        {
+            var tree = await _layoutStore.GetCurrentTreeAsync(document.Id, document.Markdown);
+            if (tree is null)
+            {
+                return null;
+            }
+
+            var map = ExtractionDocumentMarkdown.Map(tree);
+            if (!string.Equals(map.Markdown, document.Markdown, StringComparison.Ordinal))
+            {
+                // The hash matched, so the renderer itself changed since the parse: its offsets no longer line up.
+                return null;
+            }
+
+            var pages = ExtractionDocumentPages.Spans(map)
+                .Select(page => new DocumentPageSpansDto
+                {
+                    PageNumber = page.Key,
+                    Spans = page.Value.Select(span => new DocumentTextSpanDto { Offset = span.Offset, Length = span.Length }).ToList()
+                })
+                .ToList();
+            return pages.Count == 0 ? null : pages;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not read the layout of document {DocumentId}; its pages are left out.", document.Id);
+            return null;
+        }
     }
 
     public virtual async Task<ListResultDto<Guid>> GetReadyIdsAsync(GetReadyDocumentIdsInput input)

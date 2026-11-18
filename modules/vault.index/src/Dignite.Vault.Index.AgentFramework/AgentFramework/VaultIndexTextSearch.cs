@@ -119,6 +119,8 @@ public class VaultIndexTextSearch : ITransientDependency
     protected virtual TextSearchProvider.TextSearchResult ToResult(IndexSearchHitDto hit, VaultIndexTextSearchOptions? options)
     {
         var source = string.Join(' ', new[] { hit.DocumentTitle, hit.HeadingPath }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var pages = hit.FirstPage is not { } first ? null
+            : hit.LastPage is { } last && last != first ? $"pages {first}-{last}" : $"page {first}";
         var text = PromptBoundary.WrapDocument(hit.Text);
         if (hit.TextTruncated)
         {
@@ -127,7 +129,10 @@ public class VaultIndexTextSearch : ITransientDependency
 
         return new TextSearchProvider.TextSearchResult
         {
-            SourceName = source.Length == 0 ? null : PromptBoundary.WrapField(source),
+            // The page numbers are Index's own, outside the tag, so the model may cite them.
+            SourceName = string.Join(", ", new[] { source.Length == 0 ? null : PromptBoundary.WrapField(source), pages }.OfType<string>()) is { Length: > 0 } name
+                ? name
+                : null,
             SourceLink = options?.SourceLink?.Invoke(hit),
             Text = text,
             RawRepresentation = hit

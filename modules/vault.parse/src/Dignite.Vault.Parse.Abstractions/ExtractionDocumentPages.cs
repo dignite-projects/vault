@@ -61,12 +61,7 @@ public static class ExtractionDocumentPages
         ExtractionDocumentMarkdownMap map,
         IReadOnlyList<(int Start, int End)> ranges)
     {
-        // Leaf spans only: a table's span contains its cells' spans, and counting both would double the table's text.
-        // In offset order (longest first at a tie), a span that contains others is directly followed by one of them.
-        var ordered = map.Spans.OrderBy(span => span.Offset).ThenByDescending(span => span.Length).ToList();
-        var leaves = ordered
-            .Where((span, i) => i + 1 == ordered.Count || ordered[i + 1].Offset >= span.Offset + span.Length)
-            .ToList();
+        var leaves = Leaves(map);
 
         var result = new List<IReadOnlyDictionary<int, int>>(ranges.Count);
         foreach (var (start, end) in ranges)
@@ -90,5 +85,84 @@ public static class ExtractionDocumentPages
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The ranges of the rendered Markdown read from each page, by page number, in Markdown order: the ranges of the
+    /// elements read from it (<see cref="ExtractionDocumentMarkdown.Map"/>; a table cell, not its whole table), with
+    /// neighbours joined when only markup or whitespace lies between them. An element read from several pages is in
+    /// each page's ranges. The shape of Azure Document Intelligence's <c>pages[].spans</c>.
+    /// </summary>
+    public static IReadOnlyDictionary<int, IReadOnlyList<(int Offset, int Length)>> Spans(ExtractionDocumentMarkdownMap map)
+    {
+        var result = new SortedDictionary<int, IReadOnlyList<(int Offset, int Length)>>();
+        var byPage = new Dictionary<int, List<(int Start, int End)>>();
+        foreach (var span in Leaves(map))
+        {
+            foreach (var number in span.Sources.Select(source => source.Page.PageNumber).OfType<int>().Distinct())
+            {
+                if (!byPage.TryGetValue(number, out var runs))
+                {
+                    byPage[number] = runs = [];
+                }
+
+                var end = span.Offset + span.Length;
+                if (runs.Count > 0 && runs[^1].End <= span.Offset && OnlyMarkup(map.Markdown, runs[^1].End, span.Offset))
+                {
+                    runs[^1] = (runs[^1].Start, end);
+                }
+                else if (runs.Count > 0 && runs[^1].End >= span.Offset)
+                {
+                    runs[^1] = (runs[^1].Start, Math.Max(runs[^1].End, end));
+                }
+                else
+                {
+                    runs.Add((span.Offset, end));
+                }
+            }
+        }
+
+        foreach (var (number, runs) in byPage)
+        {
+            result[number] = runs.Select(run => (run.Start, run.End - run.Start)).ToList();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The spans that contain no other: a table's span contains its cells' spans. In offset order (longest first at a
+    /// tie), a span that contains others is directly followed by one of them.
+    /// </summary>
+    private static List<ExtractionDocumentMarkdownSpan> Leaves(ExtractionDocumentMarkdownMap map)
+    {
+        var ordered = map.Spans.OrderBy(span => span.Offset).ThenByDescending(span => span.Length).ToList();
+        return ordered
+            .Where((span, i) => i + 1 == ordered.Count || ordered[i + 1].Offset >= span.Offset + span.Length)
+            .ToList();
+    }
+
+    /// <summary>Whether the text between two elements is only whitespace, Markdown punctuation and HTML tags (a table's).</summary>
+    private static bool OnlyMarkup(string markdown, int start, int end)
+    {
+        var inTag = false;
+        for (var i = start; i < end; i++)
+        {
+            var c = markdown[i];
+            if (inTag)
+            {
+                inTag = c != '>';
+            }
+            else if (c == '<')
+            {
+                inTag = true;
+            }
+            else if (char.IsLetterOrDigit(c))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

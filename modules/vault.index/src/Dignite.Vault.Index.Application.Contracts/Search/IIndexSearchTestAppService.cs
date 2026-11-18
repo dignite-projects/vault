@@ -124,6 +124,12 @@ public class IndexSearchTestCandidateDto
 
     public string? HeadingPath { get; set; }
 
+    /// <summary>The first page of the document's file the chunk was read from; <c>null</c> when unknown.</summary>
+    public int? FirstPage { get; set; }
+
+    /// <summary>The last page the chunk was read from.</summary>
+    public int? LastPage { get; set; }
+
     /// <summary>The start of the chunk text, cut at <see cref="IndexSearchConsts.MaxTestTextLength"/>.</summary>
     public string Text { get; set; } = default!;
 

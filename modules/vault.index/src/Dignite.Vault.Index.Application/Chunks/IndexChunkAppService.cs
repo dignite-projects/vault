@@ -84,6 +84,8 @@ public class IndexChunkAppService : VaultIndexAppService, IIndexChunkAppService
                 Pointer = IndexPointer.ForChunk(c.Id).ToString(),
                 Ordinal = c.Ordinal,
                 HeadingPath = c.HeadingPath,
+                FirstPage = c.FirstPage,
+                LastPage = c.LastPage,
                 Text = c.Text,
                 IsDisabled = c.IsDisabled,
                 Keywords = c.Keywords,

@@ -87,6 +87,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
                 DocumentTitle = documents.GetValueOrDefault(chunk.DocumentId)?.Title,
                 DocumentTypeCode = types.GetValueOrDefault(chunk.DocumentTypeId),
                 HeadingPath = chunk.HeadingPath,
+                FirstPage = chunk.FirstPage,
+                LastPage = chunk.LastPage,
                 Text = text,
                 TextTruncated = text.Length < chunk.Text.Length,
                 TextTotalLength = chunk.Text.Length,
@@ -230,6 +232,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             DocumentTitle = document?.Title,
             DocumentTypeCode = types.GetValueOrDefault(chunk.DocumentTypeId),
             HeadingPath = chunk.HeadingPath,
+            FirstPage = chunk.FirstPage,
+            LastPage = chunk.LastPage,
             Text = text,
             TextTruncated = text.Length < chunk.Text.Length,
             TextTotalLength = chunk.Text.Length,
@@ -251,7 +255,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
 
         var inNode = ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope)
             .Where(c => c.DocumentId == documentId && c.Ordinal >= node.FirstOrdinal && c.Ordinal <= node.LastOrdinal);
-        var textLengths = await AsyncExecuter.ToListAsync(inNode.OrderBy(c => c.Ordinal).Select(c => new { c.Id, c.Text.Length }));
+        var textLengths = await AsyncExecuter.ToListAsync(inNode.OrderBy(c => c.Ordinal).Select(c => new { c.Id, c.Text.Length, c.FirstPage, c.LastPage }));
         var totalLength = textLengths.Sum(t => t.Length) + ChunkSeparator.Length * Math.Max(0, textLengths.Count - 1);
 
         // Load only the chunks that fit under the cap, then cut the last one.
@@ -278,6 +282,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             DocumentTitle = document?.Title,
             DocumentTypeCode = types.GetValueOrDefault(outlineChunks[0].DocumentTypeId),
             HeadingPath = node.HeadingPath,
+            FirstPage = textLengths.Min(t => t.FirstPage),
+            LastPage = textLengths.Max(t => t.LastPage),
             Text = text,
             TextTruncated = text.Length < totalLength,
             TextTotalLength = totalLength,

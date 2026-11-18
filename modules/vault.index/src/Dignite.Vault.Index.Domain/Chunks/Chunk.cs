@@ -60,6 +60,15 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
     /// </summary>
     public virtual string? Questions { get; protected set; }
 
+    /// <summary>
+    /// The first page of the document's file this chunk's text was read from; <c>null</c> when it is not known: the
+    /// document has no pages or no current layout, or the chunk's text could not be found in the Markdown.
+    /// </summary>
+    public virtual int? FirstPage { get; protected set; }
+
+    /// <summary>The last page this chunk's text was read from; equal to <see cref="FirstPage"/> for a chunk on one page.</summary>
+    public virtual int? LastPage { get; protected set; }
+
     protected Chunk()
     {
     }
@@ -97,5 +106,17 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
     public virtual void SetDisabled(bool isDisabled)
     {
         IsDisabled = isDisabled;
+    }
+
+    /// <summary>Places the chunk on pages <paramref name="firstPage"/> to <paramref name="lastPage"/>; both <c>null</c> when unknown.</summary>
+    public virtual void SetPages(int? firstPage, int? lastPage)
+    {
+        if (firstPage is null != lastPage is null || firstPage < 1 || lastPage < firstPage)
+        {
+            throw new ArgumentException($"Invalid page range {firstPage}-{lastPage}.");
+        }
+
+        FirstPage = firstPage;
+        LastPage = lastPage;
     }
 }
