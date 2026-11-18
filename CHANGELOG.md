@@ -393,6 +393,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A re-parse that is refused (no text) or fails no longer overwrites the layout of the text that stays.
   - Clearing a document's fields (a reclassification, a turn into a container) clears their sources too.
   - A sub-document spawn that fails deletes the pages it cut, so no file is left behind if no retry comes.
+  - Two runs spawning the same sub-document at once no longer share its cut file: the one that failed could delete
+    the file the other's sub-document was being saved with. Each attempt now cuts under a name of its own.
   - The "no layout" and "cannot re-parse a sub-document" messages describe sub-documents cut by page correctly.
 - **PDF reading (from the refactor review).**
   - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is

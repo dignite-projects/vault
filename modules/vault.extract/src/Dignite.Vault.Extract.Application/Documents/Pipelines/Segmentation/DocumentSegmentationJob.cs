@@ -537,8 +537,8 @@ public class DocumentSegmentationJob
 
         // Shared complete-phase UoW (#358): insert the derived document, mark this segment Spawned, publish
         // DocumentUploadedEto, and queue text extraction — atomically. The reload guard is kind-aware (#371).
-        // A spawn that throws (a concurrency conflict, the database) has written the cut already; a retry cuts again
-        // under the same name, but a retry that never comes (the source re-parsed meanwhile) would leave it behind.
+        // A spawn that throws (a concurrency conflict, the database) has written the cut already, under a name of this
+        // attempt's own; a retry cuts again under another, so the cut is removed here rather than left for it.
         Guid? spawnedId;
         try
         {
@@ -569,13 +569,13 @@ public class DocumentSegmentationJob
         }
         catch (Exception) when (fileOrigin is not null)
         {
-            await DeleteUnusedCutAsync(segment, fileOrigin.BlobName);
+            await _blobContainer.DeleteAsync(fileOrigin.BlobName);
             throw;
         }
 
         if (spawnedId is null && fileOrigin is not null)
         {
-            await DeleteUnusedCutAsync(segment, fileOrigin.BlobName);
+            await _blobContainer.DeleteAsync(fileOrigin.BlobName);
         }
     }
 
@@ -667,8 +667,10 @@ public class DocumentSegmentationJob
     protected const int MaxMovedCharacters = 40;
 
     /// <summary>
-    /// A constituent's own file: its pages cut out of the source's file and saved under a name derived from the segment,
-    /// so a retry overwrites rather than duplicates. <c>null</c> when the segment has no pages or the cut fails on the
+    /// A constituent's own file: its pages cut out of the source's file and saved under a name of this attempt's own
+    /// (the segment's id and a fresh one). Two runs that spawn the same segment at once both cut it; the one whose spawn
+    /// does not claim the segment deletes its cut, and with a shared name it would delete the file the other run's child
+    /// is being committed with. <c>null</c> when the segment has no pages or the cut fails on the
     /// file itself (it is then seeded from its slice like any other); a storage failure propagates and the job retries.
     /// </summary>
     protected virtual async Task<FileOrigin?> TryCutPagesAsync(
@@ -694,7 +696,7 @@ public class DocumentSegmentationJob
             return null;
         }
 
-        var blobName = segment.SegmentId.ToString("N") + Path.GetExtension(source.BlobName);
+        var blobName = $"{segment.SegmentId:N}-{_guidGenerator.Create():N}{Path.GetExtension(source.BlobName)}";
         await _blobContainer.SaveAsync(blobName, bytes, overrideExisting: true, cancellationToken);
 
         return new FileOrigin(
@@ -712,25 +714,6 @@ public class DocumentSegmentationJob
         var name = string.IsNullOrWhiteSpace(sourceFileName) ? "document.pdf" : sourceFileName;
         var pages = first == last ? $"p{first}" : $"p{first}-{last}";
         return $"{Path.GetFileNameWithoutExtension(name)} ({pages}){Path.GetExtension(name)}";
-    }
-
-    /// <summary>
-    /// The spawn did not claim the segment. Its cut is removed unless the segment was spawned after all (by a concurrent
-    /// run, which wrote the same blob name and now references it).
-    /// </summary>
-    private async Task DeleteUnusedCutAsync(PendingSegment segment, string blobName)
-    {
-        DocumentSegment? current;
-        using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
-        {
-            current = await _segmentRepository.FindAsync(segment.SegmentId);
-            await uow.CompleteAsync();
-        }
-
-        if (current is not { Status: DocumentSegmentStatus.Spawned })
-        {
-            await _blobContainer.DeleteAsync(blobName);
-        }
     }
 
     private ParsePageCopier? FindPageCopier(FileOrigin file)
