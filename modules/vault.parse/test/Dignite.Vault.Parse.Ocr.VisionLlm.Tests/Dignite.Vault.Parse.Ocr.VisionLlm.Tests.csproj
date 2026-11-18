@@ -10,8 +10,9 @@
 
   <ItemGroup>
     <!-- Pure unit tests: mock IChatClient + IPdfRasterizer with NSubstitute. No ABP TestBase, no
-         DB, and no native PDFium — the rasterizer is mocked, so multi-page PDF logic is covered
-         without it. SkiaSharp IS loaded natively here since #692: the provider shrinks a large image
+         DB. The engine's tests mock the rasterizer, so multi-page PDF logic is covered without PDFium;
+         only PdfToImageRasterizer_Tests renders through it, to check the resolution a page gets.
+         SkiaSharp IS loaded natively here since #692: the provider shrinks a large image
          before the vision call (VisionLlmImageDownscaler), and its tests build real images. -->
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

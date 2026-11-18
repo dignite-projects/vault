@@ -23,7 +23,7 @@ Every engine is found through `[ExposeServices(typeof(ParseExtractionClient), ..
 
 **OCR engines are mutually exclusive: the host enables exactly one.** The PDF and OpenXML engines inject the single `ParseOcrClient` for figures. Switching means changing both the host's `[DependsOn]` and its `ProjectReference`, and the keyed Vision `IChatClient` registration when VisionLlm is involved.
 
-- `Ocr.VisionLlm` (the host default): a vision LLM transcribes images and image-only PDFs, through the keyed Vision `IChatClient`, one section per page. PDFs are rasterized page by page with PDFium + SkiaSharp.
+- `Ocr.VisionLlm` (the host default): a vision LLM transcribes images and image-only PDFs, through the keyed Vision `IChatClient`, one section per page. PDFs are rasterized page by page with PDFium + SkiaSharp, at 300 dpi or lower to stay within `MaxInputImagePixels`. An image over `MaxImagePixels` is shrunk before the call (a JPEG or WebP decoded straight at a reduced size); one that also declares more than `MaxInputImagePixels` is refused from its header with `InvalidDataException`, because decoding it is the decompression bomb.
 - `Ocr.PaddleOcr`: a local sidecar (PP-StructureV3).
 - `Ocr.AzureDocumentIntelligence`: the cloud option.
 

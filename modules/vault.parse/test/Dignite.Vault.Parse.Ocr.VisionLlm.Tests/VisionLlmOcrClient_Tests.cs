@@ -328,6 +328,24 @@ public class VisionLlmOcrClient_Tests
     }
 
     [Fact]
+    public async Task Should_Refuse_An_Image_Over_The_Input_Cap_Without_Decoding_It()
+    {
+        // 400 megapixels in a PNG of a few hundred kilobytes: decoding it to shrink it would take 400 MB.
+        var bomb = DecompressionBomb.Png(20_000, 20_000);
+        SetupSingleResponse("ok");
+
+        var peak = DecompressionBomb.PeakWorkingSet();
+        var refusal = await Record.ExceptionAsync(() =>
+            CreateProvider().ParseAsync(new MemoryStream(bomb), "upload", "image/png"));
+        var growth = DecompressionBomb.PeakWorkingSet() - peak;
+
+        growth.ShouldBeLessThan(128L * 1024 * 1024);
+        refusal.ShouldBeOfType<InvalidDataException>().Message.ShouldContain("20000x20000");
+        await _chatClient.DidNotReceive().GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Should_Send_An_Image_Within_The_Budget_Byte_For_Byte_Unchanged()
     {
         var sent = CaptureSentImages();
