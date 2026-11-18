@@ -65,13 +65,27 @@ public class PdfTableContinuation_Tests
     public void Leaves_apart_a_table_that_starts_the_next_page_under_a_header_of_its_own()
     {
         // Same columns, back to back across the break, but the second opens with a different header: another table.
-        var first = new PdfTableContinuation.Page(1, [Table(["Item", "Price"], ["A", "1"])]);
-        var second = new PdfTableContinuation.Page(2, [Table(["Name", "Role"], ["Sato", "Lead"])]);
+        var first = new PdfTableContinuation.Page(1, [Table(["Item", "Price"], ["Paper", "120"], ["Pens", "80"])]);
+        var second = new PdfTableContinuation.Page(2, [Table(["Name", "Age"], ["Sato", "34"], ["Suzuki", "41"])]);
 
         PdfTableContinuation.Join([first, second]);
 
-        Rows(first.Blocks[^1]).ShouldBe([["Item", "Price"], ["A", "1"]]);
-        Rows(second.Blocks.ShouldHaveSingleItem()).ShouldBe([["Name", "Role"], ["Sato", "Lead"]]);
+        Rows(first.Blocks[^1]).ShouldBe([["Item", "Price"], ["Paper", "120"], ["Pens", "80"]]);
+        Rows(second.Blocks.ShouldHaveSingleItem()).ShouldBe([["Name", "Age"], ["Sato", "34"], ["Suzuki", "41"]]);
+    }
+
+    [Fact]
+    public void Joins_a_table_of_text_whose_continuation_opens_on_a_row_like_its_header()
+    {
+        // A roster cut by the break: the next page's first row is text over text, as the header is. Nothing tells it from
+        // a header, so it is read as the rows it most likely is.
+        var first = new PdfTableContinuation.Page(1, [Table(["Name", "Role"], ["Sato", "Lead"], ["Kato", "Chair"])]);
+        var second = new PdfTableContinuation.Page(2, [Table(["Suzuki", "Member"], ["Tanaka", "Member"])]);
+
+        PdfTableContinuation.Join([first, second]);
+
+        Rows(first.Blocks[^1]).ShouldBe([["Name", "Role"], ["Sato", "Lead"], ["Kato", "Chair"], ["Suzuki", "Member"], ["Tanaka", "Member"]]);
+        second.Blocks.ShouldBeEmpty();
     }
 
     [Fact]

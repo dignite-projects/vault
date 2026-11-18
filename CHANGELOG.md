@@ -404,7 +404,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An HTML table cell keeps text its entities encode as angle brackets (`p &lt; 0.05`): tags are removed before the
     entities are decoded.
   - A table that starts the next page under a different header row is a table of its own, not the previous one's
-    continuation.
+    continuation. A header is read from the rows the way Python's `csv.Sniffer.has_header` reads it (a first row that
+    differs from the rows under it, column by column), so a table of text cut by a page break, whose next page opens
+    on a row of text like its header, is still joined.
+  - An embedded image whose pixel count is over `PdfExtractorOptions.MaxImagePixels` (default 89,478,485, Pillow's
+    decompression-bomb limit) is skipped before it is decoded, and the document marked incomplete. A 140 KB PDF
+    declaring a 12,000 × 12,000 raster of one colour took 1 GB to read.
   - A page in capitals or a table of contents with dot leaders is no longer taken for a garbled text layer and sent
     to OCR.
 - **Index chunking and pages (from the refactor review).**
