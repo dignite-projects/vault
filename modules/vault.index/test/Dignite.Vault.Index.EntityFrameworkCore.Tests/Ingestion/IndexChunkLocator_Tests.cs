@@ -98,6 +98,24 @@ public class IndexChunkLocator_Tests
     }
 
     [Fact]
+    public void A_row_whose_merged_cell_the_chunker_repeated_is_found_by_its_own_cells()
+    {
+        // The parse wrote a rowspan; the chunker's Markdown repeats 運用 into the second row, which the HTML lacks.
+        const string markdown = "<table><tr><th>区分</th><th>サービス</th><th>価格</th></tr>"
+            + "<tr><td rowspan=\"2\">運用</td><td>データ移行作業</td><td>300,000</td></tr>"
+            + "<tr><td>画面追加作業</td><td>120,000</td></tr></table>";
+        (string?, string) first = (null, "| 区分 | サービス | 価格 |\n| --- | --- | --- |\n| 運用 | データ移行作業 | 300,000 |");
+        (string?, string) second = (null, "| 区分 | サービス | 価格 |\n| --- | --- | --- |\n| 運用 | 画面追加作業 | 120,000 |");
+
+        var ranges = IndexChunkLocator.Locate(markdown, [first, second]);
+
+        var range = ranges[1].ShouldNotBeNull();
+        markdown.Substring(range.Offset, range.Length).ShouldStartWith("画面追加作業");
+        markdown.Substring(range.Offset, range.Length).ShouldEndWith("120,000");
+        ranges[0]!.Value.Offset.ShouldBeLessThan(range.Offset);
+    }
+
+    [Fact]
     public void A_chunk_whose_text_is_not_in_the_markdown_has_no_range()
     {
         (string?, string) chunk = (null, "この文章は原文にありません。");
