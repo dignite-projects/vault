@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -1075,7 +1076,8 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
             first.FileOrigin!.OriginalFileName.ShouldBe("bundle (p1).pdf");
             second.FileOrigin!.OriginalFileName.ShouldBe("bundle (p2-3).pdf");
             second.FileOrigin.ContentType.ShouldBe("application/pdf");
-            second.FileOrigin.BlobName.ShouldBe(segments[1].Id.ToString("N") + ".pdf");
+            second.FileOrigin.BlobName.ShouldStartWith(segments[1].Id.ToString("N") + "-");
+            second.FileOrigin.BlobName.ShouldEndWith(".pdf");
             second.FileOrigin.FileSize.ShouldBe(FakePageCopier.Cut(2, 3).Length);
             secondBlob = second.FileOrigin.BlobName;
         });
@@ -1083,6 +1085,55 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         await GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>().Received(1).SaveAsync(
             secondBlob!, Arg.Any<System.IO.Stream>(), true, Arg.Any<CancellationToken>());
     }
+
+    /// <summary>
+    /// Two runs may spawn the same segment at once, and the one that does not claim it deletes its cut. Each attempt
+    /// cuts under a name of its own, so that delete can never reach the file the other run's child is committed with.
+    /// </summary>
+    [Fact]
+    public async Task A_spawn_that_fails_deletes_only_its_own_cut()
+    {
+        var tree = Bundle(["Invoice A"], ["Invoice B"], ["B total"]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        StubSplit(("Invoice A", true), ("Invoice B", true));
+        var blobs = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
+        _eventBus
+            .PublishAsync(Arg.Any<DocumentUploadedEto>())
+            .ThrowsAsync(new InvalidOperationException("event bus down"));
+
+        await Should.ThrowAsync<AggregateException>(
+            () => _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId }));
+
+        var failedCuts = SavedCuts(blobs);
+        failedCuts.Count.ShouldBe(2);
+        foreach (var cut in failedCuts)
+        {
+            await blobs.Received(1).DeleteAsync(cut, Arg.Any<CancellationToken>());
+        }
+
+        _eventBus.PublishAsync(Arg.Any<DocumentUploadedEto>()).Returns(Task.CompletedTask);
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId);
+            segments.ShouldAllBe(s => s.Status == DocumentSegmentStatus.Spawned);
+            foreach (var segment in segments)
+            {
+                var child = await _documentRepository.GetAsync(segment.RoutedDocumentId!.Value);
+                failedCuts.ShouldNotContain(child.FileOrigin!.BlobName);
+                await blobs.DidNotReceive().DeleteAsync(child.FileOrigin.BlobName, Arg.Any<CancellationToken>());
+            }
+        });
+    }
+
+    private static List<string> SavedCuts(IBlobContainer<VaultExtractDocumentContainer> blobs)
+        => blobs.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IBlobContainer.SaveAsync))
+            .Select(call => (string)call.GetArguments()[0]!)
+            .Where(name => name.EndsWith(".pdf", StringComparison.Ordinal))
+            .ToList();
 
     /// <summary>
     /// The model's boundary sits under a stamp line at the top of the contract's first page, so that line lands in the
