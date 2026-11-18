@@ -79,6 +79,11 @@ The table can be ordered by any of these, which answers most "why is this passag
 | --- | --- | --- |
 | By headings (default) | Chunks follow the heading tree and each carries its heading path. A section larger than the chunk size is split by paragraph. A table stays whole with the text around it; a table larger than the chunk size is split by rows, each piece repeating the header row | Contracts, rules, manuals, invoices, reports |
 | By tokens | A fixed token count with overlap, ignoring headings. Chunks carry no heading path, so a hit cites only the document | Text without headings |
+| Whole document | The document as one chunk while it fits the chunk size, so a question about two parts of it (the customer at the top of an invoice, the bank account at the bottom) finds both in one hit; a longer document is chunked by headings at the same size. The chunk carries no heading path | Invoices, receipts, quotes and other short documents |
+| By table row | Every data row of a table as its own chunk, holding the heading path, the header row and the row; a row with no text is skipped and a table with no data row stays with the text. Everything else is chunked by headings. A spreadsheet of more than `MaxChunksPerDocument` rows (5,000) fails to index | Price lists, ledgers, rosters, spreadsheets |
+| By page | Every page of the document's file as a chunk, cut where the page's text starts in the Markdown; a page larger than the chunk size is chunked by headings. A document without pages (no layout, or Markdown corrected after the parse) is chunked by headings. Page chunks carry no heading path | Slides, forms, catalogues |
+
+The last three are RAGFlow's `one`, `table` and `presentation` chunk methods. A document outline is built from heading paths, so a type chunked whole or by page has an outline only where a chunk was split by headings.
 
 Tables written as HTML, as Azure Document Intelligence writes every table (merged cells, captions), are read as tables too: the chunker rewrites them as Markdown tables first, repeating a merged cell's text into every cell it spans and putting the caption above. Figures (`<figure>`) become their text.
 
@@ -180,6 +185,22 @@ Version 2 of the set adds three documents whose tables carry the answers: a pric
 - Reading HTML tables as tables is the largest gain: before it, the table questions found their section half the time at best.
 - 200, 400 and 800 tokens differ by one or two questions, because most sections of this corpus are shorter than 200 tokens. The default stays at 400 until a corpus with long sections says otherwise.
 - Chunking by tokens finds the right document as well, but its chunks carry no heading path, so no hit can cite a section.
+
+### Chunking templates (2026-11-18)
+
+Version 5 of the set, each template indexed from scratch and every case ranked by search with `BAAI/bge-reranker-v2-m3` (`templates-2026-11-18.md` next to the set). A passage counts as found when a heading line of the hit names it, so a whole-document chunk that holds the answer counts. `By type` is a profile per document type: invoices, quotes and expense claims whole (1,500 tokens), the price list and the sales report by table row (400), the rest by headings (400):
+
+| MRR@10, search with rerank | Passage, 84 questions | Passage, 12 table questions | Document, 127 cases | Chunks | Characters per top-3 hit |
+| --- | --- | --- | --- | --- | --- |
+| By headings, 400 (default) | 0.959 | 0.875 | 0.980 | 143 | 113 |
+| Whole document, 1,500 | 0.982 | 0.917 | 0.988 | 23 | 823 |
+| By table row, 400 | 0.971 | 0.958 | 0.988 | 174 | 93 |
+| By type | 0.979 | 0.958 | 0.992 | 145 | 147 |
+
+- By type puts first two answers headings missed: the bank account of the invoice sent to a named customer (the customer is at the top, the account at the bottom: one whole chunk holds both), and an English question about one item of a Japanese price list (its row, from nowhere in the top ten to first).
+- Whole documents score highest, but every hit is a whole document, seven times the text an agent has to read per hit, and the passage is not located inside it. Use it for short documents, not as the default.
+- By table row helps exactly where tables carry the answers and changes nothing else, at a fifth more chunks on this corpus.
+- The default stays by headings: the right template depends on what a type's documents look like, which is what a profile per type is for. By page has no case here (the set has no paged documents) and is covered by tests only.
 
 ### Enrichment (2026-11-12)
 

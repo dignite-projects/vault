@@ -18,7 +18,7 @@ public class IndexChunkerTables_Tests
         var chunks = await new IndexChunker().ChunkAsync("# 価格表\n\n" + table, "doc", ResolvedIndexProfile.BuiltIn);
 
         chunks.ShouldContain(c => c.Text.Contains("60,000"));
-        chunks.ShouldAllBe(c => !c.Text.Contains('​'));
+        chunks.ShouldAllBe(c => !c.Text.Contains('\u200B'));
     }
 
     [Fact]
@@ -26,6 +26,6 @@ public class IndexChunkerTables_Tests
     {
         var prepared = new IndexChunker().Prepare("| 記号 | 意味 |\n| --- | --- |\n| a \\| b | または |");
 
-        prepared.ShouldNotContain("​");
+        prepared.ShouldNotContain("\u200B");
     }
 }

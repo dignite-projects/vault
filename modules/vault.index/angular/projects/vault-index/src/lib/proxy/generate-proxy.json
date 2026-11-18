@@ -18755,11 +18755,17 @@
       "isEnum": true,
       "enumNames": [
         "Heading",
-        "Token"
+        "Token",
+        "Whole",
+        "TableRow",
+        "Page"
       ],
       "enumValues": [
         0,
-        1
+        1,
+        2,
+        3,
+        4
       ],
       "genericArguments": null,
       "properties": null,
