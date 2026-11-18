@@ -385,18 +385,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Layout viewer (from the refactor review).**
-  - A document without a layout shows the "no layout" notice instead of the error alert: the error body of the blob
-    request is now read.
-  - Turning the layout off and on, or leaving the page, while pages load no longer leaves pdf.js work running, nor
-    lets an older load overwrite a newer one.
-  - Layout regions can be reached and selected with the keyboard, and image badges keep dark text on their light fill.
+- **PDF reading (from the refactor review).**
+  - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is
+    taken, outside the per-page guard. The page is dropped and the document marked incomplete.
+  - A line repeated at the page edge is dropped as a running header or footer only when its numbers are the same on
+    every page or a page number. Per-page subtotals and ledger rows at the top or bottom of each page were dropped.
+  - An HTML table cell keeps text its entities encode as angle brackets (`p &lt; 0.05`): tags are removed before the
+    entities are decoded.
+  - A table that starts the next page under a different header row is a table of its own, not the previous one's
+    continuation.
+  - A page in capitals or a table of contents with dot leaders is no longer taken for a garbled text layer and sent
+    to OCR.
 
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
   (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every
   document with one failed indexing: 5 of 16 Ready documents in the local corpus, invoices and price lists among them.
   Index now holds such cells open with a zero-width space while the reader parses and drops it from the chunks; their
   text and search results are unchanged. Documents that failed this way index on their next sync or **Rebuild**.
+
+- **Layout viewer (from the refactor review).**
+  - A document without a layout shows the "no layout" notice instead of the error alert: the error body of the blob
+    request is now read.
+  - Turning the layout off and on, or leaving the page, while pages load no longer leaves pdf.js work running, nor
+    lets an older load overwrite a newer one.
+  - Layout regions can be reached and selected with the keyboard, and image badges keep dark text on their light fill.
 
 - **A date field lost its value whenever the model wrote a time.** The field-extraction prompt named every `DateTime`
   field by its type, whatever its input mode, so the model answered a Date-mode field as `2026-11-20T00:00:00` and the
