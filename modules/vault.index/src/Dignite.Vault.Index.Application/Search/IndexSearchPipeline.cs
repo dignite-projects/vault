@@ -2,16 +2,20 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Index.Chunks;
 using Dignite.Vault.Index.Documents;
 using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Ingestion;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Linq;
+using Volo.Abp.Threading;
 
 namespace Dignite.Vault.Index.Search;
 
@@ -49,11 +53,27 @@ public sealed class IndexSearchOutcome
 
     /// <summary>
     /// The loaded candidates in their final order: the reranked ones first when there was a rerank, then the rest in
-    /// fused order. A chunk that left the scope after the legs ran is not here.
+    /// fused order. A chunk that left the scope after the legs ran is not here. Those below <see cref="ScoreFloor"/> are
+    /// here too, at the end; search drops them (<see cref="Passes"/>), the retrieval test shows them.
     /// </summary>
     public IReadOnlyList<RankedChunk> Ranked { get; init; } = [];
 
     public bool Reranked { get; init; }
+
+    /// <summary>The rerank score a hit must reach, when the reranker ordered the hits and a floor is set.</summary>
+    public double? ScoreFloor { get; init; }
+
+    /// <summary>
+    /// The query could not be embedded (the model failed or took longer than
+    /// <see cref="VaultIndexSearchOptions.QueryEmbeddingTimeout"/>), so only the keyword leg ran.
+    /// </summary>
+    public bool VectorSearchFailed { get; init; }
+
+    /// <summary>
+    /// Whether search returns <paramref name="ranked"/>: always, unless a floor applies; then only a reranked candidate
+    /// at or above it. The candidates the reranker did not read rank below every one it did, so with a floor they go too.
+    /// </summary>
+    public bool Passes(RankedChunk ranked) => ScoreFloor is not { } floor || ranked.RerankScore >= floor;
 
     /// <summary>The reranker's model, when one was asked.</summary>
     public string? RerankModelId { get; init; }
@@ -84,6 +104,7 @@ public class IndexSearchPipeline : ITransientDependency
     private readonly IndexEmbedder _embedder;
     private readonly IndexRanker _ranker;
     private readonly IAsyncQueryableExecuter _asyncExecuter;
+    private readonly ICancellationTokenProvider _cancellationTokenProvider;
     private readonly VaultIndexSearchOptions _options;
 
     public IndexSearchPipeline(
@@ -94,6 +115,7 @@ public class IndexSearchPipeline : ITransientDependency
         IndexEmbedder embedder,
         IndexRanker ranker,
         IAsyncQueryableExecuter asyncExecuter,
+        ICancellationTokenProvider cancellationTokenProvider,
         IOptions<VaultIndexSearchOptions> options)
     {
         _chunkRepository = chunkRepository;
@@ -103,8 +125,11 @@ public class IndexSearchPipeline : ITransientDependency
         _embedder = embedder;
         _ranker = ranker;
         _asyncExecuter = asyncExecuter;
+        _cancellationTokenProvider = cancellationTokenProvider;
         _options = options.Value;
     }
+
+    public ILogger<IndexSearchPipeline> Logger { get; set; } = NullLogger<IndexSearchPipeline>.Instance;
 
     /// <summary>The host's settings: what search runs with.</summary>
     public virtual IndexSearchSettings DefaultSettings => new(
@@ -129,22 +154,25 @@ public class IndexSearchPipeline : ITransientDependency
             return IndexSearchOutcome.Empty;
         }
 
+        // The request's token (HTTP: the client hung up; in process: what the caller passed to ICancellationTokenProvider.Use).
+        var cancellationToken = _cancellationTokenProvider.Token;
         var candidatesPerLeg = Math.Clamp(settings.CandidatesPerLeg, 1, IndexSearchConsts.MaxCandidatesPerLeg);
         var watch = Stopwatch.StartNew();
-        var vectorMatches = await SearchVectorsAsync(query, scope, candidatesPerLeg);
+        var vectorMatches = await SearchVectorsAsync(query, scope, candidatesPerLeg, cancellationToken);
         var vectorTime = watch.Elapsed;
 
         watch.Restart();
-        var keywordMatches = await _searchIndex.SearchKeywordsAsync(query, scope, candidatesPerLeg);
+        var keywordMatches = await _searchIndex.SearchKeywordsAsync(query, scope, candidatesPerLeg, cancellationToken);
         var keywordTime = watch.Elapsed;
 
-        var fused = _ranker.Fuse(keywordMatches, vectorMatches, settings.KeywordWeight, settings.VectorWeight);
+        var fused = _ranker.Fuse(keywordMatches, vectorMatches ?? [], settings.KeywordWeight, settings.VectorWeight);
         if (fused.Count == 0)
         {
             return new IndexSearchOutcome
             {
                 KeywordMatches = keywordMatches,
-                VectorMatches = vectorMatches,
+                VectorMatches = vectorMatches ?? [],
+                VectorSearchFailed = vectorMatches is null,
                 KeywordTime = keywordTime,
                 VectorTime = vectorTime
             };
@@ -157,7 +185,8 @@ public class IndexSearchPipeline : ITransientDependency
         var candidates = fused.Take(Math.Max(loadCount, reranker is null ? 0 : rerankCount)).ToList();
         var ids = candidates.Select(c => c.ChunkId).ToList();
         var chunks = (await _asyncExecuter.ToListAsync(
-                ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope).Where(c => ids.Contains(c.Id))))
+                ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope).Where(c => ids.Contains(c.Id)),
+                cancellationToken))
             .ToDictionary(c => c.Id);
         var documents = await GetDocumentsAsync(chunks.Values.Select(c => c.DocumentId));
 
@@ -167,25 +196,23 @@ public class IndexSearchPipeline : ITransientDependency
         var texts = head
             .Where(c => chunks.ContainsKey(c.ChunkId))
             .ToDictionary(c => c.ChunkId, c => ChunkContext.Compose(documents.GetValueOrDefault(chunks[c.ChunkId].DocumentId)?.Title, chunks[c.ChunkId].Text));
-        var reranked = reranker is null ? null : await _ranker.RerankAsync(query, head, texts, reranker);
+        var reranked = reranker is null ? null : await _ranker.RerankAsync(query, head, texts, reranker, cancellationToken);
         var rerankTime = reranked is null ? TimeSpan.Zero : watch.Elapsed;
 
+        // Reranked hits are best first, so those under a floor come after every one above it, and the rest after them.
         var ordered = reranked is null
             ? candidates.Select(c => new RankedChunk(c, null))
             : reranked.Concat(candidates.Skip(head.Count).Select(c => new RankedChunk(c, null)));
-        if (reranked is not null && settings.MinRerankScore is { } floor)
-        {
-            // The candidates the reranker did not read rank below every one it did, so with a floor they go too.
-            ordered = reranked.Where(r => r.RerankScore >= floor);
-        }
 
         return new IndexSearchOutcome
         {
             KeywordMatches = keywordMatches,
-            VectorMatches = vectorMatches,
+            VectorMatches = vectorMatches ?? [],
+            VectorSearchFailed = vectorMatches is null,
             Fused = fused,
             Ranked = ordered.Where(r => chunks.ContainsKey(r.Fused.ChunkId)).ToList(),
             Reranked = reranked is not null,
+            ScoreFloor = reranked is null ? null : settings.MinRerankScore,
             RerankModelId = reranker?.ModelId,
             Chunks = chunks,
             Documents = documents,
@@ -196,11 +223,12 @@ public class IndexSearchPipeline : ITransientDependency
     }
 
     /// <summary>
-    /// The vector leg, when there is one. The query is embedded with the serving generation's model: while the index is
-    /// rebuilt for a new model, that is the host's previous model. Any other model would compare two vector spaces, so
-    /// without the serving one the search is refused.
+    /// The vector leg, when there is one; <c>null</c> when the query could not be embedded this time. The query is
+    /// embedded with the serving generation's model: while the index is rebuilt for a new model, that is the host's
+    /// previous model. Any other model would compare two vector spaces, so without the serving one the search is refused.
     /// </summary>
-    protected virtual async Task<IReadOnlyList<ChunkMatch>> SearchVectorsAsync(string query, ChunkSearchScope scope, int take)
+    protected virtual async Task<IReadOnlyList<ChunkMatch>?> SearchVectorsAsync(
+        string query, ChunkSearchScope scope, int take, CancellationToken cancellationToken = default)
     {
         var serving = await _generationManager.FindServingAsync();
         if (serving is null)
@@ -220,8 +248,24 @@ public class IndexSearchPipeline : ITransientDependency
                 .WithData("ServingModelId", serving.ModelId);
         }
 
-        var embedding = await _embedder.EmbedAsync(serving.ModelId, [query]);
-        return await _searchIndex.SearchVectorsAsync(serving.Id, embedding.Vectors[0], scope, take);
+        ReadOnlyMemory<float> vector;
+        using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            deadline.CancelAfter(_options.QueryEmbeddingTimeout);
+            try
+            {
+                vector = (await _embedder.EmbedAsync(serving.ModelId, [query], deadline.Token)).Vectors[0];
+            }
+            // Only the caller's own cancellation ends the search. The model slow, throttled (ingestion shares its limit)
+            // or down, or its circuit open, costs the vector leg: the keyword leg still answers.
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                Logger.LogWarning(exception, "Embedding the query with {Model} failed; search answers from the keyword leg alone.", serving.ModelId);
+                return null;
+            }
+        }
+
+        return await _searchIndex.SearchVectorsAsync(serving.Id, vector, scope, take, cancellationToken);
     }
 
     protected virtual async Task<Dictionary<Guid, IndexedDocument>> GetDocumentsAsync(IEnumerable<Guid> documentIds)

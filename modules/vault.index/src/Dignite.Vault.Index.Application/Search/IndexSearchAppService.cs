@@ -68,11 +68,11 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
 
         // Twice the hits are loaded: a chunk can leave the scope between the legs and the load, and is dropped there.
         var outcome = await _pipeline.RunAsync(query, scope, _pipeline.DefaultSettings, take * 2);
-        var result = new IndexSearchResultDto { Reranked = outcome.Reranked };
+        var result = new IndexSearchResultDto { Reranked = outcome.Reranked, VectorSearchFailed = outcome.VectorSearchFailed };
         var chunks = outcome.Chunks;
         var documents = outcome.Documents;
 
-        foreach (var (candidate, rerankScore) in outcome.Ranked)
+        foreach (var (candidate, rerankScore) in outcome.Ranked.Where(outcome.Passes))
         {
             if (!chunks.TryGetValue(candidate.ChunkId, out var chunk))
             {
@@ -219,9 +219,12 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         var chunk = await AsyncExecuter.FirstOrDefaultAsync(chunks.Where(c => c.Id == pointer.Id))
                     ?? throw new EntityNotFoundException(typeof(Chunk), pointer.Id);
 
-        var neighbours = await AsyncExecuter.ToListAsync(chunks
-            .Where(c => c.DocumentId == chunk.DocumentId && (c.Ordinal == chunk.Ordinal - 1 || c.Ordinal == chunk.Ordinal + 1))
-            .Select(c => new { c.Id, c.Ordinal }));
+        // The nearest chunk on each side that the caller can read: a disabled chunk between them is skipped, not the end.
+        var inDocument = chunks.Where(c => c.DocumentId == chunk.DocumentId);
+        var previous = await AsyncExecuter.FirstOrDefaultAsync(inDocument
+            .Where(c => c.Ordinal < chunk.Ordinal).OrderByDescending(c => c.Ordinal).Select(c => (Guid?)c.Id));
+        var next = await AsyncExecuter.FirstOrDefaultAsync(inDocument
+            .Where(c => c.Ordinal > chunk.Ordinal).OrderBy(c => c.Ordinal).Select(c => (Guid?)c.Id));
         var document = await _documentRepository.FindAsync(chunk.DocumentId);
         var text = TextTruncator.AtCharBoundary(chunk.Text, IndexSearchConsts.MaxReadTextLength);
 
@@ -238,8 +241,8 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
             TextTruncated = text.Length < chunk.Text.Length,
             TextTotalLength = chunk.Text.Length,
             ChunkCount = 1,
-            PreviousPointer = neighbours.Where(n => n.Ordinal < chunk.Ordinal).Select(n => IndexPointer.ForChunk(n.Id).ToString()).FirstOrDefault(),
-            NextPointer = neighbours.Where(n => n.Ordinal > chunk.Ordinal).Select(n => IndexPointer.ForChunk(n.Id).ToString()).FirstOrDefault()
+            PreviousPointer = previous is { } previousId ? IndexPointer.ForChunk(previousId).ToString() : null,
+            NextPointer = next is { } nextId ? IndexPointer.ForChunk(nextId).ToString() : null
         };
     }
 

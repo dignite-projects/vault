@@ -48,6 +48,12 @@ public class IndexSearchResultDto
     /// was kept.
     /// </summary>
     public bool Reranked { get; set; }
+
+    /// <summary>
+    /// The query could not be embedded this time (the embedding model failed or was too slow), so the hits come from the
+    /// keyword leg alone: a passage that shares no words with the question is missing.
+    /// </summary>
+    public bool VectorSearchFailed { get; set; }
 }
 
 public class IndexSearchHitDto

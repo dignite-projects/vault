@@ -74,6 +74,15 @@ public class IndexSearchTestResultDto
 
     public string? RerankModelId { get; set; }
 
+    /// <summary>
+    /// The host's rerank-score floor (<c>Vault:IndexSearch:MinRerankScore</c>) when it applied to this run (the reranker
+    /// ordered the candidates); search returns no candidate below it.
+    /// </summary>
+    public double? MinRerankScore { get; set; }
+
+    /// <summary>The query could not be embedded this time, so only the keyword leg ran, as search would.</summary>
+    public bool VectorSearchFailed { get; set; }
+
     public int KeywordCandidateCount { get; set; }
 
     public int VectorCandidateCount { get; set; }
@@ -85,14 +94,23 @@ public class IndexSearchTestResultDto
 
     public long RerankMilliseconds { get; set; }
 
-    /// <summary>Every candidate either leg found, in the final order search would return them.</summary>
+    /// <summary>
+    /// Every candidate either leg found, in the final order search would return them. Those under the rerank-score floor
+    /// are listed too, last, marked <see cref="IndexSearchTestCandidateDto.BelowScoreFloor"/>.
+    /// </summary>
     public List<IndexSearchTestCandidateDto> Candidates { get; set; } = new();
 }
 
 public class IndexSearchTestCandidateDto
 {
-    /// <summary>Place in the final order, from 1: what search would return.</summary>
+    /// <summary>Place in the final order, from 1: what search would return, up to the first candidate below the floor.</summary>
     public int Rank { get; set; }
+
+    /// <summary>
+    /// Under the rerank-score floor (<see cref="IndexSearchTestResultDto.MinRerankScore"/>), or not read by the reranker
+    /// while a floor applies: search drops it.
+    /// </summary>
+    public bool BelowScoreFloor { get; set; }
 
     /// <summary>Place after fusion, before any rerank, from 1.</summary>
     public int FusedRank { get; set; }

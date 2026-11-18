@@ -1,3 +1,5 @@
+using System;
+
 namespace Dignite.Vault.Index.Search;
 
 /// <summary>
@@ -27,4 +29,12 @@ public class VaultIndexSearchOptions
     /// questions in another language than the document's. No effect without a reranker.
     /// </summary>
     public double? MinRerankScore { get; set; }
+
+    /// <summary>
+    /// How long a search waits for the query's embedding. The embedding model is the one ingestion uses, through the
+    /// same HTTP client: its retries are sized for a throttled bulk run (minutes), and its circuit breaker opens for
+    /// everyone when ingestion hits the provider's limit. Past this, or when the model fails, the search answers from the
+    /// keyword leg alone and says so (<c>VectorSearchFailed</c>), as a failed rerank falls back to the fused order.
+    /// </summary>
+    public TimeSpan QueryEmbeddingTimeout { get; set; } = TimeSpan.FromSeconds(10);
 }

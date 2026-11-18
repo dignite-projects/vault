@@ -246,7 +246,10 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             row.ProfileStamp,
             row.GenerationId,
             row.DocumentTypeId,
-            row.OwnerId);
+            row.OwnerId)
+        {
+            PageCutsHash = row.PageCutsHash
+        };
     }
 
     /// <summary>
@@ -273,20 +276,26 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var profile = await _profileResolver.ResolveAsync(document.DocumentTypeId);
         profile = profile with { Enrichment = _enricherProvider.Effective(profile.Enrichment) };
         var text = _chunker.Prepare(document.Markdown);
-        // By page, the chunks follow the pages too: a layout that arrives (or moves) re-chunks the same text.
-        var contentHash = profile.Strategy == ChunkingStrategy.Page && document.Pages is { Count: > 0 }
-            ? Sha256(text + "\npages:" + string.Join(',', IndexChunker.PageStarts(document.Markdown, document.Pages)))
-            : Sha256(text);
+        var contentHash = Sha256(text);
+
+        // By page, the chunks follow the pages too: pages that arrive (or move) re-chunk the same text. Pages that could
+        // not be read this time (Extract fails open with none) are not a change: the chunks stay cut where they were.
+        var pageCuts = profile.Strategy == ChunkingStrategy.Page && document.Pages is { Count: > 0 }
+            ? Sha256(string.Join(',', IndexChunker.PageStarts(document.Markdown, document.Pages)))
+            : null;
+        var keptPageCuts = pageCuts ?? claim.PageCutsHash;
         var modelId = _embedder.GetModelId();
         var current = await _generationManager.FindTargetAsync(modelId);
 
-        var sameText = !force && claim.ContentHash == contentHash && claim.ProfileStamp == profile.Stamp;
+        var sameText = !force && claim.ContentHash == contentHash && claim.ProfileStamp == profile.Stamp
+                       && (pageCuts is null || pageCuts == claim.PageCutsHash);
         if (sameText && current is not null && claim.GenerationId == current.Id)
         {
             return new SyncPlan(contentHash, profile.Stamp, current.Id, null, null, null)
             {
                 ModelId = modelId,
-                Compilation = profile.Compilation
+                Compilation = profile.Compilation,
+                PageCutsHash = keptPageCuts
             };
         }
 
@@ -298,7 +307,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                 ModelId = modelId,
                 Compilation = profile.Compilation,
                 EmbeddedChunkIds = existing.ChunkIds,
-                TargetIsBuilding = reembedTarget.Status == IndexGenerationStatus.Building
+                TargetIsBuilding = reembedTarget.Status == IndexGenerationStatus.Building,
+                PageCutsHash = keptPageCuts
             };
         }
 
@@ -348,6 +358,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         {
             ModelId = modelId,
             TargetIsBuilding = building,
+            PageCutsHash = pageCuts,
             ServingGenerationId = servingEmbedding is null ? null : serving!.Id,
             ServingVectors = servingEmbedding?.Vectors,
             Compilation = profile.Compilation,
@@ -400,7 +411,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var chunkCount = plan.Drafts?.Count ?? row.ChunkCount;
         row.CompleteIndexing(
             plan.ContentHash, plan.ProfileStamp, plan.GenerationId, chunkCount, document.DocumentTypeId, document.OwnerId,
-            document.Title, document.Language, now, clearLifecycleMarks: !lifecycleChanged);
+            document.Title, document.Language, now, clearLifecycleMarks: !lifecycleChanged, pageCutsHash: plan.PageCutsHash);
         if (lifecycleChanged || stale)
         {
             row.RequestRerun(null);
@@ -897,7 +908,11 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         string? ProfileStamp,
         Guid? GenerationId,
         Guid DocumentTypeId,
-        Guid? OwnerId);
+        Guid? OwnerId)
+    {
+        /// <summary>Where the current chunks were cut by page, when they were.</summary>
+        public string? PageCutsHash { get; init; }
+    }
 
     /// <summary>A document's existing chunks embedded by the configured model: their ids in chunk order, and the vectors.</summary>
     protected sealed record ExistingChunksEmbedding(IReadOnlyList<Guid> ChunkIds, EmbeddingBatch Embedding, int Dimensions);
@@ -924,6 +939,9 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         /// <summary>Something the run should say although it succeeded, such as chunks the enricher could not enrich.</summary>
         public string? Note { get; init; }
+
+        /// <summary>Where the chunks are cut by page (<see cref="IndexedDocument.PageCutsHash"/>), kept when they stay.</summary>
+        public string? PageCutsHash { get; init; }
 
         /// <summary>The configured model the plan was computed with; <see cref="GenerationId"/> is its generation.</summary>
         public string ModelId { get; init; } = default!;

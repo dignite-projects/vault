@@ -49,6 +49,8 @@ export class IndexSearchTestComponent {
   readonly invalid = computed(() => invalidSettings(this.form()));
   readonly canRun = computed(() => this.form().query.trim() !== '' && this.invalid().length === 0 && !this.running());
   readonly candidates = computed(() => orderCandidates(this.result()?.candidates ?? [], this.order()));
+  /** How many candidates the host's rerank-score floor turns away: listed, marked, and not returned by search. */
+  readonly belowFloorCount = computed(() => (this.result()?.candidates ?? []).filter(c => c.belowScoreFloor).length);
 
   update<K extends keyof SearchTestForm>(key: K, value: SearchTestForm[K]): void {
     this.form.update(form => ({ ...form, [key]: value }));

@@ -62,7 +62,8 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
       "rerankScore": 0.54
     }
   ],
-  "reranked": true
+  "reranked": true,
+  "vectorSearchFailed": false
 }
 ```
 
@@ -71,6 +72,7 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
 - `firstPage` and `lastPage` are the pages of the document's file the chunk's text was read from, for a citation such as "p. 2". See [Pages](#pages) for when they are `null`.
 - `reranked` says whether the reranker ordered the hits: it is `false` without a rerank model, and when the rerank call failed and the fused order was kept. `score` only orders the hits of one search.
 - `rerankScore` is the reranker's relevance, a probability from 0 to 1 for the usual cross-encoders, comparable across searches with the same model. A best hit far below 0.1 usually means no document answers the question (on the evaluation set a median 0.98 for answerable questions, 0.006 for unanswerable ones); the MCP search tool tells agents so. With `Vault:IndexSearch:MinRerankScore` set, hits below it are dropped and such a search returns none. See [Reranking](../configuration/ai-provider.md#rerank-model-index).
+- `vectorSearchFailed` is `true` when the query could not be embedded this time: the embedding model failed, or took longer than `Vault:IndexSearch:QueryEmbeddingTimeout` (10 seconds). The hits then come from the keyword leg alone, so a passage that shares no words with the question is missing; the MCP search tool tells agents so. A search does not fail on the embedding model, as it does not fail on the reranker.
 - The keyword leg lags writes by about five seconds; the vector leg sees a document as soon as it is indexed.
 - Without Full-Text Search on the database the keyword leg returns nothing and the host logs a warning. See [Connection Strings](../deployment/deployment.md#connection-strings).
 - Search embeds the query with the model the index was built with, since two models' vectors cannot be compared. After the host's embedding model changed, that is the previous model until the index rebuilt for the new one takes over; a host that no longer has it refuses search (`VaultIndex:EmbeddingModelChanged`) until then. See [Changing the model](../configuration/ai-provider.md#changing-the-model).
@@ -104,7 +106,7 @@ The catalog is built when it is read, from the same scope as search. A caller wh
 | REST | `GET /api/vault-index/read?pointer=…` |
 | MCP | `vault_index_read` (`pointer`) |
 
-Accepts only the pointers search and outline return: `chunk:{id}` for one chunk, `node:{documentId}/{path}` for a section with its subsections. Anything else is refused with `VaultIndex:InvalidPointer`; a pointer outside the caller's scope is not found. The text is Index's stored copy, cut at 40,000 characters (`textTruncated`, `textTotalLength`). A chunk read also returns `previousPointer` and `nextPointer` to read on.
+Accepts only the pointers search and outline return: `chunk:{id}` for one chunk, `node:{documentId}/{path}` for a section with its subsections. Anything else is refused with `VaultIndex:InvalidPointer`; a pointer outside the caller's scope is not found. The text is Index's stored copy, cut at 40,000 characters (`textTruncated`, `textTotalLength`). A chunk read also returns `previousPointer` and `nextPointer` to read on: the nearest chunks on each side the caller can read, so a disabled chunk is stepped over, and `null` only at the document's first or last.
 
 A pointer stays valid until the document is indexed again (its text or chunking changes), when search and outline return new ones. Pointers are not character ranges of the source Markdown; a read carries `firstPage` and `lastPage` like a hit (for a section, the pages of all its chunks).
 
