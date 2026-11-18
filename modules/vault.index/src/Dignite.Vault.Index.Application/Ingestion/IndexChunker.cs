@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Ai;
@@ -37,11 +38,41 @@ public class IndexChunker : ITransientDependency
     private static readonly Lazy<Tokenizer> SharedTokenizer = new(() => TiktokenTokenizer.CreateForEncoding("o200k_base"));
 
     /// <summary>
-    /// The text that is chunked: the document's Markdown with its HTML tables and figures rewritten as Markdown
-    /// (<see cref="MarkdownHtmlNormalizer"/>), which the reader would otherwise drop. Its hash is what tells a rebuild
-    /// whether the chunks can change.
+    /// Stands in an empty table cell while the reader parses: DataIngestion's Markdown reader (11.0.0-preview.1) throws on
+    /// a cell with no text, so a single empty cell failed the whole document. A zero-width space is text to Markdig and
+    /// whitespace to nobody, and the chunks drop it again.
     /// </summary>
-    public virtual string Prepare(string markdown) => MarkdownHtmlNormalizer.Normalize(markdown);
+    private const string EmptyCell = "\u200B";
+
+    /// <summary>A cell with nothing but spaces between two pipes of a table row; the opening pipe is not escaped.</summary>
+    private static readonly Regex EmptyTableCell = new(@"(?<=(?<!\\)\|)[ \t]*(?=\|)", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The text that is chunked: the document's Markdown with its HTML tables and figures rewritten as Markdown
+    /// (<see cref="MarkdownHtmlNormalizer"/>), which the reader would otherwise drop, and its empty table cells held
+    /// open (<see cref="EmptyCell"/>). Its hash is what tells a rebuild whether the chunks can change.
+    /// </summary>
+    public virtual string Prepare(string markdown) => HoldEmptyCellsOpen(MarkdownHtmlNormalizer.Normalize(markdown));
+
+    /// <summary>Puts <see cref="EmptyCell"/> in every empty cell of every line that starts as a table row.</summary>
+    protected static string HoldEmptyCellsOpen(string markdown)
+    {
+        if (!markdown.Contains('|'))
+        {
+            return markdown;
+        }
+
+        var lines = markdown.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].TrimStart().StartsWith('|'))
+            {
+                lines[i] = EmptyTableCell.Replace(lines[i], " " + EmptyCell + " ");
+            }
+        }
+
+        return string.Join('\n', lines);
+    }
 
     public virtual async Task<IReadOnlyList<IndexChunkDraft>> ChunkAsync(
         string markdown,
@@ -85,7 +116,7 @@ public class IndexChunker : ITransientDependency
             drafts.Add(new IndexChunkDraft(
                 drafts.Count,
                 headingPath,
-                chunk.Content,
+                chunk.Content.Replace(EmptyCell, string.Empty),
                 Join(chunk, IndexChunkEnricher.KeywordsKey, " ", IndexingConsts.MaxKeywordsLength),
                 Join(chunk, IndexChunkEnricher.QuestionsKey, "\n", IndexingConsts.MaxQuestionsLength)));
         }
