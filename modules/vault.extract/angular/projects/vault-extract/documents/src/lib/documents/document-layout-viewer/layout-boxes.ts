@@ -155,3 +155,24 @@ export function readLayout(json: unknown): Layout {
     .map(field => ({ name: field.name!, boxes: toBoxes('field', field.name!, field.sources) }));
   return { current: root.current !== false, pages, boxes, fields };
 }
+
+/**
+ * The ABP error code of a failed layout request. The layout is requested as a blob, so the error body arrives as a Blob
+ * too, not parsed JSON: it is read as text first. Undefined when the body carries no code.
+ */
+export async function layoutErrorCode(body: unknown): Promise<string | undefined> {
+  let text: string;
+  if (body instanceof Blob) {
+    text = await body.text();
+  } else if (typeof body === 'string') {
+    text = body;
+  } else {
+    return (body as { error?: { code?: string } } | null)?.error?.code ?? undefined;
+  }
+
+  try {
+    return (JSON.parse(text) as { error?: { code?: string } })?.error?.code ?? undefined;
+  } catch {
+    return undefined;
+  }
+}

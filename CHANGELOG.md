@@ -385,6 +385,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Layout viewer (from the refactor review).**
+  - A document without a layout shows the "no layout" notice instead of the error alert: the error body of the blob
+    request is now read.
+  - Turning the layout off and on, or leaving the page, while pages load no longer leaves pdf.js work running, nor
+    lets an older load overwrite a newer one.
+  - Layout regions can be reached and selected with the keyboard, and image badges keep dark text on their light fill.
+
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
   (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every
   document with one failed indexing: 5 of 16 Ready documents in the local corpus, invoices and price lists among them.
