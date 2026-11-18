@@ -116,6 +116,38 @@ public class IndexChunkLocator_Tests
     }
 
     [Fact]
+    public void Rows_of_a_table_followed_by_one_with_the_same_header_stay_in_their_table()
+    {
+        const string markdown = "| 品名 | 金額 |\n| --- | --- |\n| りんご | 100 |\n| みかん | 200 |\n\n"
+            + "| 品名 | 金額 |\n| --- | --- |\n| ぶどう | 300 |\n| もも | 400 |";
+        string Row(string row) => "| 品名 | 金額 |\n| --- | --- |\n" + row;
+        (string?, string)[] chunks =
+        [
+            (null, Row("| りんご | 100 |")), (null, Row("| みかん | 200 |")), (null, Row("| ぶどう | 300 |")), (null, Row("| もも | 400 |"))
+        ];
+
+        var ranges = IndexChunkLocator.Locate(markdown, chunks);
+
+        string At(int i) => markdown.Substring(ranges[i]!.Value.Offset, ranges[i]!.Value.Length);
+        At(1).ShouldBe("みかん | 200");
+        // The second table's first row takes that table's header with it, nothing of the first table.
+        At(2).ShouldStartWith("品名");
+        At(2).ShouldEndWith("ぶどう | 300");
+        ranges[2]!.Value.Offset.ShouldBeGreaterThan(markdown.IndexOf("\n\n", StringComparison.Ordinal));
+        At(3).ShouldBe("もも | 400");
+    }
+
+    [Fact]
+    public void A_line_with_a_zero_width_space_of_its_own_is_found()
+    {
+        // The chunker drops U+200B (it holds empty table cells open with it), so the Markdown's own must not count.
+        var markdown = "# 契約書\n\n第1条" + (char)0x200B + "本契約の目的を定める。";
+        (string?, string) chunk = (null, "第1条本契約の目的を定める。");
+
+        IndexChunkLocator.Locate(markdown, [chunk]).Single().ShouldNotBeNull();
+    }
+
+    [Fact]
     public void A_chunk_whose_text_is_not_in_the_markdown_has_no_range()
     {
         (string?, string) chunk = (null, "この文章は原文にありません。");

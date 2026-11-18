@@ -405,6 +405,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     continuation.
   - A page in capitals or a table of contents with dot leaders is no longer taken for a garbled text layer and sent
     to OCR.
+- **Index chunking and pages (from the refactor review).**
+  - With the by-page template, pages that arrive after the first indexing (a re-parse rendering the same Markdown)
+    now re-chunk the document; before, it stayed chunked by headings.
+  - A by-page cut that falls inside a table moves to the table's end. A cut inside an HTML table left rows the reader
+    dropped.
+  - A table row is no longer placed on the next table's pages when that table repeats the same header.
+  - Placing chunks no longer scans to the end of the document for every line; the search stops at its reach.
+  - A sync that cannot read the layout this time (Extract fails open) keeps the chunks' pages instead of clearing them.
+  - A zero-width space in a document's own text no longer keeps its line from being placed.
 
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
   (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every

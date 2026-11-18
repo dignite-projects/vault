@@ -168,18 +168,7 @@ public class IndexChunker : ITransientDependency
         IngestionChunkerOptions options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var starts = pages
-            .Where(p => p.Spans.Count > 0)
-            .Select(p => Math.Clamp(p.Spans.Min(s => s.Offset), 0, markdown.Length))
-            .Distinct()
-            .Order()
-            .ToList();
-        if (starts.Count == 0)
-        {
-            starts.Add(0);
-        }
-
-        starts[0] = 0;
+        var starts = PageStarts(markdown, pages);
         for (var i = 0; i < starts.Count; i++)
         {
             var end = i + 1 < starts.Count ? starts[i + 1] : markdown.Length;
@@ -200,6 +189,72 @@ public class IndexChunker : ITransientDependency
                 yield return chunk;
             }
         }
+    }
+
+    /// <summary>
+    /// Where <see cref="ChunkingStrategy.Page"/> cuts <paramref name="markdown"/>: at each page's first range, the first
+    /// cut at 0 (what precedes the first page goes with it). A cut inside a table moves to the table's end, so a table
+    /// the parse joined across a page break stays whole on the page it starts on: a cut inside an HTML table would leave
+    /// rows no reader takes for a table. The strategy's content stamp includes these cuts, so new pages re-chunk.
+    /// </summary>
+    public static IReadOnlyList<int> PageStarts(string markdown, IReadOnlyList<DocumentPageSpansDto> pages)
+    {
+        var starts = pages
+            .Where(p => p.Spans.Count > 0)
+            .Select(p => OutsideTables(markdown, Math.Clamp(p.Spans.Min(s => s.Offset), 0, markdown.Length)))
+            .Distinct()
+            .Order()
+            .ToList();
+
+        // The first page starts the document; a cut a table pushed to the end of the text cuts nothing.
+        if (starts.Count == 0)
+        {
+            return [0];
+        }
+
+        starts[0] = 0;
+        return starts.Where((start, i) => i == 0 || start < markdown.Length).Distinct().ToList();
+    }
+
+    /// <summary><paramref name="offset"/>, or the end of the HTML or pipe table it falls inside.</summary>
+    private static int OutsideTables(string markdown, int offset)
+    {
+        var open = markdown.LastIndexOf("<table", Math.Max(offset - 1, 0), StringComparison.OrdinalIgnoreCase);
+        if (open >= 0 && offset > open)
+        {
+            var close = markdown.IndexOf("</table>", open, StringComparison.OrdinalIgnoreCase);
+            if (close < 0 || close + "</table>".Length > offset)
+            {
+                return close < 0 ? markdown.Length : close + "</table>".Length;
+            }
+        }
+
+        // Inside a pipe table: the line holding the offset and the line before it both start with a pipe.
+        var lineStart = offset == 0 ? 0 : markdown.LastIndexOf('\n', offset - 1) + 1;
+        if (lineStart > 0 && IsTableLine(markdown, lineStart) && IsTableLine(markdown, markdown.LastIndexOf('\n', lineStart - 2) + 1))
+        {
+            var next = lineStart;
+            while (next < markdown.Length && IsTableLine(markdown, next))
+            {
+                var end = markdown.IndexOf('\n', next);
+                next = end < 0 ? markdown.Length : end + 1;
+            }
+
+            return next;
+        }
+
+        return offset;
+    }
+
+    private static bool IsTableLine(string markdown, int lineStart)
+    {
+        var i = lineStart;
+        while (i < markdown.Length && markdown[i] is ' ' or '\t')
+        {
+            i++;
+        }
+
+        return i < markdown.Length && markdown[i] == '|';
     }
 
     private static async Task<IngestionDocument> ReadAsync(string prepared, string identifier, CancellationToken cancellationToken)

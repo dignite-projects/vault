@@ -71,13 +71,20 @@ public static class IndexChunkLocator
 
         var text = NormalizedMarkdown.Of(markdown);
         int cursor = 0, previousEnd = 0, previousLength = 0;
+        var previousKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var chunk in chunks)
         {
             var lines = Lines(chunk);
             var length = lines.Sum(l => l.Key.Length);
             var reach = 2 * (previousLength + length) + 1000;
             int start = -1, ownStart = -1, end = -1, position = cursor;
-            foreach (var line in lines)
+
+            // A line the previous chunk holds too (a split table's repeated header row, an overlap, a sentence two
+            // sections share) is not searched ahead: the next table's identical header would match it. It is placed after
+            // this chunk's own lines, only between the previous chunk and them.
+            var shared = lines.Where(line => previousKeys.Contains(line.Key)).ToList();
+            var own = shared.Count < lines.Count ? lines.Where(line => !previousKeys.Contains(line.Key)).ToList() : lines;
+            foreach (var line in own)
             {
                 // A table row whose merged cells the chunker repeated is not in the Markdown whole (an HTML row spanned
                 // by a rowspan cell lacks that cell): its own cells, in order, still are.
@@ -111,10 +118,25 @@ public static class IndexChunkLocator
                 start = ownStart;
             }
 
+            // A shared line this chunk's own copy of sits right before its other lines (the same sentence opening two
+            // sections) extends the range back to it.
+            if (!ReferenceEquals(own, lines))
+            {
+                foreach (var line in shared)
+                {
+                    var index = start > previousEnd ? text.IndexOf(line.Key, previousEnd, start - previousEnd) : -1;
+                    if (index >= 0)
+                    {
+                        start = Math.Min(start, index);
+                    }
+                }
+            }
+
             ranges.Add(text.ToSource(start, end));
             cursor = start;
             previousEnd = end;
             previousLength = length;
+            previousKeys = lines.Select(line => line.Key).ToHashSet(StringComparer.Ordinal);
         }
 
         return ranges;
@@ -166,11 +188,9 @@ public static class IndexChunkLocator
     /// <summary>How far after one cell of a row the next may be: the markup and the cells too short to search between them.</summary>
     private const int CellReach = 300;
 
+    /// <summary>The first occurrence of <paramref name="key"/> starting within <paramref name="reach"/> of <paramref name="from"/>.</summary>
     private static int Find(NormalizedMarkdown text, string key, int from, int reach)
-    {
-        var index = text.IndexOf(key, from);
-        return index < 0 || index - from > reach ? -1 : index;
-    }
+        => text.IndexOf(key, from, reach + key.Length);
 
     /// <summary>
     /// The searchable lines of a chunk: each line's key, and for a table row the keys of its cells long enough to place

@@ -259,6 +259,43 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task By_page_the_same_text_with_pages_now_known_is_chunked_again()
+    {
+        await WithUnitOfWorkAsync(() => Repo<IndexProfile>().InsertAsync(
+            new IndexProfile(Guid.NewGuid(), null, TypeA, ChunkingStrategy.Page, 400, 0)));
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        var byHeadings = (await ChunksAsync()).Count;
+        var calls = _model.Calls;
+
+        // The layout arrives with the same Markdown (a re-parse): the page strategy can now cut by page.
+        var dto = Dto(Contract, TypeA);
+        dto.Pages = [new() { PageNumber = 1, Spans = [new() { Offset = 0, Length = Contract.Length }] }];
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        _model.Calls.ShouldBeGreaterThan(calls);
+        var byPage = await ChunksAsync();
+        byPage.Count.ShouldBeLessThan(byHeadings);
+        byPage.ShouldAllBe(c => c.FirstPage == 1);
+    }
+
+    [Fact]
+    public async Task Pages_that_cannot_be_read_this_time_leave_the_chunks_their_pages()
+    {
+        var dto = Dto(Contract, TypeA);
+        dto.Pages = [new() { PageNumber = 1, Spans = [new() { Offset = 0, Length = Contract.Length }] }];
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        // Same text, but Extract could not read the layout this time (it fails open with no pages).
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        (await ChunksAsync()).ShouldAllBe(c => c.FirstPage == 1);
+    }
+
+    [Fact]
     public async Task A_reclassification_moves_the_read_scope_facts_and_ends_the_withhold()
     {
         ExtractReturns(Contract, TypeA);
