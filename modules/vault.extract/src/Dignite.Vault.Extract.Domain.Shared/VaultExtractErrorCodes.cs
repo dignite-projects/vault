@@ -25,8 +25,8 @@ public static class VaultExtractErrorCodes
         // must exist; a failed first parse is RetryPipelineAsync's job). Without text extraction output there is
         // nothing to reclassify, re-extract or replace.
         public const string NotTextExtracted = "Extract:DocumentNotTextExtracted";
-        // #660: re-parse refused on a sub-document. It has no file of its own (#487) — its text is a slice of the
-        // parent's Markdown — so the only way to re-parse it is to re-parse the parent, which re-splits it.
+        // #660: re-parse refused on a sub-document. Its content comes from the parent's split (#487), even when it was
+        // cut with a file of its own, so the only way to re-parse it is to re-parse the parent, which re-splits it.
         public const string ReparseSubDocument = "Extract:DocumentReparseSubDocument";
         // #660: re-parse refused because the original file is not in blob storage (no FileOrigin, or the blob is
         // gone). Refused up front: accepted, the background run would fail and leave a document whose text is
@@ -41,8 +41,8 @@ public static class VaultExtractErrorCodes
         // #481 (nothing consumed it in the interim, so this is not a wire break) — a legacy pre-#481 derived row
         // can still carry a null FileOrigin during the documented binaries-first deploy window.
         public const string NoSourceBlob = "Extract:DocumentNoSourceBlob";
-        // The document has no stored layout: a sub-document (seeded from its parent's Markdown, never parsed itself), or
-        // one parsed before layouts were kept. A re-parse stores one.
+        // The document has no stored layout: a sub-document seeded from a slice of its parent's Markdown (one cut by page
+        // has its own), or one parsed before layouts were kept. A re-parse stores one.
         public const string NoLayout = "Extract:DocumentNoLayout";
         // #485 (A3): restoring a derived document is rejected when another LIVE document already occupies the
         // same (OriginDocumentId, OriginConstituentKey) identity — the application-layer fail-close that replaces

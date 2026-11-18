@@ -385,6 +385,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sub-documents and layouts (from the refactor review).**
+  - A bundle part is cut by page only when reading it from those pages moves at most 40 characters into or out of it.
+    Before, up to a fifth of a part could move: the tail of one document (its total, its signature) at the top of the
+    next one's first page went to the next document, and field extraction ran on the wrong text. Such parts keep
+    their slices.
+  - A re-parse that is refused (no text) or fails no longer overwrites the layout of the text that stays.
+  - Clearing a document's fields (a reclassification, a turn into a container) clears their sources too.
+  - A sub-document spawn that fails deletes the pages it cut, so no file is left behind if no retry comes.
+  - The "no layout" and "cannot re-parse a sub-document" messages describe sub-documents cut by page correctly.
 - **PDF reading (from the refactor review).**
   - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is
     taken, outside the per-page guard. The page is dropped and the document marked incomplete.
@@ -517,6 +526,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
 
 ### Deploy note
+
+- **Extract migrations `DocumentFieldSources` and `DocumentSegmentPages`.** Both add columns only:
+  `VaultDocuments.FieldSources` (not null, default `'{}'`) and two nullable page columns on `VaultDocumentSegments`.
+  Existing documents have no field sources until their fields are extracted again (re-extract or re-parse); existing
+  sub-documents keep their slices. The `Default` and `VaultIndex` databases migrate in the same `--migrate-database` run.
 
 - **Index chunk pages.** The Index migration `ChunkPages` adds two nullable columns to `VaultIndexChunks`. Chunks
   indexed before it have no pages until their document is synced again. The next event for the document places them

@@ -66,8 +66,8 @@ Every ETO carries the same four properties; three carry more:
 | `DocumentId` | `Guid` | All | The document the event is about |
 | `TenantId` | `Guid?` | All | The document's tenant; `null` for a Host document |
 | `EventTime` | `DateTime` | All | Server clock at publish time; the idempotency high-water mark |
-| `FileName` | `string?` | `DocumentUploadedEto` | Original file name; `null` for a sub-document |
-| `FileSize` | `long` | `DocumentUploadedEto` | Size in bytes; `0` for a sub-document |
+| `FileName` | `string?` | `DocumentUploadedEto` | Original file name; for a sub-document, `null`, or the name of the pages cut from its parent (`bundle (p2-3).pdf`) |
+| `FileSize` | `long` | `DocumentUploadedEto` | Size in bytes; `0` for a sub-document without a file of its own |
 | `ContentType` | `string?` | `DocumentUploadedEto` | MIME type; `null` for a sub-document |
 | `DocumentTypeCode` | `string` | `DocumentClassifiedEto` | The classified type's code |
 | `ClassificationConfidence` | `double` | `DocumentClassifiedEto` | `0.0` to `1.0`; see [Field Notes](#field-notes) |
@@ -101,7 +101,7 @@ The stage events before Ready (`DocumentUploadedEto` / `DocumentTextExtractedEto
 ## Field Notes
 
 - **`DocumentClassifiedEto.ClassificationConfidence = 1.0`** is the value stamped when the type was declared by the uploader (`UploadDocumentInput.DocumentTypeId`, #623) or confirmed by an operator. The LLM classifier can also legitimately return 1.0 (its score is normalised but not clamped below 1.0), so this value alone does not prove a human verified the type.
-- **A derived sub-document's `DocumentUploadedEto`** carries `FileName = null`, `FileSize = 0`, `ContentType = null` — it shares its parent's blob rather than owning independent storage. Pull its own descriptors by `DocumentId` through REST/MCP if needed.
+- **A derived sub-document's `DocumentUploadedEto`** carries `FileName = null`, `FileSize = 0`, `ContentType = null` when it was taken from a slice of its parent's text: it shares its parent's blob. A sub-document cut by page from a PDF bundle has a file of its own, those pages, and carries its name, size and type; a consumer that sums `FileSize` for a quota counts those pages twice (in the bundle and in the cut). The upload event does not say it is a sub-document; its `DocumentReadyEto` carries `OriginDocumentId`, and REST and MCP return it.
 
 ## See Also
 

@@ -141,6 +141,7 @@ public class DocumentParseBackgroundJob
         try
         {
             ParseOutput? result = null;
+            Microsoft.Extensions.Documents.ExtractionDocument? reparseLayout = null;
             if (workItem.PageSeed is { } pageSeed)
             {
                 // A page-range sub-document (R5b): its pages as the source parsed them, so the scan is not OCR'd a
@@ -186,7 +187,17 @@ public class DocumentParseBackgroundJob
                     extracted.GetLanguage(),
                     new DocumentParseMetadata(extracted.GetProvider(), extracted.IsComplete(), extracted.GetIncompleteReason()));
 
-                await TrySaveLayoutAsync(args.DocumentId, extracted, result.Markdown);
+                // A first parse saves its layout before completing, so the classification and segmentation that the
+                // completion queues find it. A re-parse saves after, once its text has replaced the old: a re-parse
+                // that is refused (no text) or fails must not overwrite the layout of the text that stays.
+                if (args.IsReparse)
+                {
+                    reparseLayout = extracted;
+                }
+                else
+                {
+                    await TrySaveLayoutAsync(args.DocumentId, extracted, result.Markdown);
+                }
             }
 
             // #381: the PDF provider brackets each embedded-figure transcription with *[Image OCR p:N]*…*[End OCR]*
@@ -200,6 +211,10 @@ public class DocumentParseBackgroundJob
                 ?? FallbackTitleFromFileName(workItem.OriginalFileName);
 
             await CompleteRunAsync(args.DocumentId, workItem.RunId, result, title, args.IsReparse);
+            if (reparseLayout is not null)
+            {
+                await TrySaveLayoutAsync(args.DocumentId, reparseLayout, result.Markdown);
+            }
         }
         catch (Exception ex)
         {
