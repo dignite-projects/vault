@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Dignite.Vault.Extract.Ai;
 using Microsoft.Extensions.Options;
 using Volo.Abp;
@@ -36,14 +37,17 @@ public class FieldSchemaPromptBudgetGuard : ITransientDependency
 
     /// <summary>
     /// Defense-in-depth assertion at the final LLM call site. Normal configuration writes make this unreachable;
-    /// throwing prevents a repository bypass, seed, or future migration from sending an unbounded schema prompt.
+    /// throwing prevents a repository bypass, seed, future migration, or a host that lowered the ceiling after the
+    /// types were configured from sending an unbounded schema prompt. An <see cref="InvalidDataException"/>: the schema
+    /// is over a configured limit and stays so on every retry, so <c>ProviderFailureClassifier</c> ends the job instead
+    /// of letting ABP retry it.
     /// </summary>
     public virtual void AssertWithinBudget(IEnumerable<string?> prompts)
     {
         var totalLength = GetTotalLength(prompts);
         if (totalLength > MaxLength)
         {
-            throw new InvalidOperationException(
+            throw new InvalidDataException(
                 $"The persisted field schema contains {totalLength} prompt characters, exceeding the configured " +
                 $"MaxFieldSchemaPromptLength ceiling of {MaxLength}.");
         }
