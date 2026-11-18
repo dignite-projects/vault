@@ -429,6 +429,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Turning the layout off and on, or leaving the page, while pages load no longer leaves pdf.js work running, nor
     lets an older load overwrite a newer one.
   - Layout regions can be reached and selected with the keyboard, and image badges keep dark text on their light fill.
+  - A long PDF no longer holds a canvas for every page. Each page was drawn at full size and screen density, about
+    20 MB for an A4 page on a high-density screen, so a bundle of a few hundred pages took gigabytes and could crash the
+    tab. As pdf.js's own viewer does, only the pages near the view and the ten most recently seen are drawn, with their
+    regions; the others are empty frames of their size.
 
 - **A date field lost its value whenever the model wrote a time.** The field-extraction prompt named every `DateTime`
   field by its type, whatever its input mode, so the model answered a Date-mode field as `2026-11-20T00:00:00` and the
