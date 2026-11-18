@@ -73,6 +73,16 @@ public class DocumentTree_Tests
     }
 
     [Fact]
+    public void An_html_cell_keeps_the_angle_brackets_its_entities_encode()
+    {
+        var table = Elements("<table><tr><th>条件</th><th>注</th></tr><tr><td>p &lt; 0.05, n &gt; 30</td><td><b>有意</b></td></tr></table>")
+            .Single().ShouldBeOfType<ExtractionDocumentTableElement>();
+
+        CellText(table, 1, 0).ShouldBe("p < 0.05, n > 30");
+        CellText(table, 1, 1).ShouldBe("有意");
+    }
+
+    [Fact]
     public void An_html_table_without_spans_renders_as_a_pipe_table()
     {
         Render("<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>")
