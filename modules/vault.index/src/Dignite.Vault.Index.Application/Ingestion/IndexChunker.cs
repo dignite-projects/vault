@@ -40,7 +40,7 @@ public class IndexChunker : ITransientDependency
     /// <summary>
     /// Stands in an empty table cell while the reader parses: DataIngestion's Markdown reader (11.0.0-preview.1) throws on
     /// a cell with no text, so a single empty cell failed the whole document. A zero-width space is text to Markdig and
-    /// whitespace to nobody, and the chunks drop it again.
+    /// whitespace to nobody, and the chunks drop it again. Remove once dotnet/extensions#7956 is fixed.
     /// </summary>
     private const string EmptyCell = "\u200B";
 

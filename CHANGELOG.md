@@ -380,10 +380,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
-  (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text, so every document with one ended
-  indexing failed (in the local corpus 5 of 16 Ready documents, invoices and price lists among them). Index now holds
-  such cells open with a zero-width space while the reader parses and drops it from the chunks; their text and
-  search results are unchanged. Documents that failed this way index on their next sync or **Rebuild**.
+  (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every
+  document with one failed indexing: 5 of 16 Ready documents in the local corpus, invoices and price lists among them.
+  Index now holds such cells open with a zero-width space while the reader parses and drops it from the chunks; their
+  text and search results are unchanged. Documents that failed this way index on their next sync or **Rebuild**.
 
 - **A date field lost its value whenever the model wrote a time.** The field-extraction prompt named every `DateTime`
   field by its type, whatever its input mode, so the model answered a Date-mode field as `2026-11-20T00:00:00` and the
