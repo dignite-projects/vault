@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Chunking templates.** An index profile can chunk a document type as a whole document (while it fits the chunk
+  size), by table row (each data row with its header and heading path) or by page of the file, besides by headings and
+  by tokens: RAGFlow's `one`, `table` and `presentation` methods. On the evaluation set, a profile per type (short
+  documents whole, tabular ones by row) raised passage MRR@10 from 0.959 to 0.979 and table questions from 0.875 to
+  0.958; the default stays by headings. See [Index Profiles](docs/en/deployment/index-status.md#index-profiles).
+
 - **Search hits carry their pages.** Every Index chunk records the pages of the document's file its text was read from,
   and search hits, reads, the MCP tools, the chunk view and the retrieval test show them (`firstPage`, `lastPage`).
   Extract's `DocumentIntegrationDto` gains `Pages`, the ranges of the Markdown read from each page (the shape of Azure

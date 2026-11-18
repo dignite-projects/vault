@@ -300,7 +300,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         }
 
         var enricher = _enricherProvider.Create(profile.Enrichment, document.Language);
-        var drafts = await _chunker.ChunkAsync(text, document.Id.ToString(), profile, enricher);
+        var drafts = await _chunker.ChunkAsync(document.Markdown, document.Id.ToString(), profile, enricher, document.Pages);
         if (enricher is { CachedChunkCount: > 0 } reusing)
         {
             Logger.LogInformation(

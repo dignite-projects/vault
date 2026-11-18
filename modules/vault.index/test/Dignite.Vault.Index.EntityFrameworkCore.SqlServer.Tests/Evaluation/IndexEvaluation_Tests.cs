@@ -402,6 +402,95 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         await File.WriteAllTextAsync(path, report);
     }
 
+    /// <summary>
+    /// The chunking templates compared: each as the layer default, and the mix a deployment would configure, a template
+    /// per document type (short single-sheet documents whole, documents that are mostly a table by row).
+    /// </summary>
+    private static readonly (string Name, ResolvedIndexProfile Default, (string Type, ResolvedIndexProfile Profile)[] ByType)[] Templates =
+    [
+        ("heading 400", new(ChunkingStrategy.Heading, 400, 0), []),
+        ("whole 1500", new(ChunkingStrategy.Whole, 1500, 0), []),
+        ("table rows 400", new(ChunkingStrategy.TableRow, 400, 0), []),
+        ("by type", new(ChunkingStrategy.Heading, 400, 0),
+        [
+            ("invoice", new(ChunkingStrategy.Whole, 1500, 0)),
+            ("quote", new(ChunkingStrategy.Whole, 1500, 0)),
+            ("expense-claim", new(ChunkingStrategy.Whole, 1500, 0)),
+            ("price-list", new(ChunkingStrategy.TableRow, 400, 0)),
+            ("report", new(ChunkingStrategy.TableRow, 400, 0))
+        ])
+    ];
+
+    /// <summary>
+    /// Indexes the corpus once per chunking template and ranks every case with search as configured. A passage counts as
+    /// found when a heading line of the hit's text names it, so a whole-document chunk that holds the answer counts,
+    /// and a reference to an article from inside another one does not. The report adds what each template costs in
+    /// chunks and in characters per hit. It goes to <c>VAULT_INDEX_EVAL_TEMPLATE_REPORT</c> or
+    /// <c>index-templates.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Compare_chunk_templates()
+    {
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        Arrange(set);
+        var cases = set.Cases();
+        var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
+        var results = new List<CaseResult>();
+        var notes = new List<string>
+        {
+            $"Evaluation set version {set.Version}: {set.Documents.Count} documents, {cases.Count} cases ({cases.Count(c => c.Source == "table")} answered by a table)",
+            "Each template is indexed from scratch; `service` is IIndexSearchAppService as configured. `by type`: "
+                + string.Join(", ", Templates[^1].ByType.Select(t => $"{t.Type} {t.Profile.Strategy} {t.Profile.MaxTokensPerChunk}"))
+                + ", the rest heading 400"
+        };
+
+        foreach (var (name, layerDefault, byType) in Templates)
+        {
+            await ClearAsync();
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var profiles = GetRequiredService<IRepository<IndexProfile, Guid>>();
+                await profiles.InsertAsync(new IndexProfile(Guid.NewGuid(), null, null, layerDefault.Strategy, layerDefault.MaxTokensPerChunk, 0));
+                foreach (var (type, profile) in byType)
+                {
+                    await profiles.InsertAsync(new IndexProfile(
+                        Guid.NewGuid(), null, EvaluationDocument.StableGuid("type:" + type), profile.Strategy, profile.MaxTokensPerChunk, 0));
+                }
+            });
+            await IndexCorpusAsync(set);
+            await WaitForFullTextAsync();
+
+            var chunks = (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(c => c.Id);
+            var characters = new List<int>();
+            foreach (var evaluationCase in cases)
+            {
+                var hits = await WithUnitOfWorkAsync(async () => (await GetRequiredService<IIndexSearchAppService>()
+                        .SearchAsync(new IndexSearchInput { Query = evaluationCase.Query, MaxResultCount = EvaluationReport.Depth }))
+                    .Hits);
+                characters.AddRange(hits.Take(3).Select(h => h.TextTotalLength));
+                var ranking = hits
+                    .Select(h => (h.DocumentId, (string?)string.Join("\n", HeadingLines(IndexPointer.TryParse(h.Pointer, out var p) && chunks.TryGetValue(p.Id, out var c) ? c.Text : h.Text))))
+                    .ToList();
+                results.Add(Score(evaluationCase, name + " · service", ranking, documentIds));
+            }
+
+            notes.Add($"`{name}`: {chunks.Count} chunks, a top-3 hit {characters.DefaultIfEmpty().Average():0} characters on average");
+        }
+
+        var reranker = GetRequiredService<IndexRanker>().Reranker;
+        notes.Add(reranker is null ? "No rerank model: `service` is the fused order" : $"Rerank model {reranker.ModelId} in `service`");
+        notes.Add($"Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+
+        var report = EvaluationReport.ToMarkdown("Vault Index chunking templates", results, notes, "heading 400 · service");
+        _output.WriteLine(report);
+        var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_TEMPLATE_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-templates.md");
+        await File.WriteAllTextAsync(path, report);
+    }
+
+    /// <summary>The lines of a chunk's text that are headings or a heading path.</summary>
+    private static IEnumerable<string> HeadingLines(string text)
+        => text.Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith('#'));
+
     private static readonly (string Name, IndexEnrichment Enrichment)[] Enrichments =
     [
         ("no enrichment", IndexEnrichment.None),
