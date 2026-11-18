@@ -17,6 +17,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { Subscription } from 'rxjs';
 import { LayoutBox, LayoutField, layoutErrorCode, readLayout } from './layout-boxes';
+import { PageBuffer, samePages } from './page-buffer';
 
 /** A field listed beside the pages: its name in the layout, and the label and value the page shows for it. */
 export interface LayoutViewerField {
@@ -85,11 +86,17 @@ export class DocumentLayoutViewerComponent {
   private readonly documentService = inject(DocumentService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly canvases = viewChildren<ElementRef<HTMLCanvasElement>>('pageCanvas');
+  private readonly pageFrames = viewChildren<ElementRef<HTMLElement>>('pageFrame');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly state = signal<ViewerState>('loading');
   readonly current = signal(true);
   readonly pages = signal<ViewerPage[]>([]);
+  /**
+   * The pages drawn, with their canvas and regions: the ones in view and the most recently seen (see PageBuffer). The
+   * others are empty frames of their size, so a long document neither holds a canvas per page nor its regions.
+   */
+  readonly drawn = signal<ReadonlySet<number>>(new Set());
   readonly selected = signal<ViewerBox | null>(null);
   readonly hovered = signal<ViewerBox | null>(null);
   readonly shown = computed(() => this.hovered() ?? this.selected());
@@ -111,7 +118,11 @@ export class DocumentLayoutViewerComponent {
   /** Which load is current: a newer one (another document) or the component's end makes an older load stop. */
   private generation = 0;
   private request: Subscription | null = null;
-  private renders: RenderTask[] = [];
+  /** The drawing in progress on each canvas; a canvas that leaves the buffer has its drawing cancelled. */
+  private renders = new Map<HTMLCanvasElement, RenderTask>();
+  private painted = new WeakSet<HTMLCanvasElement>();
+  private buffer = new PageBuffer();
+  private observer: IntersectionObserver | null = null;
   private scrollTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
@@ -121,12 +132,49 @@ export class DocumentLayoutViewerComponent {
       this.load(id, url);
     });
 
-    // The canvases exist once the pages render; draw into them then.
+    // A canvas exists while its page is drawn; draw into a new one, and stop drawing into one that went.
     effect(() => {
-      const canvases = this.canvases();
-      if (canvases.length > 0) {
-        void this.paint(canvases);
+      const canvases = this.canvases().map(ref => ref.nativeElement);
+      for (const [canvas, task] of this.renders) {
+        if (!canvases.includes(canvas)) {
+          task.cancel();
+          this.renders.delete(canvas);
+        }
       }
+
+      for (const canvas of canvases) {
+        if (!this.painted.has(canvas)) {
+          this.painted.add(canvas);
+          void this.paint(canvas);
+        }
+      }
+    });
+
+    // Watch which page frames are near the view; the buffer decides which pages are drawn.
+    effect(() => {
+      const frames = this.pageFrames().map(ref => ref.nativeElement);
+      this.observer?.disconnect();
+      this.observer = null;
+      if (frames.length === 0) {
+        return;
+      }
+
+      if (typeof IntersectionObserver === 'undefined') {
+        this.drawn.set(new Set(this.buffer.update(frames.slice(0, 1).map(frame => ({ page: Number(frame.dataset['page']), inView: true })))));
+        return;
+      }
+
+      // Half a view ahead on each side, so a page is drawn as it scrolls in rather than after.
+      this.observer = new IntersectionObserver(entries => {
+        const kept = this.buffer.update(entries.map(entry => ({
+          page: Number((entry.target as HTMLElement).dataset['page']),
+          inView: entry.isIntersecting,
+        })));
+        if (!samePages(kept, this.drawn())) {
+          this.drawn.set(kept);
+        }
+      }, { rootMargin: '50% 0px' });
+      frames.forEach(frame => this.observer!.observe(frame));
     });
 
     this.destroyRef.onDestroy(() => {
@@ -196,8 +244,12 @@ export class DocumentLayoutViewerComponent {
     this.generation++;
     this.request?.unsubscribe();
     this.request = null;
+    this.observer?.disconnect();
+    this.observer = null;
     this.renders.forEach(task => task.cancel());
-    this.renders = [];
+    this.renders.clear();
+    this.buffer = new PageBuffer();
+    this.drawn.set(new Set());
     void this.loading?.destroy();
     this.loading = null;
     this.pdf = null;
@@ -247,35 +299,34 @@ export class DocumentLayoutViewerComponent {
     this.state.set('ready');
   }
 
-  /** Draws each page into its canvas, sharp on high-density screens; a newer load or drawing cancels this one. */
-  private async paint(canvases: readonly ElementRef<HTMLCanvasElement>[]): Promise<void> {
+  /**
+   * Draws a page into its canvas, sharp on high-density screens. A newer load, or the page leaving the buffer (its
+   * canvas goes, and its drawing is cancelled), stops it.
+   */
+  private async paint(canvas: HTMLCanvasElement): Promise<void> {
     const pdf = this.pdf;
     if (!pdf) {
       return;
     }
 
-    this.renders.forEach(task => task.cancel());
-    this.renders = [];
     const generation = this.generation;
-    const ratio = window.devicePixelRatio || 1;
+    const number = Number(canvas.dataset['page']);
     try {
-      for (const ref of canvases) {
-        const canvas = ref.nativeElement;
-        const number = Number(canvas.dataset['page']);
-        const page = await pdf.getPage(number);
-        if (generation !== this.generation || this.pdf !== pdf) {
-          return;
-        }
-
-        const viewport = page.getViewport({ scale: (this.scales.get(number) ?? 1) * ratio });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const task = page.render({ canvas, viewport });
-        this.renders.push(task);
-        await task.promise;
+      const page = await pdf.getPage(number);
+      if (generation !== this.generation || this.pdf !== pdf || !canvas.isConnected) {
+        return;
       }
+
+      const viewport = page.getViewport({ scale: (this.scales.get(number) ?? 1) * (window.devicePixelRatio || 1) });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const task = page.render({ canvas, viewport });
+      this.renders.set(canvas, task);
+      await task.promise;
     } catch {
-      // Cancelled by a newer load or drawing, or the document was destroyed under it: nothing to show from here.
+      // Cancelled by a newer load or by the page leaving the buffer, or the document was destroyed under it.
+    } finally {
+      this.renders.delete(canvas);
     }
   }
 }

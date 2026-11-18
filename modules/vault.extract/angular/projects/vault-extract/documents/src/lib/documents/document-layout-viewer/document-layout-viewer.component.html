@@ -25,40 +25,45 @@
       <div class="layout-pages flex-grow-1 d-flex flex-column align-items-center gap-3">
         @for (page of pages(); track page.number) {
           <div
+            #pageFrame
             class="layout-page position-relative border shadow-sm"
+            [attr.data-page]="page.number"
             [style.width.px]="page.width"
             [style.height.px]="page.height"
           >
-            <canvas
-              #pageCanvas
-              class="position-absolute top-0 start-0"
-              [attr.data-page]="page.number"
-              [style.width.px]="page.width"
-              [style.height.px]="page.height"
-            ></canvas>
-            @for (box of page.boxes; track $index) {
-              <div
-                class="layout-box position-absolute"
-                [class]="'layout-' + box.kind"
-                [class.layout-selected]="box === selected()"
-                [style.left.px]="box.x"
-                [style.top.px]="box.y"
-                [style.width.px]="box.w"
-                [style.height.px]="box.h"
-                [title]="box.text"
-                role="button"
-                tabindex="0"
-                [attr.aria-label]="box.kind + ': ' + box.text"
-                [attr.aria-pressed]="box === selected()"
-                (mouseenter)="hovered.set(box)"
-                (mouseleave)="hovered.set(null)"
-                (focus)="hovered.set(box)"
-                (blur)="hovered.set(null)"
-                (click)="select(box)"
-                (keydown.enter)="select(box)"
-                (keydown.space)="$event.preventDefault(); select(box)"
-              ></div>
+            @if (drawn().has(page.number)) {
+              <canvas
+                #pageCanvas
+                class="position-absolute top-0 start-0"
+                [attr.data-page]="page.number"
+                [style.width.px]="page.width"
+                [style.height.px]="page.height"
+              ></canvas>
+              @for (box of page.boxes; track $index) {
+                <div
+                  class="layout-box position-absolute"
+                  [class]="'layout-' + box.kind"
+                  [class.layout-selected]="box === selected()"
+                  [style.left.px]="box.x"
+                  [style.top.px]="box.y"
+                  [style.width.px]="box.w"
+                  [style.height.px]="box.h"
+                  [title]="box.text"
+                  role="button"
+                  tabindex="0"
+                  [attr.aria-label]="box.kind + ': ' + box.text"
+                  [attr.aria-pressed]="box === selected()"
+                  (mouseenter)="hovered.set(box)"
+                  (mouseleave)="hovered.set(null)"
+                  (focus)="hovered.set(box)"
+                  (blur)="hovered.set(null)"
+                  (click)="select(box)"
+                  (keydown.enter)="select(box)"
+                  (keydown.space)="$event.preventDefault(); select(box)"
+                ></div>
+              }
             }
+            <!-- A field's outline is drawn on every page, so selecting a field can scroll to a page not drawn yet. -->
             @for (box of page.fieldBoxes; track $index) {
               @if (box.text === activeField()) {
                 <div
