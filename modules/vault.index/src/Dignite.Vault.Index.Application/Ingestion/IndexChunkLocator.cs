@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.Integration;
 
@@ -72,34 +73,29 @@ public static class IndexChunkLocator
         int cursor = 0, previousEnd = 0, previousLength = 0;
         foreach (var chunk in chunks)
         {
-            var keys = Keys(chunk);
-            var length = keys.Sum(k => k.Length);
+            var lines = Lines(chunk);
+            var length = lines.Sum(l => l.Key.Length);
             var reach = 2 * (previousLength + length) + 1000;
             int start = -1, ownStart = -1, end = -1, position = cursor;
-            foreach (var key in keys)
+            foreach (var line in lines)
             {
-                // After the previous chunk first, so text repeated in both lands in this one; then inside it, for an
-                // overlap or a split table's repeated header row.
-                var index = Find(text, key, Math.Max(position, previousEnd), reach);
-                var own = index >= 0;
-                if (index < 0 && position < previousEnd)
-                {
-                    index = Find(text, key, position, reach);
-                }
-
-                if (index < 0)
+                // A table row whose merged cells the chunker repeated is not in the Markdown whole (an HTML row spanned
+                // by a rowspan cell lacks that cell): its own cells, in order, still are.
+                var hit = Place(text, line.Key, position, previousEnd, reach)
+                          ?? PlaceCells(text, line.Cells, position, previousEnd, reach);
+                if (hit is not { } found)
                 {
                     continue;
                 }
 
-                start = start < 0 ? index : Math.Min(start, index);
-                if (own)
+                start = start < 0 ? found.Start : Math.Min(start, found.Start);
+                if (found.Own)
                 {
-                    ownStart = ownStart < 0 ? index : Math.Min(ownStart, index);
+                    ownStart = ownStart < 0 ? found.Start : Math.Min(ownStart, found.Start);
                 }
 
-                end = Math.Max(end, index + key.Length);
-                position = index + key.Length;
+                end = Math.Max(end, found.End);
+                position = found.End;
             }
 
             if (start < 0)
@@ -124,17 +120,67 @@ public static class IndexChunkLocator
         return ranges;
     }
 
+    /// <summary>
+    /// Finds <paramref name="key"/> after the previous chunk first, so text repeated in both lands in this one; then inside
+    /// it, for an overlap or a split table's repeated header row. <c>Own</c> says it was found after the previous chunk.
+    /// </summary>
+    private static (int Start, int End, bool Own)? Place(NormalizedMarkdown text, string key, int position, int previousEnd, int reach)
+    {
+        var index = Find(text, key, Math.Max(position, previousEnd), reach);
+        if (index >= 0)
+        {
+            return (index, index + key.Length, true);
+        }
+
+        index = position < previousEnd ? Find(text, key, position, reach) : -1;
+        return index < 0 ? null : (index, index + key.Length, false);
+    }
+
+    /// <summary>
+    /// A table row found cell by cell: the first cell placed like a line, each next one close after the one before. Null
+    /// when no cell is found, or when the row has a single cell, which the whole-line search already tried.
+    /// </summary>
+    private static (int Start, int End, bool Own)? PlaceCells(
+        NormalizedMarkdown text, IReadOnlyList<string> cells, int position, int previousEnd, int reach)
+    {
+        (int Start, int End, bool Own)? row = null;
+        foreach (var cell in cells.Count > 1 ? cells : [])
+        {
+            if (row is not { } placed)
+            {
+                row = Place(text, cell, position, previousEnd, reach);
+                continue;
+            }
+
+            // The cells of one row sit within a few hundred characters of each other, whatever lies between them.
+            var index = Find(text, cell, placed.End, CellReach);
+            if (index >= 0)
+            {
+                row = (placed.Start, index + cell.Length, placed.Own);
+            }
+        }
+
+        return row;
+    }
+
+    /// <summary>How far after one cell of a row the next may be: the markup and the cells too short to search between them.</summary>
+    private const int CellReach = 300;
+
     private static int Find(NormalizedMarkdown text, string key, int from, int reach)
     {
         var index = text.IndexOf(key, from);
         return index < 0 || index - from > reach ? -1 : index;
     }
 
-    private static List<string> Keys((string? HeadingPath, string Text) chunk)
+    /// <summary>
+    /// The searchable lines of a chunk: each line's key, and for a table row the keys of its cells long enough to place
+    /// on their own.
+    /// </summary>
+    private static List<(string Key, string[] Cells)> Lines((string? HeadingPath, string Text) chunk)
     {
         var lines = chunk.Text.Split('\n');
         var headingKey = chunk.HeadingPath is null ? null : NormalizedMarkdown.Key(chunk.HeadingPath);
-        var keys = new List<string>(lines.Length);
+        var keys = new List<(string Key, string[] Cells)>(lines.Length);
         for (var i = 0; i < lines.Length; i++)
         {
             var key = NormalizedMarkdown.Key(lines[i]);
@@ -148,9 +194,15 @@ public static class IndexChunkLocator
                 continue;
             }
 
-            keys.Add(key);
+            var cells = lines[i].TrimStart().StartsWith('|')
+                ? TableCellSeparator.Split(lines[i]).Select(NormalizedMarkdown.Key).Where(c => c.Length >= MinKeyLength).ToArray()
+                : [];
+            keys.Add((key, cells));
         }
 
         return keys;
     }
+
+    /// <summary>A pipe that is not escaped.</summary>
+    private static readonly Regex TableCellSeparator = new(@"(?<!\\)\|", RegexOptions.CultureInvariant);
 }
