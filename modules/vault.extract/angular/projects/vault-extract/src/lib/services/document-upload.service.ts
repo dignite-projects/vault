@@ -9,12 +9,10 @@ import type { DocumentDto } from '../proxy/documents/models';
  * Lives OUTSIDE `proxy/` so it survives `abp generate-proxy -t ng` regeneration
  * (the generator overwrites everything under proxy/ — see proxy/README.md).
  *
- * Why not the generated `DocumentService.upload`? The schematic emits
- * `body: input.file` typed as `IRemoteStreamContent` (a metadata-only shape:
- * fileName/contentType/contentLength — no actual bytes) plus `cabinetId` as a query
- * param. That does not match the backend's multipart contract (form fields `File` +
- * `CabinetId`). File upload is the one endpoint the schematic can't express faithfully,
- * so we keep the known-good FormData call here.
+ * The generated `DocumentService.upload` takes a `FormData` (since the ABP 11 proxies) but
+ * leaves its form field names to the caller. This wrapper is the one place that knows them
+ * (`File`, `CabinetId`, `DocumentTypeId`), and `buildUploadFormData` is unit-tested; older
+ * schematics emitted `IRemoteStreamContent` metadata instead of the bytes.
  */
 
 // Pure helper, exported for unit testing without an Angular injection context (#623):

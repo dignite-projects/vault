@@ -9,8 +9,14 @@
   cursor: pointer;
 
   &:hover,
+  &:focus-visible,
   &.layout-selected {
     background: color-mix(in srgb, var(--layout-color) 28%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--layout-color);
+    outline-offset: 1px;
   }
 }
 
@@ -48,6 +54,11 @@
 .layout-badge {
   background: var(--layout-color);
   color: var(--bs-body-bg);
+}
+
+// Light fills take dark text, as Bootstrap's text-bg-warning does, in either theme.
+.layout-badge.layout-image {
+  color: var(--bs-black);
 }
 
 // Where a field's value was found: drawn over the element boxes, and transparent to the pointer so they stay hoverable.

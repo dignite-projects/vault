@@ -14,8 +14,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LocalizationPipe } from '@abp/ng.core';
 import { DocumentService } from '@dignite/ng.vault-extract';
 import { HttpErrorResponse } from '@angular/common/http';
-import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
-import { LayoutBox, LayoutField, readLayout } from './layout-boxes';
+import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import type { Subscription } from 'rxjs';
+import { LayoutBox, LayoutField, layoutErrorCode, readLayout } from './layout-boxes';
 
 /** A field listed beside the pages: its name in the layout, and the label and value the page shows for it. */
 export interface LayoutViewerField {
@@ -107,6 +108,11 @@ export class DocumentLayoutViewerComponent {
   private loading: PDFDocumentLoadingTask | null = null;
   private pdf: PDFDocumentProxy | null = null;
   private scales = new Map<number, number>();
+  /** Which load is current: a newer one (another document) or the component's end makes an older load stop. */
+  private generation = 0;
+  private request: Subscription | null = null;
+  private renders: RenderTask[] = [];
+  private scrollTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     effect(() => {
@@ -123,7 +129,12 @@ export class DocumentLayoutViewerComponent {
       }
     });
 
-    this.destroyRef.onDestroy(() => void this.loading?.destroy());
+    this.destroyRef.onDestroy(() => {
+      this.release();
+      if (this.scrollTimer !== null) {
+        clearTimeout(this.scrollTimer);
+      }
+    });
   }
 
   select(box: ViewerBox): void {
@@ -135,41 +146,86 @@ export class DocumentLayoutViewerComponent {
     this.selectedField.set(selecting ? name : null);
     if (selecting) {
       // The outline renders on the next change detection; bring its first region into view then.
-      setTimeout(() => this.host.nativeElement.querySelector('.layout-field')?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+      if (this.scrollTimer !== null) {
+        clearTimeout(this.scrollTimer);
+      }
+      this.scrollTimer = setTimeout(() => {
+        this.scrollTimer = null;
+        this.host.nativeElement.querySelector('.layout-field')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
     }
   }
 
   private load(id: string, url: string): void {
+    this.release();
+    const generation = this.generation;
     this.state.set('loading');
-    this.documentService
+    this.pages.set([]);
+    this.layoutFields.set([]);
+    this.selected.set(null);
+    this.hovered.set(null);
+    this.selectedField.set(null);
+    this.hoveredField.set(null);
+
+    this.request = this.documentService
       // A document without a layout answers with an error the page explains itself: no global error dialog.
       .getLayout(id, { skipHandleError: true })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: async blob => {
           try {
-            await this.render(readLayout(JSON.parse(await blob.text())), url);
+            await this.render(readLayout(JSON.parse(await blob.text())), url, generation);
           } catch {
-            this.state.set('error');
+            if (generation === this.generation) {
+              this.state.set('error');
+            }
           }
         },
-        error: (error: HttpErrorResponse) => {
-          // Extract:DocumentNoLayout: a sub-document, or a document parsed before layouts were kept.
-          this.state.set(error.error?.error?.code === 'Extract:DocumentNoLayout' ? 'noLayout' : 'error');
+        error: async (error: HttpErrorResponse) => {
+          // Extract:DocumentNoLayout: a document parsed before layouts were kept, or a sub-document taken from a slice.
+          const code = await layoutErrorCode(error.error);
+          if (generation === this.generation) {
+            this.state.set(code === 'Extract:DocumentNoLayout' ? 'noLayout' : 'error');
+          }
         },
       });
   }
 
-  private async render(layout: ReturnType<typeof readLayout>, url: string): Promise<void> {
+  /** Ends the current load: its request, its drawing and its PDF; whatever it still awaits then stops. */
+  private release(): void {
+    this.generation++;
+    this.request?.unsubscribe();
+    this.request = null;
+    this.renders.forEach(task => task.cancel());
+    this.renders = [];
+    void this.loading?.destroy();
+    this.loading = null;
+    this.pdf = null;
+  }
+
+  private async render(layout: ReturnType<typeof readLayout>, url: string, generation: number): Promise<void> {
     const pdfjs = await loadPdfJs();
     const data = await (await fetch(url)).arrayBuffer();
-    this.loading = pdfjs.getDocument({ data });
-    this.pdf = await this.loading.promise;
+    if (generation !== this.generation) {
+      return;
+    }
 
+    const loading = pdfjs.getDocument({ data });
+    this.loading = loading;
+    const pdf = await loading.promise;
+    if (generation !== this.generation) {
+      return;
+    }
+
+    this.pdf = pdf;
     const fieldBoxes = ([] as LayoutBox[]).concat(...layout.fields.map(field => field.boxes));
     const pages: ViewerPage[] = [];
-    for (let number = 1; number <= this.pdf.numPages; number++) {
-      const page = await this.pdf.getPage(number);
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const page = await pdf.getPage(number);
+      if (generation !== this.generation) {
+        return;
+      }
+
       const natural = page.getViewport({ scale: 1 });
       const scale = Math.min(1.5, MAX_PAGE_WIDTH / natural.width);
       const viewport = page.getViewport({ scale });
@@ -191,21 +247,35 @@ export class DocumentLayoutViewerComponent {
     this.state.set('ready');
   }
 
-  /** Draws each page into its canvas, sharp on high-density screens. */
+  /** Draws each page into its canvas, sharp on high-density screens; a newer load or drawing cancels this one. */
   private async paint(canvases: readonly ElementRef<HTMLCanvasElement>[]): Promise<void> {
-    if (!this.pdf) {
+    const pdf = this.pdf;
+    if (!pdf) {
       return;
     }
 
+    this.renders.forEach(task => task.cancel());
+    this.renders = [];
+    const generation = this.generation;
     const ratio = window.devicePixelRatio || 1;
-    for (const ref of canvases) {
-      const canvas = ref.nativeElement;
-      const number = Number(canvas.dataset['page']);
-      const page = await this.pdf.getPage(number);
-      const viewport = page.getViewport({ scale: (this.scales.get(number) ?? 1) * ratio });
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvas, viewport }).promise;
+    try {
+      for (const ref of canvases) {
+        const canvas = ref.nativeElement;
+        const number = Number(canvas.dataset['page']);
+        const page = await pdf.getPage(number);
+        if (generation !== this.generation || this.pdf !== pdf) {
+          return;
+        }
+
+        const viewport = page.getViewport({ scale: (this.scales.get(number) ?? 1) * ratio });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const task = page.render({ canvas, viewport });
+        this.renders.push(task);
+        await task.promise;
+      }
+    } catch {
+      // Cancelled by a newer load or drawing, or the document was destroyed under it: nothing to show from here.
     }
   }
 }

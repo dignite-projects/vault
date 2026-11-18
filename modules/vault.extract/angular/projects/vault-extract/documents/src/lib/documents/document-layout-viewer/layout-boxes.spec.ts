@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readLayout } from './layout-boxes';
+import { layoutErrorCode, readLayout } from './layout-boxes';
 
 const square = (left: number, bottom: number, right: number, top: number) => [
   [left, top],
@@ -98,5 +98,19 @@ describe('readLayout', () => {
 
   it('has no fields when the layout carries none', () => {
     expect(readLayout({ current: true, document: { pages: [], sections: [] } }).fields).toEqual([]);
+  });
+});
+
+describe('layoutErrorCode', () => {
+  it('reads the code from an error body that arrives as a blob', async () => {
+    const body = new Blob([JSON.stringify({ error: { code: 'Extract:DocumentNoLayout', message: 'no layout' } })], { type: 'application/json' });
+    expect(await layoutErrorCode(body)).toBe('Extract:DocumentNoLayout');
+  });
+
+  it('reads parsed and text bodies too, and has no code for anything else', async () => {
+    expect(await layoutErrorCode({ error: { code: 'Extract:DocumentNoLayout' } })).toBe('Extract:DocumentNoLayout');
+    expect(await layoutErrorCode('{"error":{"code":"X"}}')).toBe('X');
+    expect(await layoutErrorCode(new Blob(['<html>Bad gateway</html>']))).toBeUndefined();
+    expect(await layoutErrorCode(null)).toBeUndefined();
   });
 });

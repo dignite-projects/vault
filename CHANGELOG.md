@@ -421,6 +421,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Index now holds such cells open with a zero-width space while the reader parses and drops it from the chunks; their
   text and search results are unchanged. Documents that failed this way index on their next sync or **Rebuild**.
 
+- **Layout viewer (from the refactor review).**
+  - A document without a layout shows the "no layout" notice instead of the error alert: the error body of the blob
+    request is now read.
+  - Turning the layout off and on, or leaving the page, while pages load no longer leaves pdf.js work running, nor
+    lets an older load overwrite a newer one.
+  - Layout regions can be reached and selected with the keyboard, and image badges keep dark text on their light fill.
+
 - **A date field lost its value whenever the model wrote a time.** The field-extraction prompt named every `DateTime`
   field by its type, whatever its input mode, so the model answered a Date-mode field as `2026-11-20T00:00:00` and the
   date reader rejected it; the schema's pattern would have refused that, but SiliconFlow does not enforce patterns.

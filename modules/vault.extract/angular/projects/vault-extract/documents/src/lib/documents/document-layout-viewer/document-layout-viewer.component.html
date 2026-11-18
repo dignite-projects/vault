@@ -46,9 +46,17 @@
                 [style.width.px]="box.w"
                 [style.height.px]="box.h"
                 [title]="box.text"
+                role="button"
+                tabindex="0"
+                [attr.aria-label]="box.kind + ': ' + box.text"
+                [attr.aria-pressed]="box === selected()"
                 (mouseenter)="hovered.set(box)"
                 (mouseleave)="hovered.set(null)"
+                (focus)="hovered.set(box)"
+                (blur)="hovered.set(null)"
                 (click)="select(box)"
+                (keydown.enter)="select(box)"
+                (keydown.space)="$event.preventDefault(); select(box)"
               ></div>
             }
             @for (box of page.fieldBoxes; track $index) {
