@@ -16,6 +16,10 @@
     <ProjectReference Include="..\..\src\Dignite.Vault.Extract.EntityFrameworkCore\Dignite.Vault.Extract.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\Dignite.Vault.Extract.Application.Tests\Dignite.Vault.Extract.Application.Tests.csproj" />
     <PackageReference Include="Volo.Abp.EntityFrameworkCore.Sqlite"/>
+    <!-- Blob Management as the host installs it, for the submission-upload round trip (DocumentSubmissionBlobManagement_Tests). -->
+    <PackageReference Include="Dignite.Abp.BlobManagement.Application" />
+    <PackageReference Include="Dignite.Abp.BlobManagement.EntityFrameworkCore" />
+    <PackageReference Include="Volo.Abp.BlobStoring.FileSystem" />
   </ItemGroup>
 
 </Project>

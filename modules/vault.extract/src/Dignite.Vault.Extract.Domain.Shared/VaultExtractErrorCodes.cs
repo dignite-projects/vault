@@ -42,6 +42,12 @@ public static class VaultExtractErrorCodes
         public const string SubmittedMarkdownEmpty = "Extract:DocumentSubmittedMarkdownEmpty";
         public const string SubmittedMarkdownTooLong = "Extract:DocumentSubmittedMarkdownTooLong";
         public const string SubmittedFieldsNeedType = "Extract:DocumentSubmittedFieldsNeedType";
+        // A submission whose Markdown comes both inline and as an uploaded file; one whose Markdown file is not UTF-8;
+        // and one naming an uploaded file that is not the caller's pending submission upload (not there, already used,
+        // another user's, or in another container - one answer for all, so it discloses nothing).
+        public const string SubmittedMarkdownTwice = "Extract:DocumentSubmittedMarkdownTwice";
+        public const string SubmittedMarkdownNotUtf8 = "Extract:DocumentSubmittedMarkdownNotUtf8";
+        public const string SubmittedFileNotFound = "Extract:DocumentSubmittedFileNotFound";
         // #485 (B1): re-added after #481 removed it assuming FileOrigin can never be null. Same string as before
         // #481 (nothing consumed it in the interim, so this is not a wire break) — a legacy pre-#481 derived row
         // can still carry a null FileOrigin during the documented binaries-first deploy window.

@@ -135,6 +135,18 @@
         <PackageVersion Include="Dignite.NotificationCenter.EntityFrameworkCore" Version="10.7.6" />
     </ItemGroup>
 
+    <ItemGroup Label="BlobManagement">
+        <!-- Dignite Blob Management stages the files a client uploads for a submission (upload tickets). Extract
+             references only its Application.Contracts (IBlobManagementFileService); the host installs the module.
+             Not on nuget.org yet: these are abp-modules pre-releases from GitHub Packages (NuGet.Config maps
+             Dignite.Abp.BlobManagement* and Dignite.Abp.BlobStoring* there), built against ABP 10.7 like the
+             other Dignite.Abp pins. Move to nuget.org when Blob Management has a stable release. -->
+        <PackageVersion Include="Dignite.Abp.BlobManagement.Application.Contracts" Version="10.7.7-preview.1" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.Application" Version="10.7.7-preview.1" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.HttpApi" Version="10.7.7-preview.1" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.EntityFrameworkCore" Version="10.7.7-preview.1" />
+    </ItemGroup>
+
     <ItemGroup Label="Aspire">
         <!-- Local orchestration only (src/Dignite.Vault.AppHost); keep in step with the Aspire.AppHost.Sdk version there. -->
         <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.5" />

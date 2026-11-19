@@ -45,8 +45,8 @@ COPY modules/vault.index/Directory.Build.props modules/vault.index/
 COPY modules/vault.index/src/ modules/vault.index/src/
 COPY src/ src/
 
-# GITHUB_PACKAGES_TOKEN is unused since abp-modules 10.7.0 (NuGet.Config is nuget.org-only); the
-# optional secret mount stays so a pre-release pin that needs the GitHub feed can come back.
+# GITHUB_PACKAGES_TOKEN reads the abp-modules pre-releases NuGet.Config maps to GitHub Packages (Dignite Blob
+# Management until it has a stable release).
 # BuildKit secret mount keeps it out of the image layers/history - never bake it in via ENV/ARG.
 RUN --mount=type=secret,id=github_packages_token \
     GITHUB_PACKAGES_TOKEN="$(cat /run/secrets/github_packages_token)" dotnet restore "src/Dignite.Vault.Extract.Host/Dignite.Vault.Extract.Host.csproj"

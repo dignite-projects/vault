@@ -33,4 +33,11 @@ public class VaultExtractMcpOptions
     /// tenants, because Extract itself has no concept of cross-tenant membership.
     /// </summary>
     public bool AllowExplicitTenantScope { get; set; } = false;
+
+    /// <summary>
+    /// The address clients reach this host at (<c>https://vault.example.com</c>), which a submission upload link is
+    /// made absolute with. <c>null</c>: the scheme and host of the MCP request itself, which is wrong behind a proxy that
+    /// rewrites them.
+    /// </summary>
+    public string? PublicBaseUrl { get; set; }
 }

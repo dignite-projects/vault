@@ -61,6 +61,13 @@ public interface IDocumentAppService : IApplicationService
     /// </summary>
     Task<DocumentDto> SubmitAsync(SubmitDocumentInput input);
 
+    /// <summary>
+    /// A link that stores one file for a later <see cref="SubmitAsync"/>: the Markdown, or the original file. Needs what
+    /// a submission needs to begin with (entry and <c>Documents.Submit</c>); the submission itself judges the type.
+    /// The file is staged through Blob Management, which the host installs.
+    /// </summary>
+    Task<SubmissionUploadDto> CreateSubmissionUploadAsync(CreateSubmissionUploadInput input);
+
     Task<IRemoteStreamContent> GetBlobAsync(Guid id);
 
     /// <summary>
