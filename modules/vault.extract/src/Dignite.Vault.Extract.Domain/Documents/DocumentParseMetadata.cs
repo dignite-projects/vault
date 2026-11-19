@@ -39,14 +39,30 @@ public class DocumentParseMetadata : ValueObject
     /// <summary>Short diagnostic when incomplete; <c>null</c> when complete.</summary>
     public string? IncompleteReason { get; }
 
+    /// <summary>
+    /// Whether Vault read the text from the file or a caller submitted it. JSON written before submissions existed has
+    /// no member and reads as <see cref="DocumentTextOrigin.Parsed"/>, which is what it was.
+    /// </summary>
+    public DocumentTextOrigin TextOrigin { get; }
+
+    /// <summary>
+    /// The OAuth client a submitted text came from, <c>null</c> for a parsed text or a caller without one. Provenance
+    /// for the operator; not on the egress.
+    /// </summary>
+    public string? SubmittedByClientId { get; }
+
     public DocumentParseMetadata(
         string? providerName,
         bool isComplete = true,
-        string? incompleteReason = null)
+        string? incompleteReason = null,
+        DocumentTextOrigin textOrigin = DocumentTextOrigin.Parsed,
+        string? submittedByClientId = null)
     {
         ProviderName = providerName;
         IsComplete = isComplete;
         IncompleteReason = incompleteReason;
+        TextOrigin = textOrigin;
+        SubmittedByClientId = submittedByClientId;
     }
 
     protected override IEnumerable<object> GetAtomicValues()
@@ -55,5 +71,7 @@ public class DocumentParseMetadata : ValueObject
         yield return ProviderName ?? string.Empty;
         yield return IsComplete;
         yield return IncompleteReason ?? string.Empty;
+        yield return TextOrigin;
+        yield return SubmittedByClientId ?? string.Empty;
     }
 }

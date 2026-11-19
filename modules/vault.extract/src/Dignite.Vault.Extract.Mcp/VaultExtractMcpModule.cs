@@ -65,6 +65,7 @@ public class VaultExtractMcpModule : AbpModule
             .AddTools<DocumentTypeTools>()
             .AddTools<CabinetTools>()
             .AddTools<DocumentTools>()
+            .AddTools<DocumentSubmissionTools>()
             // resources/list dynamically enumerates the registered categories (document types and
             // cabinets by default) visible to the current principal. Documents themselves are not
             // enumerated because their count is unbounded; they are discovered through

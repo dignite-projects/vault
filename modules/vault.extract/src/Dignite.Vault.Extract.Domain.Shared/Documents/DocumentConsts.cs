@@ -19,6 +19,13 @@ public static class DocumentConsts
     public static long MaxUploadFileBytes { get; set; } = 20L * 1024 * 1024;
 
     /// <summary>
+    /// The longest Markdown a submission may bring, in characters (<c>Document.SubmittedMarkdownTooLong</c> above it).
+    /// A bound on what one request may make the server hold and store, not a quality gate: the field-extraction ceiling
+    /// still applies when the server extracts fields from a submitted text. Static mutable, like the upload limit.
+    /// </summary>
+    public static int MaxSubmittedMarkdownLength { get; set; } = 1_000_000;
+
+    /// <summary>
     /// Per-extension upload content-type allow-list, case-insensitive (#221 / #471). Fail-closed safety gate:
     /// an extension/content-type pair not present here -> loud <c>BusinessException</c>
     /// (<c>Document.UnsupportedFileType</c>), no blob write, no pipeline trigger.

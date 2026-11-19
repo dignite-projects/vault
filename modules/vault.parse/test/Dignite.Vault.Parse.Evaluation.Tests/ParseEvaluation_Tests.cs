@@ -97,12 +97,47 @@ public class ParseEvaluation_Tests(ParseEvaluationFixture fixture, ITestOutputHe
         outcome.Scores[ParseQualityEvaluator.TextSimilarity].ShouldBeGreaterThan(0);
     }
 
+    /// <summary>
+    /// The Markdown an AI client produced for each corpus document (<c>VAULT_PARSE_EVAL_CLIENT_MARKDOWN</c>, one
+    /// <c>&lt;id&gt;.md</c> per document), scored the way Vault takes it in. Reported, never gated: it depends on the
+    /// client and its model. A document the directory has no file for is passed over.
+    /// </summary>
+    [ClientMarkdownTheory]
+    [MemberData(nameof(AllDocuments))]
+    public async Task A_client_markdown_is_scored(string id)
+    {
+        var document = ParseEvaluationFixture.Corpus.Single(d => d.Id == id);
+        if (ParseEvaluationFixture.ClientMarkdownPath(document) is not { } path)
+        {
+            output.WriteLine($"No client Markdown for '{id}'.");
+            return;
+        }
+
+        var (outcome, pagesFound) = await fixture.EvaluateClientMarkdownAsync(document, path);
+        Write(outcome);
+        output.WriteLine($"  Pages marked: {pagesFound}" + (document.Pages is { } pages ? $" of {pages}" : string.Empty));
+    }
+
+    public static TheoryData<string> AllDocuments() => [.. ParseEvaluationFixture.Corpus.Select(d => d.Id)];
+
     private void Write(ParseOutcome outcome)
     {
         output.WriteLine($"{outcome.Document.Id} ({outcome.ProviderName}, complete: {outcome.IsComplete})");
         foreach (var (metric, value) in outcome.Scores)
         {
             output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  {metric}: {value:0.000}"));
+        }
+    }
+}
+
+/// <summary>Runs only with <c>VAULT_PARSE_EVAL_CLIENT_MARKDOWN</c>, the directory of a client's Markdown.</summary>
+public sealed class ClientMarkdownTheoryAttribute : TheoryAttribute
+{
+    public ClientMarkdownTheoryAttribute()
+    {
+        if (ParseEvaluationFixture.ClientMarkdownDirectory is null)
+        {
+            Skip = "Set VAULT_PARSE_EVAL_CLIENT_MARKDOWN to a directory of <id>.md files to score a client's Markdown.";
         }
     }
 }

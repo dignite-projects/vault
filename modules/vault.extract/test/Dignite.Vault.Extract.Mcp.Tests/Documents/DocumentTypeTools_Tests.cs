@@ -77,6 +77,39 @@ public class DocumentTypeTools_Tests : VaultExtractTestBase<DocumentTypeToolsTes
         _fieldTypeExtensionRegistry = GetRequiredService<IVaultExtractFieldTypeRegistry>();
     }
 
+    /// <summary>
+    /// For a client that extracts fields itself: each field carries the value schema the server's own extraction uses
+    /// and its extraction prompt, wrapped as data. Left out unless asked for, so a search-only client's listing stays small.
+    /// </summary>
+    [Fact]
+    public async Task Extraction_schemas_are_listed_only_when_asked_for()
+    {
+        var typeId = Guid.NewGuid();
+        _documentTypeAppService.GetVisibleSummariesAsync()
+            .Returns(new List<DocumentTypeSummaryDto> { new() { Id = typeId, TypeCode = "invoice", DisplayName = "Invoice" } });
+        _fieldDefinitionAppService.GetListAsync(Arg.Any<GetFieldDefinitionListInput>()).Returns(new List<FieldDefinitionDto>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(), DocumentTypeId = typeId, Name = "total", DisplayName = "Total",
+                FieldTypeName = NumberFieldType.ControlName, Description = "The amount due, tax included."
+            }
+        });
+
+        var plain = await DocumentTypeTools.ListAsync(
+            _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver, _fieldTypeExtensionRegistry);
+        var withSchemas = await DocumentTypeTools.ListAsync(
+            _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver, _fieldTypeExtensionRegistry,
+            includeExtractionSchema: true);
+
+        plain.Types[0].Fields[0].ValueSchema.ShouldBeNull();
+        plain.Types[0].Fields[0].ExtractionPrompt.ShouldBeNull();
+        var field = withSchemas.Types[0].Fields[0];
+        field.ValueSchema!.Value.GetRawText().ShouldBe(
+            _fieldTypeExtensionRegistry.Get(NumberFieldType.ControlName).BuildExtractionSchema(new FieldConfigurationDictionary()).ToJsonString());
+        field.ExtractionPrompt.ShouldBe(PromptBoundary.WrapField("The amount due, tax included."));
+    }
+
     [Fact]
     public async Task Lists_in_explicit_tenant_and_returns_tenant_scoped_resource_uris()
     {

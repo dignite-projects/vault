@@ -82,6 +82,14 @@ public class DocumentDto : EntityDto<Guid>
     public string? ExtractionIncompleteReason { get; set; }
 
     /// <summary>
+    /// Whether Vault read <see cref="Markdown"/> from the file (<c>Parsed</c>) or a caller submitted it
+    /// (<c>Submitted</c>, <see cref="IDocumentAppService.SubmitAsync"/>). A submitted text was checked for its shape,
+    /// not against a file; whether to trust it is the consumer's call. A submitted document has no
+    /// <see cref="FileOrigin"/>.
+    /// </summary>
+    public DocumentTextOrigin TextOrigin { get; set; }
+
+    /// <summary>
     /// Type-bound field extraction results (field architecture v2). Key = FieldName, with the same
     /// shape as <see cref="FieldDefinitionDto.Name"/>. The source layer is determined by
     /// <see cref="TenantId"/>: host documents use host field definitions, while tenant documents use

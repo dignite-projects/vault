@@ -398,22 +398,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
             throw new BusinessException(VaultExtractErrorCodes.DocumentType.NoneConfigured);
         }
 
-        // Cabinet ownership validation (#194): when cabinetId is specified, assert Cabinets permission first
-        // (fail-closed, symmetric with the frontend canViewCabinets gate). The upload right above does not cover cabinet ownership;
-        // without this assertion, a user without Cabinets permission could bypass the UI and assign a document to a hidden cabinet.
-        // Then validate cabinet existence. Tenant isolation is enforced by the ambient IMultiTenant filter, so cross-tenant FindAsync returns null.
-        // Cabinets are orthogonal to pipelines; this only validates manual ownership during upload, and later pipelines do not touch it.
-        if (input.CabinetId.HasValue)
-        {
-            await CheckPolicyAsync(VaultExtractPermissions.Cabinets.Default);
-
-            var cabinet = await _cabinetRepository.FindAsync(input.CabinetId.Value);
-            if (cabinet == null)
-            {
-                throw new BusinessException(VaultExtractErrorCodes.Cabinet.InvalidId)
-                    .WithData("CabinetId", input.CabinetId.Value);
-            }
-        }
+        await CheckNewDocumentCabinetAsync(input.CabinetId);
 
         var fileName = input.File.FileName ?? "document";
         var contentType = input.File.ContentType ?? "application/octet-stream";
@@ -526,6 +511,69 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         await _pipelineJobScheduler.QueueAsync(document, VaultExtractPipelines.Parse);
 
         return await MapToDtoAsync(document);
+    }
+
+    public virtual async Task<DocumentDto> SubmitAsync(SubmitDocumentInput input)
+    {
+        // UploadAsync's order (#645): entry -> the declared type's existence -> the judgments -> every business
+        // validation, for the same reason - a business error answered to a caller who may not submit is an oracle.
+        await _documentAccess.CheckEntryAsync();
+
+        // By code, the way the wire names a type: an MCP client knows codes, not ids. Resolved under the ambient
+        // IMultiTenant filter, so a code of another layer is not found.
+        DocumentType? declaredType = null;
+        if (!string.IsNullOrWhiteSpace(input.DocumentTypeCode))
+        {
+            declaredType = await _documentTypeRepository.FindByTypeCodeAsync(input.DocumentTypeCode.Trim());
+            if (declaredType == null)
+            {
+                throw new EntityNotFoundException(typeof(DocumentType), input.DocumentTypeCode.Trim());
+            }
+        }
+
+        // Two subjects, two rows (authorization.md 3): creating a document in the declared type is judged as an upload
+        // is, and bringing one's own content is a right of its own on top of it.
+        await _documentAccess.CheckAsync(
+            DocumentAccessRule.Upload,
+            declaredType != null ? DocumentAccessSubject.OfType(declaredType) : DocumentAccessSubject.None);
+        await _documentAccess.CheckAsync(DocumentAccessRule.Submit, DocumentAccessSubject.None);
+
+        // An untyped submission goes to the classifier, which needs a type to choose: as for an untyped upload.
+        if (declaredType == null && await _documentTypeRepository.GetCountAsync() == 0)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.DocumentType.NoneConfigured);
+        }
+
+        await CheckNewDocumentCabinetAsync(input.CabinetId);
+
+        var document = await LazyServiceProvider
+            .LazyGetRequiredService<Submissions.DocumentSubmissionService>()
+            .SubmitAsync(input, declaredType);
+
+        return await MapToDtoAsync(document);
+    }
+
+    /// <summary>
+    /// The cabinet a new document is filed in (#194): with one given, the caller must hold the Cabinets permission
+    /// (fail-closed, symmetric with the frontend canViewCabinets gate - the upload right does not cover filing, and
+    /// without this a user could file into a cabinet they cannot see), and the cabinet must exist in the caller's layer
+    /// (the ambient IMultiTenant filter makes a cross-tenant id not found). Cabinets are orthogonal to the pipelines.
+    /// </summary>
+    protected virtual async Task CheckNewDocumentCabinetAsync(Guid? cabinetId)
+    {
+        if (!cabinetId.HasValue)
+        {
+            return;
+        }
+
+        await CheckPolicyAsync(VaultExtractPermissions.Cabinets.Default);
+
+        var cabinet = await _cabinetRepository.FindAsync(cabinetId.Value);
+        if (cabinet == null)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.Cabinet.InvalidId)
+                .WithData("CabinetId", cabinetId.Value);
+        }
     }
 
     /// <summary>
@@ -1094,39 +1142,13 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // Null-forgiving: EnsureClassified above already guarantees HasValue, but that guarantee crosses a
         // method boundary the compiler's nullable flow analysis can't see through.
         var definitions = await _fieldRepository.GetListAsync(document.DocumentTypeId!.Value);
-        var definitionsByName = definitions.ToDictionary(d => d.Name, StringComparer.Ordinal);
-        var fields = input.Fields ?? new Dictionary<string, JsonElement>();
 
         // Each submitted value is validated and converted in one step by the same reader the extraction
         // path uses, so an operator edit and an LLM write can never disagree about what a field accepts.
         // The difference is only in what happens on rejection: interactive here (a correctable error),
         // logged-and-skipped there.
-        var fieldValues = new Dictionary<string, object?>(fields.Count, StringComparer.Ordinal);
-        foreach (var (key, value) in fields)
-        {
-            if (!definitionsByName.TryGetValue(key, out var definition))
-            {
-                throw new BusinessException(VaultExtractErrorCodes.ExtractedField.Unknown)
-                    .WithData("FieldName", key)
-                    .WithData("DocumentTypeCode", documentTypeCode ?? string.Empty);
-            }
-
-            if (!FlexFieldValueReader.TryRead(
-                    value, definition.FieldTypeName, definition.Configuration, _fieldTypeExtensionRegistry, out var read))
-            {
-                throw new BusinessException(VaultExtractErrorCodes.ExtractedField.InvalidValue)
-                    .WithData("FieldName", key)
-                    .WithData("DocumentTypeCode", documentTypeCode ?? string.Empty)
-                    .WithData("DataType", definition.FieldTypeName)
-                    .WithData("AllowMultiple", bool.FalseString)
-                    .WithData("JsonValueKind", value.ValueKind.ToString());
-            }
-
-            if (read != null)
-            {
-                fieldValues[key] = read;
-            }
-        }
+        var fieldValues = FlexFieldInputReader.Read(
+            input.Fields ?? new Dictionary<string, JsonElement>(), definitions, documentTypeCode, _fieldTypeExtensionRegistry);
 
         // Whole-set replacement, consistent with FieldExtractionService: empty means clear every value.
         document.SetFlexFields(fieldValues);
@@ -1647,6 +1669,8 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // #268: expose extraction integrity quality signal, not provenance. Null metadata (historical / digital-native / not extracted) is treated as complete.
         dto.ExtractionIsComplete = document.ExtractionMetadata?.IsComplete ?? true;
         dto.ExtractionIncompleteReason = document.ExtractionMetadata?.IncompleteReason;
+        // Where the text came from, coarse: parsed or submitted. The engine and the submitting client stay internal.
+        dto.TextOrigin = document.ExtractionMetadata?.TextOrigin ?? DocumentTextOrigin.Parsed;
         // #284: review axis: derived RequiresReview + thick detail entries including missing required field names. Server computes; client only renders.
         // Unified predicate including disposition: rejected documents may retain objective reasons but do not count as "requires attention";
         // details are cleared too, avoiding contradictory "rejected + pending review" presentation.

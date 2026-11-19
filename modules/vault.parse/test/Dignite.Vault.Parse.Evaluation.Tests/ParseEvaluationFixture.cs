@@ -37,6 +37,7 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly ConcurrentDictionary<string, ParseOutcome> _outcomes = new();
+    private readonly ConcurrentDictionary<string, ParseOutcome> _clientOutcomes = new();
     private IAbpApplicationWithInternalServiceProvider _application = default!;
     private ReportingConfiguration _reporting = default!;
 
@@ -80,11 +81,49 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
 
     public async Task<ParseOutcome> EvaluateAsync(CorpusDocument document)
     {
-        var extracted = await ParseAsync(document);
+        var outcome = await ScoreAsync(document, await ParseAsync(document), $"Parse.{document.Id}");
+        _outcomes[document.Id] = outcome;
+        return outcome;
+    }
+
+    /// <summary>
+    /// The Markdown a client produced for the corpus document, in <c>VAULT_PARSE_EVAL_CLIENT_MARKDOWN</c> as
+    /// <c>&lt;id&gt;.md</c>; <c>null</c> when the directory has none for it.
+    /// </summary>
+    public static string? ClientMarkdownPath(CorpusDocument document)
+        => ClientMarkdownDirectory is { } directory && File.Exists(Path.Combine(directory, document.Id + ".md"))
+            ? Path.Combine(directory, document.Id + ".md")
+            : null;
+
+    public static string? ClientMarkdownDirectory
+        => Environment.GetEnvironmentVariable("VAULT_PARSE_EVAL_CLIENT_MARKDOWN") is { Length: > 0 } directory ? directory : null;
+
+    /// <summary>
+    /// Scores the Markdown a client produced for <paramref name="document"/> the way Vault takes it in: read by the
+    /// Markdown engine (its page breaks become pages) and rendered back, so the score is of what Vault would store.
+    /// Kept apart from the parse outcomes: a client's output is never a baseline.
+    /// </summary>
+    public async Task<(ParseOutcome Outcome, int PagesFound)> EvaluateClientMarkdownAsync(CorpusDocument document, string markdownPath)
+    {
+        ExtractionDocument extracted;
+        using (var scope = _application.ServiceProvider.CreateScope())
+        await using (var stream = File.OpenRead(markdownPath))
+        {
+            extracted = await scope.ServiceProvider.GetRequiredService<DocumentExtractionClient>().ExtractAsync(
+                stream, document.Id, "text/markdown", ParseExtractionOptions.Create(document.Id + ".md"));
+        }
+
+        var outcome = await ScoreAsync(document, extracted, $"Client.{document.Id}");
+        _clientOutcomes[document.Id] = outcome;
+        return (outcome, extracted.SourcePages.Count);
+    }
+
+    private async Task<ParseOutcome> ScoreAsync(CorpusDocument document, ExtractionDocument extracted, string scenario)
+    {
         var markdown = ExtractionDocumentMarkdown.Render(extracted);
 
         EvaluationResult evaluation;
-        await using (var run = await _reporting.CreateScenarioRunAsync($"Parse.{document.Id}"))
+        await using (var run = await _reporting.CreateScenarioRunAsync(scenario))
         {
             evaluation = await run.EvaluateAsync(
                 [new ChatMessage(ChatRole.User, document.File)],
@@ -101,9 +140,7 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
             }
         }
 
-        var outcome = new ParseOutcome(document, extracted.GetProvider(), extracted.IsComplete(), scores);
-        _outcomes[document.Id] = outcome;
-        return outcome;
+        return new ParseOutcome(document, extracted.GetProvider(), extracted.IsComplete(), scores);
     }
 
     public async Task DisposeAsync()
@@ -126,7 +163,13 @@ public sealed class ParseEvaluationFixture : IAsyncLifetime
 
             if (Environment.GetEnvironmentVariable("VAULT_PARSE_EVAL_REPORT") is { Length: > 0 } reportPath)
             {
-                await File.WriteAllTextAsync(reportPath, Report(_outcomes.Values.OrderBy(o => o.Document.Id, StringComparer.Ordinal)));
+                var report = Report(_outcomes.Values.OrderBy(o => o.Document.Id, StringComparer.Ordinal));
+                if (!_clientOutcomes.IsEmpty)
+                {
+                    report += "\n## Client Markdown\n\n" + Report(_clientOutcomes.Values.OrderBy(o => o.Document.Id, StringComparer.Ordinal));
+                }
+
+                await File.WriteAllTextAsync(reportPath, report);
             }
         }
         finally

@@ -94,6 +94,7 @@ It matters most for the per-type arm: handing out a resource grant is gated by `
 | **Retry** | `Documents.Pipelines.Retry` | `Edit` | **unless under review** | `RetryPipelineAsync` |
 | **Declare a type** | `Documents.ConfirmClassification` **or** `Documents.Upload` | `Upload` on the **target** type | never | the target type of `ConfirmClassificationAsync` / `ReclassifyAsync`; and `ReparseAsync`, judged on the **empty subject** — its classification names the target, so only the module-wide column can admit it |
 | **Upload** | `Documents.Upload` | `Upload` on the declared type | never | `UploadAsync`, judged once; an untyped upload has no type, so only `Documents.Upload` admits it |
+| **Submit** | `Documents.Submit` | — | never | `SubmitAsync` and MCP `vault_extract_submit_document`, on the empty subject, **on top of** **Upload** on the declared type: a submission creates a document like an upload, and also brings the caller's own text, type and field values, which skip the server's processing |
 | **Permanent delete** | `Documents.PermanentDelete` | — | never | `PermanentDeleteAsync` |
 | **Reprocess (fields)** | `Documents.Reprocessing.FieldExtraction` | — | never | `PreviewFieldExtractionAsync`, `StartFieldExtractionAsync` |
 | **Reprocess (classification)** | `Documents.Reprocessing.Reclassification` | — | never | `PreviewReclassificationAsync`, `StartReclassificationAsync` |

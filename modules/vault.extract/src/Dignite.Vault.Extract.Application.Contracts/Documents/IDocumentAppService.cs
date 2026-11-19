@@ -52,6 +52,15 @@ public interface IDocumentAppService : IApplicationService
 
     Task<DocumentDto> UploadAsync(UploadDocumentInput input);
 
+    /// <summary>
+    /// Creates a document from content the caller processed itself, with no file: its Markdown, and optionally its
+    /// type and field values (<see cref="SubmitDocumentInput"/>). The supplied stages complete in this call and the
+    /// rest run as for an upload; the document passes through the same lifecycle and integration events, and its
+    /// <see cref="DocumentDto.TextOrigin"/> says the text was submitted. Needs <c>Documents.Submit</c> on top of the
+    /// upload right for the declared type.
+    /// </summary>
+    Task<DocumentDto> SubmitAsync(SubmitDocumentInput input);
+
     Task<IRemoteStreamContent> GetBlobAsync(Guid id);
 
     /// <summary>

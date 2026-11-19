@@ -29,10 +29,11 @@ Every tool name starts with `vault_extract_`, and every resource URI uses the `v
 | `resources/list` | Bounded enumeration of the visible document-type and cabinet resources |
 | Tool `vault_extract_search_documents` | Structured search; see [Search](#search) |
 | Tool `vault_extract_get_document` | One document by id: title, type, lifecycle, language, created-at, the Markdown body and every extracted field value. For clients that cannot read resources |
-| Tool `vault_extract_list_document_types` | The visible document types with their field schemas (name, field type, multi-value flag, display name, required flag), or one type with `documentTypeCode`. For clients that cannot list resources |
+| Tool `vault_extract_list_document_types` | The visible document types with their field schemas (name, field type, multi-value flag, display name, required flag), or one type with `documentTypeCode`. With `includeExtractionSchema=true`, each field also carries `valueSchema` and `extractionPrompt`, for extracting its value yourself. For clients that cannot list resources |
 | Tool `vault_extract_list_cabinets` | Bounded cabinet name-to-id discovery with `totalCount` and `truncated` |
+| Tool `vault_extract_submit_document` | Creates a document from content the client processed itself: its Markdown and, optionally, its type and field values. Asks the user to confirm first. See [Submitting Processed Content](../documents/submitting-content.md#through-mcp) |
 
-All tools are read-only. The server declares the bare `resources` capability with **no `subscribe` or `listChanged`**: clients read on demand. The transport is **Streamable HTTP** at `/mcp`; the legacy SSE transport is not exposed.
+Every tool but `vault_extract_submit_document` is read-only. The server declares the bare `resources` capability with **no `subscribe` or `listChanged`**: clients read on demand. The transport is **Streamable HTTP** at `/mcp`; the legacy SSE transport is not exposed.
 
 ### Search
 

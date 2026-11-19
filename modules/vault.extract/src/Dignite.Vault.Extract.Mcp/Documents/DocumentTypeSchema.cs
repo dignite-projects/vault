@@ -33,9 +33,11 @@ public sealed record DocumentTypeSchema
 
 /// <summary>
 /// Schema projection for a single field. <see cref="Name"/> is the identifier used in
-/// <c>fieldFilters</c> / <c>includeFields</c>. <see cref="DisplayName"/> is already wrapped with
-/// PromptBoundary. The extraction instruction is intentionally omitted: it is useless for query /
-/// projection orchestration and would waste LLM context while widening the injection surface.
+/// <c>fieldFilters</c> / <c>includeFields</c>, and the key of its value in a submission. <see cref="DisplayName"/>
+/// is already wrapped with PromptBoundary. How to extract the field (<see cref="ValueSchema"/>,
+/// <see cref="ExtractionPrompt"/>) is present only when the caller asked for it: it is useless for query /
+/// projection orchestration and would waste LLM context there, while a client that submits field values it
+/// extracted itself needs exactly that.
 /// </summary>
 public sealed record DocumentTypeFieldSchema
 {
@@ -79,4 +81,17 @@ public sealed record DocumentTypeFieldSchema
     public string? DisplayName { get; init; }
 
     public bool IsRequired { get; init; }
+
+    /// <summary>
+    /// The JSON schema a submitted value of this field must satisfy, the same one the server's own extraction
+    /// constrains its model with: a <c>Select</c>'s options as an <c>enum</c>, a <c>Table</c>'s rows as
+    /// <c>{"values": {column: value}}</c>, a <c>DateTime</c> field's format. Only when extraction schemas were asked for.
+    /// </summary>
+    public System.Text.Json.JsonElement? ValueSchema { get; init; }
+
+    /// <summary>
+    /// The field's extraction instruction as its administrator wrote it, already wrapped with PromptBoundary; absent
+    /// when there is none (the name says what to extract) or extraction schemas were not asked for.
+    /// </summary>
+    public string? ExtractionPrompt { get; init; }
 }

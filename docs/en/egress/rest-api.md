@@ -134,6 +134,7 @@ To download the same view as a file, see [Data Download](data-download.md).
 | `GET` | `/` | List documents |
 | `GET` | `/{id}` | Get a document |
 | `POST` | `/upload` | Upload (multipart) |
+| `POST` | `/submit` | Submit processed content (JSON), see [Submitting Processed Content](../documents/submitting-content.md) |
 | `GET` | `/{id}/blob` | Download the original file |
 | `DELETE` | `/{id}` | Move to the recycle bin |
 | `POST` | `/{id}/restore` | Restore from the recycle bin |

@@ -72,6 +72,7 @@ The digital documents parse the same way every time, so each must hold the score
 | `VAULT_PARSE_EVAL_REPORT` | A file path: writes a Markdown table of every document this run parsed |
 | `VAULT_PARSE_EVAL_RESULTS` | The results directory for `dotnet aieval report`; the temp directory's `vault-parse-eval` by default |
 | `VAULT_PARSE_EVAL_VISION_ENDPOINT`, `_API_KEY`, `_MODEL` | An OpenAI-compatible vision model; the OCR documents run only with all three |
+| `VAULT_PARSE_EVAL_CLIENT_MARKDOWN` | A directory of `<id>.md` files: scores a client's Markdown for those corpus documents (below) |
 
 The OCR documents are scored and reported, never gated: their output depends on the model and changes between calls. Each OCR page is one model call.
 
@@ -82,3 +83,13 @@ PdfExtractor__ReconstructTables=false dotnet test modules/vault.parse/test/Digni
 ```
 
 Dated runs, with the OCR documents and what they found, are kept in `Reports/`.
+
+## Scoring a Client's Markdown
+
+A client that [submits processed content](../documents/submitting-content.md) converts documents itself, so its output is measured on the same corpus. Have the client convert each corpus file following [the rules a submission's Markdown follows](../documents/submitting-content.md#writing-the-markdown) (the MCP submit tool's description carries them), save each result as `<id>.md` (for example `contract.md` for `contract.pdf`), and point `VAULT_PARSE_EVAL_CLIENT_MARKDOWN` at the directory:
+
+```bash
+VAULT_PARSE_EVAL_CLIENT_MARKDOWN=/path/to/client-output VAULT_PARSE_EVAL_REPORT=client.md dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Evaluation.Tests/Dignite.Vault.Parse.Evaluation.Tests.csproj --filter "FullyQualifiedName~client_markdown"
+```
+
+Each file is read the way Vault takes a submission in, by the Markdown engine, so its page breaks become pages, and the score is of what Vault would store. The test output also gives how many pages the client marked against the pages the document has. A client's scores are reported under their own heading and never gated or written to the baseline: they depend on the client and its model.

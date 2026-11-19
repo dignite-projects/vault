@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Submitting processed content.** A caller that converted, classified and extracted a document itself submits the
+  result instead of the file: `POST /api/vault-extract/documents/submit` (`IDocumentAppService.SubmitAsync`) and the
+  MCP tool `vault_extract_submit_document`, the MCP server's first write tool. The Markdown becomes the document's text
+  and its `<!-- PageBreak -->` lines its pages; a declared type and field values complete classification and field
+  extraction without a model call; whatever is left out runs on the server. The document has the usual lifecycle and
+  integration events, no original file, and `DocumentDto.TextOrigin = Submitted` (`Parsed` for every other document).
+  Needs the upload right for the type plus the new `VaultExtract.Documents.Submit` permission. The MCP tool asks the
+  user to confirm first: through the client (elicitation over a Multi Round-Trip Request) where it can, otherwise by
+  refusing until `userConfirmed=true`. `vault_extract_list_document_types` takes `includeExtractionSchema` and then
+  gives each field its value schema and extraction prompt. See
+  [Submitting Processed Content](docs/en/documents/submitting-content.md).
+
+- **Markdown files are read with their pages.** `.md` / `text/markdown` goes to a Markdown engine beside the Parse
+  router instead of the MarkItDown catch-all; page metadata written the way Azure Document Intelligence writes it
+  (`<!-- PageBreak -->`, `PageHeader`, `PageFooter`, `PageNumber`) becomes pages and page furniture. The Parse
+  evaluation scores a client's Markdown for the corpus documents (`VAULT_PARSE_EVAL_CLIENT_MARKDOWN`). See
+  [Parse Evaluation](docs/en/text-extraction/parse-evaluation.md#scoring-a-clients-markdown).
+
 - **Chunking templates.** An index profile can chunk a document type as a whole document (while it fits the chunk
   size), by table row (each data row with its header and heading path) or by page of the file, besides by headings and
   by tokens: RAGFlow's `one`, `table` and `presentation` methods. On the evaluation set, a profile per type (short
