@@ -29,14 +29,23 @@ public sealed class SummaryCompilation
 
     public int FailedCallCount { get; init; }
 
+    /// <summary>Failed calls the provider refused with a status a retry cannot change (<see cref="ProviderRefusal"/>).</summary>
+    public int RefusedCallCount { get; init; }
+
     /// <summary>Summaries taken from a <see cref="ModelResultCache"/> instead of a model call.</summary>
     public int ReusedCount { get; init; }
 
     /// <summary>What was left out or could not be done; <c>null</c> when nothing.</summary>
     public string? Note { get; init; }
 
-    /// <summary>Every model call failed: nothing was compiled, and trying again later may work.</summary>
+    /// <summary>Every model call failed: nothing was compiled.</summary>
     public bool Failed => CallCount > 0 && FailedCallCount == CallCount;
+
+    /// <summary>
+    /// Every model call failed and the provider refused each one for good (a rejected key, an unknown model, a request it
+    /// cannot take): the same calls fail the same way on a retry.
+    /// </summary>
+    public bool Refused => Failed && RefusedCallCount == FailedCallCount;
 }
 
 /// <summary>
@@ -145,6 +154,7 @@ public class DocumentSummaryCompiler
     private long _outputTokens;
     private int _calls;
     private int _failedCalls;
+    private int _refusedCalls;
     private int _reused;
 
     public virtual async Task<SummaryCompilation> CompileAsync(
@@ -153,7 +163,7 @@ public class DocumentSummaryCompiler
         CancellationToken cancellationToken = default)
     {
         _inputTokens = _outputTokens = 0;
-        _calls = _failedCalls = _reused = 0;
+        _calls = _failedCalls = _refusedCalls = _reused = 0;
 
         var ordered = chunks.OrderBy(c => c.Ordinal).ToList();
         var outline = DocumentOutline.Build(ordered.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath)));
@@ -222,6 +232,7 @@ public class DocumentSummaryCompiler
         OutputTokenCount = _outputTokens,
         CallCount = _calls,
         FailedCallCount = _failedCalls,
+        RefusedCallCount = _refusedCalls,
         ReusedCount = _reused,
         Note = notes.Count == 0 ? null : string.Join(" ", notes)
     };
@@ -633,6 +644,11 @@ public class DocumentSummaryCompiler
             {
                 _logger.LogWarning(exception, "A summary call ({Schema}) failed; its items are left without summaries.", schemaName);
                 _failedCalls++;
+                if (ProviderRefusal.IsPermanent(exception))
+                {
+                    _refusedCalls++;
+                }
+
                 return null;
             }
         }

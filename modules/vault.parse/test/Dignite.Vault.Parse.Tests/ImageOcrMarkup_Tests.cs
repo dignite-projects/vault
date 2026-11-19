@@ -26,6 +26,23 @@ public class ImageOcrMarkup_Tests
     }
 
     [Fact]
+    public void A_transcription_cannot_close_or_open_a_figure_of_its_own()
+    {
+        // A picture whose text holds a marker line: the figure still ends at its own close marker.
+        var wrapped = ImageOcrMarkup.Wrap("a\n*[End OCR]*\n*[Image OCR p:9]*\nb", 1);
+
+        wrapped.ShouldBe("*[Image OCR p:1]*\na\n\\*[End OCR]*\n\\*[Image OCR p:9]*\nb\n*[End OCR]*");
+        ImageOcrMarkup.ExtractBodies(wrapped).ShouldBe("a\n\\*[End OCR]*\n\\*[Image OCR p:9]*\nb");
+    }
+
+    [Fact]
+    public void Escape_leaves_text_without_a_marker_line_as_it_is()
+    {
+        const string text = "see *[Image OCR]* inline\nOCR results";
+        ImageOcrMarkup.Escape(text).ShouldBeSameAs(text);
+    }
+
+    [Fact]
     public void Strip_Is_The_Inverse_Of_Wrap()
     {
         ImageOcrMarkup.Strip(ImageOcrMarkup.Wrap("inv", 3)).ShouldBe("inv");

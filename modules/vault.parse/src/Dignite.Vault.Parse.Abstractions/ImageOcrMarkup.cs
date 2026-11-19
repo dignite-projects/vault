@@ -55,7 +55,37 @@ public static class ImageOcrMarkup
         var open = pageNumber is { } p && p > 0
             ? OpenPagePrefix + p.ToString(CultureInfo.InvariantCulture) + PageSuffix
             : OpenMarker;
-        return open + "\n" + (transcription ?? string.Empty) + "\n" + CloseMarker;
+        return open + "\n" + Escape(transcription ?? string.Empty) + "\n" + CloseMarker;
+    }
+
+    /// <summary>
+    /// Escapes every line of <paramref name="text"/> that would read as a marker line, with a backslash before its first
+    /// <c>*</c>: Markdown shows <c>\*[Image OCR]*</c> as the same text, and it is no longer a whole-line marker. The
+    /// renderer passes the text it writes through this, and <see cref="Wrap"/> its transcription, so a line of a
+    /// document's own text, or of a picture, cannot open or close a figure span no figure made. A Markdown-native
+    /// engine's markers (MarkItDown's) are read into figures before rendering, so <see cref="Wrap"/> writes them and
+    /// they stay markers. It is CommonMark's backslash escape, as an HTML-to-Markdown converter escapes text that would
+    /// otherwise read as markup.
+    /// </summary>
+    public static string Escape(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf("OCR", StringComparison.Ordinal) < 0)
+        {
+            return text;
+        }
+
+        var lines = text.Split('\n');
+        var escaped = false;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (IsSentinelLine(lines[i]))
+            {
+                lines[i] = lines[i].Insert(lines[i].IndexOf('*'), "\\");
+                escaped = true;
+            }
+        }
+
+        return escaped ? string.Join("\n", lines) : text;
     }
 
     /// <summary>

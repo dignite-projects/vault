@@ -87,6 +87,33 @@ public class PdfRunningHeaderFooter_Tests
     }
 
     [Fact]
+    public async Task A_stray_line_of_the_page_number_s_shape_keeps_itself_not_every_page_number()
+    {
+        // Page two has a bare "1500" in its footer band above its bare page number: the same template ("#"), numbers
+        // that are neither fixed nor the page's. It stays, and the page numbers still go.
+        var pdf = PdfFixtures.BuildMultiPage(new[]
+        {
+            Page("Report", "1", "Body of page one"),
+            new List<(string, double)>
+            {
+                ("Report", 810.0),
+                ("Body of page two", 700.0),
+                ("1500", 70.0),
+                ("2", 30.0)
+            },
+            Page("Report", "3", "Body of page three"),
+            Page("Report", "4", "Body of page four")
+        });
+
+        var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "report.pdf", "application/pdf");
+
+        result.Markdown.ShouldContain("1500");
+        result.Markdown.Split('\n').ShouldNotContain("3");
+        result.Markdown.Split('\n').ShouldNotContain("4");
+        result.Markdown.ShouldNotContain("Report");
+    }
+
+    [Fact]
     public async Task Preserves_a_non_repeating_signature_and_total_at_the_page_bottom()
     {
         // The critical safety case: a signature block and a total sit in the FOOTER band of the last page but
