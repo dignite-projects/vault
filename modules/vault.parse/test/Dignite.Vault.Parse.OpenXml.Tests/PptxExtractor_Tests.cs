@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Vault.Parse;
 using Microsoft.Extensions.DocumentExtraction;
+using Microsoft.Extensions.Documents;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -55,18 +57,17 @@ public class PptxExtractor_Tests
     }
 
     [Fact]
-    public async Task Escapes_metacharacters_in_an_image_caption()
+    public async Task Keeps_markup_in_an_image_caption_as_text()
     {
-        // #320/#480: PPTX picture alt-text is escaped like the DOCX/PDF captions (block-escaped, placed before the
-        // *[Image OCR]* marker, no longer bolded), so it can't inject a link.
+        // #320: PPTX picture alt-text is the figure's <figcaption> like the DOCX/PDF captions: inside an HTML block, so
+        // a bracketed link is text, and HTML-encoded, so a tag is text too.
         StubOcr("TRANSCRIPT");
         var pptx = PptxFixtures.Build(new PptxFixtures.SlideSpec()
-            .Image(Png(alt: "See [details](http://evil.example)", x: 100, y: 100)));
+            .Image(Png(alt: "See [details](http://evil.example) <b>now</b>", x: 100, y: 100)));
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
-        result.Markdown.ShouldContain("See \\[details\\](http://evil.example)");
-        result.Markdown.ShouldNotContain("**See");
+        result.Markdown.ShouldContain("<figcaption>See [details](http://evil.example) &lt;b&gt;now&lt;/b&gt;</figcaption>");
     }
 
     [Fact]
@@ -115,11 +116,10 @@ public class PptxExtractor_Tests
     }
 
     [Fact]
-    public async Task Anchors_the_figure_marker_to_its_slide_number()
+    public async Task Puts_the_figure_on_its_slide()
     {
-        // #480: PPTX figures carry the *[Image OCR p:{slide}]*…*[End OCR]* markers (slides are page-like), so
-        // ImageOcrMarkup.Contains fires the deterministic segmentation trigger and #478's figure FileOrigin applies.
-        // The anchor is the real 1-based slide ordinal — the image here is on the SECOND slide.
+        // #480: a PPTX figure is a <figure> like any other, so FigureMarkup.Contains fires the deterministic
+        // segmentation trigger, and its image refers to the real 1-based slide — the SECOND slide here.
         StubOcr("EMBEDDED DOC TEXT");
 
         var pptx = PptxFixtures.Build(
@@ -128,10 +128,10 @@ public class PptxExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
-        result.Markdown.ShouldContain("*[Image OCR p:2]*");
-        result.Markdown.ShouldContain("*[End OCR]*");
-        result.Markdown.ShouldNotContain("*[Image OCR p:1]*");
-        ImageOcrMarkup.Contains(result.Markdown).ShouldBeTrue();
+        result.Markdown.ShouldContain(FigureMarkup.Write("EMBEDDED DOC TEXT", caption: null, FigureMarkup.Id(1)));
+        FigureMarkup.Contains(result.Markdown).ShouldBeTrue();
+        result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem()
+            .Sources.ShouldHaveSingleItem().Page.PageNumber.ShouldBe(2);
     }
 
     [Fact]
@@ -144,14 +144,10 @@ public class PptxExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
-        result.Markdown.ShouldContain("Quarterly Revenue Diagram");
-        result.Markdown.ShouldNotContain("**Quarterly Revenue Diagram**");
-        var caption = result.Markdown.IndexOf("Quarterly Revenue Diagram", StringComparison.Ordinal);
-        var open = result.Markdown.IndexOf("*[Image OCR p:1]*", StringComparison.Ordinal);
-        var body = result.Markdown.IndexOf("transcribed chart text", StringComparison.Ordinal);
-        caption.ShouldBeGreaterThanOrEqualTo(0);
-        open.ShouldBeGreaterThan(caption, "the caption labels the figure block above the open marker");
-        body.ShouldBeGreaterThan(open, "the transcription sits inside the markers, below the caption");
+        // The alt text is the image's alternative text, written as the figure's <figcaption>.
+        result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem()
+            .AlternativeText.ShouldBe("Quarterly Revenue Diagram");
+        result.Markdown.ShouldContain(FigureMarkup.Write("transcribed chart text", "Quarterly Revenue Diagram", FigureMarkup.Id(1)));
     }
 
     [Fact]

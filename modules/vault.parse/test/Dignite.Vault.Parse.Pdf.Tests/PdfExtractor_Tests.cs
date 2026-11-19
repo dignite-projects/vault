@@ -127,22 +127,12 @@ public class PdfExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        // #371/#381: the figure no longer rides an out-of-band Figures list — its transcription travels IN-BAND in
-        // Document.Markdown (the egress payload), bracketed by *[Image OCR p:N]*…*[End OCR]* provenance markers
-        // carrying the 1-based page anchor.
-        result.Markdown.ShouldContain("INVOICE No. 42");
-        result.Markdown.ShouldContain(ImageOcrMarkup.CloseMarker); // "*[End OCR]*"
-        // The single fixture page is page 1, so the open marker carries the page anchor "*[Image OCR p:1]*"
-        // (the page-anchored form, NOT the bare OpenMarker "*[Image OCR]*").
-        result.Markdown.ShouldContain(ImageOcrMarkup.OpenPagePrefix + "1]*");
-
-        // The transcription sits between the open and close markers (the bracketed figure span).
-        var open = result.Markdown.IndexOf(ImageOcrMarkup.OpenPagePrefix + "1]*", StringComparison.Ordinal);
-        var transcription = result.Markdown.IndexOf("INVOICE No. 42", StringComparison.Ordinal);
-        var close = result.Markdown.IndexOf(ImageOcrMarkup.CloseMarker, StringComparison.Ordinal);
-        open.ShouldBeGreaterThanOrEqualTo(0);
-        transcription.ShouldBeGreaterThan(open);
-        close.ShouldBeGreaterThan(transcription);
+        // #371/#381: the figure is an image element on its page, its text the transcription, and Document.Markdown
+        // (the egress payload) carries it inline as a <figure>.
+        var image = result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem();
+        image.Text.ShouldBe("INVOICE No. 42");
+        image.Sources.ShouldHaveSingleItem().Page.PageNumber.ShouldBe(1);
+        result.Markdown.ShouldContain(FigureMarkup.Write("INVOICE No. 42", caption: null, FigureMarkup.Id(1)));
     }
 
     [Fact]
@@ -152,9 +142,9 @@ public class PdfExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
-        // No figure → no in-band *[Image OCR]* markers at all, and no OCR ran.
-        ImageOcrMarkup.Contains(result.Markdown).ShouldBeFalse();
-        result.Markdown.ShouldNotContain(ImageOcrMarkup.CloseMarker);
+        // No figure → no <figure> at all, and no OCR ran.
+        FigureMarkup.Contains(result.Markdown).ShouldBeFalse();
+        result.Markdown.ShouldNotContain(FigureMarkup.CloseTag);
         await _ocr.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>());
     }
 
@@ -174,7 +164,7 @@ public class PdfExtractor_Tests
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pdf), "document.pdf", "application/pdf");
 
         await _ocr.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DocumentExtractionOptions?>(), Arg.Any<CancellationToken>()); // dispatched, even though it threw
-        ImageOcrMarkup.Contains(result.Markdown).ShouldBeFalse();   // no transcription produced -> no in-band figure span
+        FigureMarkup.Contains(result.Markdown).ShouldBeFalse();     // no transcription produced -> no in-band figure span
         result.IsComplete.ShouldBeFalse();                          // #268 trips on the failed figure OCR
     }
 

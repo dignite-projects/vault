@@ -20,6 +20,12 @@ public class DefaultPromptProvider : IPromptProvider, ITransientDependency
     /// </summary>
     private const string FallbackLanguage = "ja";
 
+    // The figure tags (FigureMarkup) as the LLM reads them: PromptBoundary.WrapDocument encodes '<' as "&lt;". The
+    // renderer numbers the figures (fig-1, fig-2, ...), so each opening line is unique.
+    private const string FigureOpen = "&lt;figure id=\"fig-N\">";
+    private const string FigureClose = "&lt;/figure>";
+    private const string FigureCaption = "&lt;figcaption>";
+
     public virtual PromptTemplate GetClassificationPrompt(string language) => new(
         "You are a document classification expert. " +
         "Analyze the document text and determine the best matching document type from the provided list. " +
@@ -39,13 +45,13 @@ public class DefaultPromptProvider : IPromptProvider, ITransientDependency
         "line-item overflow of one invoice or contract (the same document identity / header repeats); or a single " +
         "register, ledger, or itemized table that merely lists many rows. When in doubt, set isContainer to false. " +
         // #371: a NON-container parent may still embed a standalone document (an invoice photo inside a contract).
-        // The input brackets each embedded-image OCR region with the *[Image OCR]* provenance markers (#381); flag
-        // those that are a complete document of their own. Conservative — mirrors the isContainer / figure-gate reject-list.
+        // The input writes each embedded image as a <figure> holding its transcription; flag those that are a
+        // complete document of their own. Conservative — mirrors the isContainer / figure-gate reject-list.
         "Set containsEmbeddedDocument to true when the document is NOT a container but embeds an image that is itself " +
         "a complete, self-contained document — for example an invoice or receipt photo, or a scanned certificate, " +
-        "shown inside a contract or report; the classification input marks each embedded-image OCR region with " +
-        ImageOcrMarkup.OpenMarker + " and " + ImageOcrMarkup.CloseMarker +
-        ". Do NOT set it for an image that is merely an element of this document (a chart, " +
+        "shown inside a contract or report; in the classification input each embedded image is a figure, the text " +
+        "read from it between a " + FigureOpen + " line and a " + FigureClose + " line, after an optional " +
+        FigureCaption + " caption. Do NOT set it for an image that is merely an element of this document (a chart, " +
         "logo, letterhead, watermark, stamp, seal, signature, photo, illustration, diagram, map, screenshot, or " +
         "decorative crop), and do NOT set it when isContainer is true (a container's constituents are handled " +
         "separately). When in doubt, set containsEmbeddedDocument to false. " +
@@ -64,16 +70,17 @@ public class DefaultPromptProvider : IPromptProvider, ITransientDependency
         // the #365 figure-document gate into one decision.
         "You analyze one document's Markdown and identify which spans are standalone sub-documents that should be " +
         "filed and processed on their own, versus content of the document itself. The content is provided as " +
-        "Markdown and may contain embedded-image OCR regions, each bracketed by " + ImageOcrMarkup.OpenMarker +
-        " (or " + ImageOcrMarkup.OpenPagePrefix + "N]*) and " + ImageOcrMarkup.CloseMarker +
-        " markers — these are images embedded in the document, transcribed to text. " +
+        "Markdown and may contain figures — images embedded in the document, transcribed to text — each written as a " +
+        FigureOpen + " line (N numbers the figures), an optional " + FigureCaption + " caption line, the " +
+        "transcription, and a " + FigureClose + " line. " +
         "You are told whether the document is a CONTAINER (a bundle of several independent documents) or a single " +
         "concrete document that may merely EMBED a standalone document (such as an invoice photo inside a contract). " +
         // #346 decision (Decision Log): the model returns BOUNDARIES, not regenerated text. It copies a short
         // verbatim marker for each span; code does the actual cutting, so there is no content drift.
         "For each span, return its startMarker — the FIRST line of that span, copied EXACTLY and verbatim from the " +
         "Markdown, character for character, with no edits, no summarizing, and no added punctuation (for an " +
-        "embedded-image span, that first line is the " + ImageOcrMarkup.OpenMarker + " marker line) — and isSubDocument. " +
+        "embedded-image span, that first line is its " + FigureOpen + " line, with that figure's own number) — and " +
+        "isSubDocument. " +
         "Set isSubDocument to true ONLY for a self-contained, independent document that should be processed on its " +
         "own: in a CONTAINER, each constituent document (an invoice, a contract, a receipt); in a single document, " +
         "an embedded image that is itself a complete standalone document (an invoice photo, a scanned certificate). " +

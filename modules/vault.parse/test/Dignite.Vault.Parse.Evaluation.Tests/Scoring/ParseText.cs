@@ -45,8 +45,6 @@ public static partial class ParseText
         var text = HtmlComment().Replace(markdown, "\n");
         text = HtmlTag().Replace(text, "\n");
         text = WebUtility.HtmlDecode(text);
-        text = text.Replace("*[Image OCR]*", "\n").Replace("*[End OCR]*", "\n");
-        text = OcrPageMarker().Replace(text, "\n");
 
         var lines = new List<string>();
         foreach (var raw in text.Replace("\r\n", "\n").Split('\n'))
@@ -211,9 +209,6 @@ public static partial class ParseText
 
     [GeneratedRegex(@"<[^>]+>")]
     private static partial Regex HtmlTag();
-
-    [GeneratedRegex(@"\*\[Image OCR p:[^\]]*\]\*")]
-    private static partial Regex OcrPageMarker();
 
     [GeneratedRegex(@"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")]
     private static partial Regex TableSeparator();

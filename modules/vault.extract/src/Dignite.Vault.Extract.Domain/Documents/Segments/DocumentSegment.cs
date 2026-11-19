@@ -50,8 +50,8 @@ public class DocumentSegment : CreationAuditedAggregateRoot<Guid>, IMultiTenant
     /// The Markdown slice text. Working state on this aggregate: it seeds the derived document's Markdown directly
     /// (skipping re-extraction so the exact slice is preserved). The derived sub-document has no blob of its own
     /// (#487), so this row is where the child's text originates. For a <see cref="DocumentSegmentKind.Figure"/> span
-    /// this is the figure transcription only (<c>ImageOcrMarkup.ExtractBodies</c>, #373); for a
-    /// <see cref="DocumentSegmentKind.Text"/> span it is the prose with inline figure markers stripped. It is
+    /// this is the figure transcription only (<c>FigureMarkup.ExtractBodies</c>, #373); for a
+    /// <see cref="DocumentSegmentKind.Text"/> span it is the prose with inline figure tags stripped. It is
     /// <b>not</b> a channel text egress, so it does not conflict with Markdown-first (which governs the
     /// <see cref="Document"/> aggregate's text payload). Stored as nvarchar(max), not indexed.
     /// </summary>

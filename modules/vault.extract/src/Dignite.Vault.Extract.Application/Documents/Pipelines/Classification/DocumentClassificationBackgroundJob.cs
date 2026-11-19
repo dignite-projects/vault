@@ -94,12 +94,12 @@ public class DocumentClassificationBackgroundJob
 
         try
         {
-            // #381: classify over Document.Markdown, which now retains the *[Image OCR]* figure provenance markers
-            // (no separate marked artifact anymore). The embedded-document signal sees the figure spans directly, and
-            // the figure-bearing recall trigger keys on ImageOcrMarkup.Contains over the same text.
+            // #381: classify over Document.Markdown, which carries each figure as a <figure> (FigureMarkup). The
+            // embedded-document signal sees the figures directly, and the figure-bearing recall trigger keys on
+            // FigureMarkup.Contains over the same text.
             var markdown = workItem.Markdown;
             var outcome = await ClassifyAsync(workItem, markdown);
-            await CompleteRunAsync(workItem, outcome, ImageOcrMarkup.Contains(markdown));
+            await CompleteRunAsync(workItem, outcome, FigureMarkup.Contains(markdown));
         }
         catch (Exception ex)
         {
@@ -283,8 +283,8 @@ public class DocumentClassificationBackgroundJob
 
         // #371/#379: a non-container parent may still embed a standalone document to route to its own sub-document.
         // Enqueue the unified pass when the classifier flagged it, OR — deterministically — whenever the source is
-        // figure-bearing (its Document.Markdown carries an *[Image OCR]* marker). Keying figure recall on the
-        // already-computed, zero-cost ImageOcrMarkup.Contains signal (#379) makes the focused segmentation LLM the
+        // figure-bearing (its Document.Markdown carries a <figure>). Keying figure recall on the
+        // already-computed, zero-cost FigureMarkup.Contains signal (#379) makes the focused segmentation LLM the
         // single standalone-vs-element decision-maker, closing the within-window hole where a multi-objective
         // classifier under-flagged an embedded figure (ContainsEmbeddedDocument=false) on a doc whose Document.Markdown
         // fit inside the classification truncation window — previously the figure arm fired only beyond that window,

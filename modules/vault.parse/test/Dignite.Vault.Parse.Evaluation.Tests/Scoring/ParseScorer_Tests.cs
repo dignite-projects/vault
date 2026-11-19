@@ -235,9 +235,9 @@ public class ParseScorer_Tests
     }
 
     [Fact]
-    public void Ocr_provenance_markers_are_not_text()
+    public void Figure_tags_are_not_text()
     {
-        var marked = "*[Image OCR p:1]*\n\n" + Perfect + "\n\n*[End OCR]*";
+        var marked = "<figure>\n\n" + Perfect + "\n\n</figure>";
 
         ParseScorer.Score(Truth, marked).TextSimilarity.ShouldBe(1d);
     }

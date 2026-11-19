@@ -20,6 +20,18 @@ Dignite Vault is an AI-native platform. Markdown is the **single text payload** 
 Contract obligations regardless of structure:
 
 - Parse is built on [`Microsoft.Extensions.DocumentExtraction`](https://github.com/dotnet/extensions): every engine — built-in or third-party — is a `DocumentExtractionClient` that returns a document tree (`Microsoft.Extensions.Documents.ExtractionDocument`: sections, text with roles and heading levels, tables with spans, images with their OCR text, source pages). `Document.Markdown` is rendered from that tree by `ExtractionDocumentMarkdown`.
+- An image is written as a **figure**, the way Azure Document Intelligence's layout model writes one in its [Markdown output](https://learn.microsoft.com/azure/ai-services/document-intelligence/concept/markdown-elements#figure): a `<figure>` line, the caption as a `<figcaption>` line (the image element's `AlternativeText`: a PDF caption line bound to the figure, a DOCX/PPTX picture's alt text), a blank line, the text read from the image (its `Text`, as Markdown), a blank line and `</figure>`. The blank lines keep the transcription Markdown in any CommonMark renderer. The figures of a document are numbered with the HTML `id` attribute (`fig-1`, `fig-2`, …, in reading order), which Azure does not write, so that every figure's opening line is unique: sub-document segmentation finds a span by its first line. A tag counts only where CommonMark reads one, indented by at most three spaces and outside a fenced code block, so an HTML sample in a code block stays code; a line of a document's own text that would read as a tag is written with a backslash before the `<`. The same block from an engine that answers in Markdown (Azure Document Intelligence included, with or without an id) is read back into an image element.
+
+  ```md
+  <figure id="fig-1">
+  <figcaption>図1 領収書</figcaption>
+
+  領収書 No. 42
+  合計 ¥4,200
+
+  </figure>
+  ```
+
 - An engine whose source has no structure still fills the tree with flat paragraphs rather than exposing a parallel raw-text channel; an engine that answers in Markdown (a vision model, MarkItDown, PP-StructureV3) is read into the tree by `MarkdownDocumentReader`. Reading that Markdown and rendering it again gives the same Markdown, so this costs nothing on the [evaluation corpus](parse-evaluation.md).
 - `Document.Markdown` is the **only** text field on the `Document` aggregate. Consumers that need plain text strip on demand via `Dignite.Vault.Extract.Documents.MarkdownStripper.Strip(...)`; nothing is persisted in stripped form.
 

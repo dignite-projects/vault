@@ -192,16 +192,16 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
     [Fact]
     public async Task Text_Extraction_Job_Keeps_Figure_Markers_In_Egress_Markdown()
     {
-        // #381: figure OCR transcriptions are bracketed with *[Image OCR]*…*[End OCR]* provenance markers that STAY in
-        // Document.Markdown (the egress payload), MarkItDown-style — they are no longer stripped, and there is no
-        // separate marked-Markdown artifact. Downstream (RAG / classification / egress) sees the OCR provenance, and
-        // the pipeline reads the same inline markers to recognize the figure span.
+        // #381: a figure's transcription is written as a <figure> that STAYS in Document.Markdown (the egress
+        // payload), the way Azure Document Intelligence writes one; there is no separate marked-Markdown artifact.
+        // Downstream (RAG / classification / egress) sees that the text came from an image, and the pipeline reads the
+        // same tags to recognize the figure span.
         var documentId = _guidGenerator.Create();
         var textExtractionRunId = await ArrangeQueuedParseAsync(documentId);
 
         var figureBody = "INVOICE No 42 Total 100";
         var marked = "# Contract\n\nBody before the figure.\n\n"
-            + ImageOcrMarkup.Wrap(figureBody, pageNumber: 3)
+            + FigureMarkup.Write(figureBody, caption: null)
             + "\n\nBody after the figure.";
         StubExtraction(marked, usedOcr: false);
 
@@ -212,20 +212,18 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
         });
 
         // (a) No separate marked-Markdown artifact is archived: the job writes the layout and no other blob — the
-        // markers live in Document.Markdown itself.
+        // figure lives in Document.Markdown itself.
         await _blobContainer.DidNotReceive().SaveAsync(
             Arg.Is<string>(name => !name.StartsWith("layout/")), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
 
-        // (b) The persisted egress payload retains the markers verbatim AND the figure transcription body inline.
+        // (b) The persisted egress payload retains the figure, tags and transcription, inline.
         await WithUnitOfWorkAsync(async () =>
         {
             var doc = await _documentRepository.GetAsync(documentId, includeDetails: false);
             doc.Markdown.ShouldNotBeNull();
             var markdown = doc.Markdown!;
-            ImageOcrMarkup.Contains(markdown).ShouldBeTrue();
-            markdown.ShouldContain(figureBody);
-            markdown.ShouldContain("*[Image OCR p:3]*");
-            markdown.ShouldContain("*[End OCR]*");
+            FigureMarkup.Contains(markdown).ShouldBeTrue();
+            markdown.ShouldContain(FigureMarkup.Write(figureBody, caption: null, FigureMarkup.Id(1)));
         });
     }
 

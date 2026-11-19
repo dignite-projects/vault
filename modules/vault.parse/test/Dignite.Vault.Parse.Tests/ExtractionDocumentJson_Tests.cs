@@ -13,7 +13,7 @@ public class ExtractionDocumentJson_Tests
     public void A_tree_survives_json_with_its_pages_regions_spans_and_properties()
     {
         const string markdown = "# Title\n\n- one\n  - two\n\n<table>\n<tr><th colspan=\"2\">Head</th></tr>\n<tr><td>a</td><td>b</td></tr>\n</table>\n\n"
-            + "*[Image OCR p:1]*\nscan\n*[End OCR]*\n\nBody with **bold**.";
+            + "<figure>\n<figcaption>図1 領収書</figcaption>\n\nscan\n\n</figure>\n\nBody with **bold**.";
         var document = MarkdownDocumentReader.Read(markdown, "doc").SetProvider("Test").MarkIncomplete("one page lost");
         var page = new ExtractionDocumentSourcePage("scan-1", 1, new ExtractionDocumentPageDimensions(595, 842),
             ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
@@ -37,6 +37,9 @@ public class ExtractionDocumentJson_Tests
         var table = read.Sections[0].Elements.OfType<ExtractionDocumentTableElement>().ShouldHaveSingleItem();
         table.Cells[0, 0]!.ColumnSpan.ShouldBe(2);
         table.Cells[0, 0]!.Role.ShouldBe(ParseElementRoles.ColumnHeader);
+        var image = read.Sections[0].Elements.OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem();
+        image.Text.ShouldBe("scan");
+        image.AlternativeText.ShouldBe("図1 領収書");
         ExtractionDocumentJson.Serialize(read).ShouldBe(json);
     }
 

@@ -12,7 +12,7 @@ namespace Dignite.Vault.Parse.OpenXml;
 
 /// <summary>
 /// Resolves an embedded OpenXML image relationship to bytes, transcribes it through the host-selected
-/// <see cref="ParseOcrClient"/>, and returns the (optionally captioned) Markdown block — or <c>null</c> when
+/// <see cref="ParseOcrClient"/>, and returns its (optionally captioned) <see cref="FigureMarkup"/> block — or <c>null</c> when
 /// there is nothing to emit. This is the figure-OCR pipeline formerly copy-pasted between
 /// <c>DocxExtractor.TranscribeEmbeddedImageAsync</c> and <c>PptxExtractor.HandlePictureAsync</c>: the budget
 /// guard, <see cref="OpenXmlImagePayload.TryResolve"/> call, the image-outcome switch, the OCR call, the
@@ -39,7 +39,6 @@ internal static class OpenXmlFigureTranscriber
         OpenXmlPartContainer partContainer,
         string relationshipId,
         string? caption,
-        int? pageNumber,
         OpenXmlExtractionState state,
         OpenXmlExtractorOptions options,
         ParseOcrClient ocr,
@@ -131,16 +130,10 @@ internal static class OpenXmlFigureTranscriber
             return null;
         }
 
-        // #480: emit the byte-identical figure block the PDF path emits (PdfReadingOrder) — the transcription wrapped
-        // in the *[Image OCR]*…*[End OCR]* provenance markers (#371/#381), with the native caption escaped as a block
-        // BEFORE the open marker (not bolded, not inside the span) so the span body stays transcription-only and the
-        // #373 child seed (ExtractBodies) stays clean. Before #480 OpenXML figures carried no markers, so
-        // ImageOcrMarkup.Contains was blind to them — no deterministic segmentation routing (#379). Caption
-        // (alt-text) is author-controlled source text, so EscapeBlockText neutralizes any leading block marker /
-        // inline link it carries (multi-line safe, unlike the old bold label).
-        var figureMarkup = ImageOcrMarkup.Wrap(transcription, pageNumber);
-        return string.IsNullOrWhiteSpace(caption)
-            ? figureMarkup
-            : MarkdownText.EscapeBlockText(caption) + "\n\n" + figureMarkup;
+        // The figure as every engine's tree renders it: MarkdownDocumentReader reads it back into an image element whose
+        // text is the transcription and whose alternative text is the picture's alt text. The alt text is
+        // author-controlled, and Write HTML-encodes it on one line inside <figcaption>, so it cannot open markup or
+        // end the figure. The section the reader fills gives the image its page (a slide; none for a DOCX).
+        return FigureMarkup.Write(transcription, caption);
     }
 }

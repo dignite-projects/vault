@@ -232,6 +232,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (`Document.Markdown`): an image is written as Azure Document Intelligence writes a figure.** The text
+  read from an embedded image sits in a `<figure>` block, its caption in a `<figcaption>`, instead of between the
+  `*[Image OCR p:N]*` and `*[End OCR]*` lines; see
+  [Text Extraction](docs/en/text-extraction/text-extraction.md#markdown-first-contract). The old lines followed neither
+  Microsoft convention (MarkItDown writes `*[Image OCR]` … `[End OCR]*`, one emphasis span) and put the page into the
+  Markdown; the block now maps one to one onto the shared tree's image element (`Text` inside, `AlternativeText` as the
+  caption), and its page stays in the tree's source references. A PDF figure's caption line and a DOCX/PPTX picture's
+  alt text are now the image's `AlternativeText` (`GET .../documents/{id}/layout` shows it) and the figure's
+  `<figcaption>`, instead of a paragraph above it. Figures are numbered (`<figure id="fig-1">`, the HTML `id`), so a
+  sub-document cut cannot land on an earlier figure the LLM folded into the text, and a `<figure>` in a code block is
+  code. Figures Azure Document Intelligence finds were kept as raw HTML
+  before; they are now images like any other engine's, so classification and sub-document segmentation see them.
+  `ImageOcrMarkup` is replaced by `FigureMarkup`, and `MarkdownDocumentReader.ReadInto` no longer takes the document.
 - **The product is called Dignite Vault** (shipped host, Angular host app, docs). The host's `AppName` — the browser tab
   title, the sign-in page, the footer and the home page of the SPA — is `Dignite Vault` in English, `文書活用` in Japanese,
   `文枢` in Simplified Chinese and `文樞` in Traditional Chinese. Vault Extract and Vault Index stay the names of the
@@ -616,6 +629,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
 
 ### Deploy note
+
+- **Figures in stored Markdown.** Documents parsed before this release keep the `*[Image OCR]*` lines in their
+  Markdown, and classification and sub-document segmentation no longer read those as figures. **Re-parse** such a
+  document to write its figures as `<figure>` blocks (it re-runs classification and re-splits its sub-documents).
 
 - **Extract migrations `DocumentFieldSources` and `DocumentSegmentPages`.** Both add columns only:
   `VaultDocuments.FieldSources` (not null, default `'{}'`) and two nullable page columns on `VaultDocumentSegments`.

@@ -151,4 +151,58 @@ public class MarkdownSlicer_Tests
         slices[0].Text.ShouldContain("<order> details here");
         slices[1].Text.ShouldBe("Invoice B body");
     }
+
+    [Fact]
+    public void A_span_opened_at_a_figure_is_a_figure_even_when_its_marker_came_back_encoded()
+    {
+        // The LLM sees a figure's opening line as "&lt;figure>" and returns it so; the span's kind is read from the
+        // line it was cut at, not from the marker.
+        var markdown = "Contract body\n\n" + Dignite.Vault.Parse.FigureMarkup.Write("INVOICE 42", "図1") + "\n\nMore contract";
+        var boundaries = new List<SegmentBoundary>
+        {
+            new("Contract body", IsSubDocument: false),
+            new("&lt;figure>", IsSubDocument: true),
+            new("More contract", IsSubDocument: false)
+        };
+
+        MarkdownSlicer.TrySlice(markdown, boundaries, out var slices).ShouldBeTrue();
+
+        slices.Count.ShouldBe(3);
+        slices[0].IsFigure.ShouldBeFalse();
+        slices[1].IsFigure.ShouldBeTrue();
+        slices[1].Text.ShouldStartWith("<figure>\n<figcaption>図1</figcaption>");
+        slices[2].IsFigure.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_figure_folded_into_prose_does_not_take_the_cut_meant_for_the_next_figure()
+    {
+        // The LLM folds a decorative stamp into the contract's span and returns only the receipt as a figure span: the
+        // receipt's numbered opening line is the only match, so the contract keeps its text after the stamp.
+        var markdown = "Contract body\n\n" + Dignite.Vault.Parse.FigureMarkup.Write("SEAL", null, "fig-1") +
+            "\n\nMore contract\n\n" + Dignite.Vault.Parse.FigureMarkup.Write("RECEIPT 42", null, "fig-2");
+        var boundaries = new List<SegmentBoundary>
+        {
+            new("Contract body", IsSubDocument: true),
+            new("&lt;figure id=\"fig-2\">", IsSubDocument: true)
+        };
+
+        MarkdownSlicer.TrySlice(markdown, boundaries, out var slices).ShouldBeTrue();
+
+        slices[0].Text.ShouldContain("More contract");
+        slices[1].IsFigure.ShouldBeTrue();
+        slices[1].Text.ShouldContain("RECEIPT 42");
+        slices[1].Text.ShouldNotContain("SEAL");
+    }
+
+    [Fact]
+    public void A_figure_tag_in_a_code_block_does_not_open_a_figure_span()
+    {
+        const string markdown = "Intro\n\n```html\n<figure>\n</figure>\n```";
+        var boundaries = new List<SegmentBoundary> { new("Intro", false), new("&lt;figure>", true) };
+
+        MarkdownSlicer.TrySlice(markdown, boundaries, out var slices).ShouldBeTrue();
+
+        slices[1].IsFigure.ShouldBeFalse();
+    }
 }

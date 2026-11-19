@@ -30,7 +30,7 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 /// container segmentation (#346) and figure routing (#306/#365) into a single decision. Enqueued from the
 /// classification complete-phase when the source is a container <b>or</b> a concrete document that embeds a
 /// standalone document, it runs <see cref="DocumentSegmentationWorkflow"/> over the source's <c>Document.Markdown</c>
-/// (which retains the inline <c>*[Image OCR]*…*[End OCR]*</c> figure provenance markers, #381) and spawns each
+/// (which carries each figure inline as a <c>&lt;figure&gt;</c>, #381) and spawns each
 /// standalone span as a derived <see cref="Document"/> seeded from its (stripped, clean) slice.
 /// <para>
 /// <b>One identity model, one spawn sink.</b> Every standalone span is keyed by the SHA-256 of its clean slice
@@ -219,8 +219,8 @@ public class DocumentSegmentationJob
             await uow.CompleteAsync();
         }
 
-        // #381: detect over Document.Markdown, which now retains the *[Image OCR]* figure provenance markers inline
-        // (no separate marked artifact anymore). A non-figure source simply has no figure spans to recognize.
+        // #381: detect over Document.Markdown, which carries each figure inline as a <figure> (no separate marked
+        // artifact). A non-figure source simply has no figure spans to recognize.
         var markdown = source.Markdown ?? string.Empty;
 
         var detection = new SubDocumentDetectionContext(
@@ -317,15 +317,15 @@ public class DocumentSegmentationJob
         var prepared = new List<PreparedSegment>();
         foreach (var slice in markedSlices)
         {
-            // #371/#373: a Figure span seeds from its figure BODY only — ExtractBodies drops any surrounding parent
-            // prose the LLM folded into the span by omitting a separate parent-body boundary, so the figure child is
-            // the transcription and nothing more. A Text span keeps its prose and strips only the inline figure
-            // markers. Either way the child seed carries no markers. Seeding a figure child with Strip would drag the
-            // parent's body text into it.
+            // #371/#373: a Figure span seeds from its figure BODY only — ExtractBodies drops the caption and any
+            // surrounding parent prose the LLM folded into the span by omitting a separate parent-body boundary, so the
+            // figure child is the transcription and nothing more. A Text span keeps its prose and strips only the
+            // inline figure tags (a caption stays as a line of text). Either way the child seed carries no tags.
+            // Seeding a figure child with Strip would drag the parent's body text into it.
             var isFigure = slice.IsFigure;
             var cleanText = isFigure
-                ? ImageOcrMarkup.ExtractBodies(slice.Text)
-                : ImageOcrMarkup.Strip(slice.Text);
+                ? FigureMarkup.ExtractBodies(slice.Text)
+                : FigureMarkup.Strip(slice.Text);
             if (string.IsNullOrWhiteSpace(cleanText))
             {
                 continue; // a slice that was only markers
@@ -890,7 +890,7 @@ public class DocumentSegmentationJob
         FileOrigin? SourceFile = null);
 
     /// <summary>A standalone span prepared for persistence: its content key, clean slice text, and the kind taken
-    /// from its opening boundary (an <c>*[Image OCR]*</c> marker line opens a <see cref="DocumentSegmentKind.Figure"/>
+    /// from its opening boundary (a <c>&lt;figure&gt;</c> line opens a <see cref="DocumentSegmentKind.Figure"/>
     /// span, prose opens a <see cref="DocumentSegmentKind.Text"/> one).</summary>
     private sealed record PreparedSegment(string Key, string CleanText, DocumentSegmentKind Kind, int? FirstPage, int? LastPage);
 

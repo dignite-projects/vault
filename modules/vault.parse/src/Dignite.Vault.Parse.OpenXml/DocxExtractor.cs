@@ -570,8 +570,12 @@ public class DocxExtractor : ParseExtractionClient, ITransientDependency
             var hyperlinkUris = isFootnote ? footnoteHyperlinkUris : endnoteHyperlinkUris;
             try
             {
-                var body = await RenderNoteBodyAsync(note, mainPart, hyperlinkUris, state, cancellationToken);
+                var figures = new List<string>();
+                var body = await RenderNoteBodyAsync(note, mainPart, hyperlinkUris, figures, state, cancellationToken);
                 blocks.Add(FormatNoteDefinition(reference.Marker, body));
+                // A figure in a note follows the definition at the top level: indented into it, its tags would be
+                // the definition's text, not a figure (CommonMark reads an HTML block only at three spaces or fewer).
+                blocks.AddRange(figures);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -650,13 +654,15 @@ public class DocxExtractor : ParseExtractionClient, ITransientDependency
     /// Renders a footnote / endnote body to Markdown by reusing the body paragraph/run renderer (so a note
     /// that carries formatting / links is handled consistently) and transcribing any embedded image in the
     /// note through the shared <see cref="OpenXmlFigureTranscriber"/> (#315 red line: notes go through the
-    /// host <see cref="ParseOcrClient"/>, no new LLM call site). Paragraphs are joined with blank lines. A
-    /// nested note reference inside a note is not followed (no collector is passed), so it does not recurse.
+    /// host <see cref="ParseOcrClient"/>, no new LLM call site), into <paramref name="figures"/>. Paragraphs are
+    /// joined with blank lines. A nested note reference inside a note is not followed (no collector is passed), so it
+    /// does not recurse.
     /// </summary>
     private async Task<string> RenderNoteBodyAsync(
         W.FootnoteEndnoteType note,
         MainDocumentPart mainPart,
         IReadOnlyDictionary<string, string?>? hyperlinkUris,
+        List<string> figures,
         DocxExtractionState state,
         CancellationToken cancellationToken)
     {
@@ -673,8 +679,8 @@ public class DocxExtractor : ParseExtractionClient, ITransientDependency
                 parts.Add(text);
             }
 
-            // A figure inside a note (rare) is transcribed via the same host OCR path, appended after its text.
-            await ExtractContainerFiguresAsync(paragraph, mainPart, parts, state, cancellationToken);
+            // A figure inside a note (rare) is transcribed via the same host OCR path; the caller places it after the note.
+            await ExtractContainerFiguresAsync(paragraph, mainPart, figures, state, cancellationToken);
         }
 
         return string.Join("\n\n", parts);
@@ -791,9 +797,8 @@ public class DocxExtractor : ParseExtractionClient, ITransientDependency
         DocxExtractionState state,
         CancellationToken cancellationToken)
     {
-        // DOCX is a flow document — no page concept — so the figure marker is the bare page-less form (#480).
         var block = await OpenXmlFigureTranscriber.TranscribeAsync(
-            mainPart, relationshipId, caption, pageNumber: null, state, _options, _ocr, Logger, cancellationToken);
+            mainPart, relationshipId, caption, state, _options, _ocr, Logger, cancellationToken);
         if (block is not null)
         {
             blocks.Add(block);

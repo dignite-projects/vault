@@ -13,7 +13,7 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 
 /// <summary>
 /// Unified sub-document detection pass (#371): one LLM pass over a source document's <c>Document.Markdown</c> (which
-/// retains the inline <c>*[Image OCR]*…*[End OCR]*</c> figure provenance markers, #381) that decides, per span —
+/// carries each figure inline as a <c>&lt;figure&gt;</c>, #381) that decides, per span —
 /// text spans and figure spans alike — whether it is a standalone sub-document or content of the parent. It folds
 /// the born-digital container segmentation (#346) and the figure-document gate (#306/#365) into a single decision
 /// made with full surrounding context.
@@ -145,7 +145,8 @@ public class DocumentSegmentationWorkflow : ITransientDependency
         {
             /// <summary>
             /// The verbatim first line / opening snippet of the span, copied exactly from the Markdown — for an
-            /// embedded-image span this first line is the <c>*[Image OCR]*</c> / <c>*[Image OCR p:N]*</c> marker line.
+            /// embedded-image span this first line is its <c>&lt;figure&gt;</c> line (which the LLM reads, and may
+            /// return, as <c>&amp;lt;figure&gt;</c>).
             /// </summary>
             public string StartMarker { get; set; } = default!;
 

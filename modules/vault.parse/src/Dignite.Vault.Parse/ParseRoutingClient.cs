@@ -104,7 +104,8 @@ public class ParseRoutingClient : DocumentExtractionClient, ITransientDependency
         => document.EnumerateContent().Any(element => element switch
         {
             ExtractionDocumentTextElement { Content: TextContent text } => text.Text.Any(char.IsLetterOrDigit),
-            ExtractionDocumentImageElement image => image.Text?.Any(char.IsLetterOrDigit) == true,
+            ExtractionDocumentImageElement image => image.Text?.Any(char.IsLetterOrDigit) == true
+                || image.AlternativeText?.Any(char.IsLetterOrDigit) == true,
             ExtractionDocumentTableElement table => table.Cells.Any(cell => cell?.Content is ExtractionDocumentTextElement { Content: TextContent cellText } && cellText.Text.Any(char.IsLetterOrDigit)),
             _ => false
         });
