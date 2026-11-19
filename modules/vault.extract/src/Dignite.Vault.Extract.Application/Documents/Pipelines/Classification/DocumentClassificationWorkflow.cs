@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -132,6 +133,23 @@ public class DocumentClassificationWorkflow : ITransientDependency
                 rawConfidence, typeCode, confidenceScore);
         }
 
+        // The model may only choose among the types it was shown. A code it was not offered (made up, or one a
+        // document's text asks to be filed as) is no conclusion either: manual review, whatever its confidence. The
+        // caller would otherwise look the code up in the whole layer, past the candidates it chose to offer.
+        if (typeCode is not null)
+        {
+            var offered = OfferedTypeCode(candidateTypes, typeCode);
+            if (offered is null)
+            {
+                Logger.LogWarning(
+                    "LLM returned type code {TypeCode}, which was not among the {Count} candidates offered; routing to manual review.",
+                    typeCode, candidateTypes.Count);
+                confidenceScore = 0d;
+            }
+
+            typeCode = offered;
+        }
+
         // Reason, the LLM's classification rationale, is passed through the outcome to the
         // BackgroundJob only for logging / diagnostics. Since #284 it is no longer persisted on
         // Document (the old ClassificationReason field was removed): high-confidence paths ignore
@@ -166,6 +184,13 @@ public class DocumentClassificationWorkflow : ITransientDependency
 
         return outcome;
     }
+
+    /// <summary>
+    /// The offered candidate's own spelling of <paramref name="typeCode"/>, or <c>null</c> when the model named a type it
+    /// was not shown. Compared ignoring case, as looking a type up by its code does on SQL Server.
+    /// </summary>
+    internal static string? OfferedTypeCode(IReadOnlyList<DocumentType> candidates, string typeCode)
+        => candidates.FirstOrDefault(t => string.Equals(t.TypeCode, typeCode, StringComparison.OrdinalIgnoreCase))?.TypeCode;
 
     // internal so Application.Tests can directly verify the regression-critical
     // out-of-range coercion logic (the surrounding 4-line branch in RunAsync is

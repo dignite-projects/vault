@@ -315,7 +315,9 @@ public class FieldExtractionWorkflow_Tests
                 Guid.NewGuid(), "body", "12345", TextFieldType.ControlName, new FieldConfigurationDictionary(), IsRequired: false)
         };
 
-        await Should.ThrowAsync<InvalidOperationException>(() => workflow.ExtractAsync(fields, "# doc"));
+        // InvalidDataException: over a configured limit on every retry, so the job ends instead of being retried.
+        var error = await Should.ThrowAsync<System.IO.InvalidDataException>(() => workflow.ExtractAsync(fields, "# doc"));
+        Dignite.Vault.Extract.Documents.Pipelines.ProviderFailureClassifier.IsInvalidInput(error).ShouldBeTrue();
 
         await chatClient.DidNotReceive().GetResponseAsync(
             Arg.Any<IEnumerable<ChatMessage>>(),

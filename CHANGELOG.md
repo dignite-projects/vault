@@ -396,6 +396,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Two runs spawning the same sub-document at once no longer share its cut file: the one that failed could delete
     the file the other's sub-document was being saved with. Each attempt now cuts under a name of its own.
   - The "no layout" and "cannot re-parse a sub-document" messages describe sub-documents cut by page correctly.
+- **Classification and field extraction (from the refactor review).**
+  - A type code the model was not offered is no classification: the document goes to review, as for an answer with
+    an untrustworthy confidence. The job looked the code up in the whole layer, so a model that made one up, or a
+    document whose text asked to be filed as another type, could land outside the candidates the job chose.
+  - A field schema over `MaxFieldSchemaPromptLength` at extraction time (a host that lowered the ceiling after the
+    types were configured) now ends the run Failed instead of being retried for days: the call-site check throws
+    `InvalidDataException`, which marks a permanent failure, not `InvalidOperationException`.
 - **PDF reading (from the refactor review).**
   - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is
     taken, outside the per-page guard. The page is dropped and the document marked incomplete.
