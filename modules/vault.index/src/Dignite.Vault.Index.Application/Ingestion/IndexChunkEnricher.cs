@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -234,18 +235,13 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
             CallCount++;
             try
             {
-                var response = await _chatClient.GetResponseAsync(
+                var response = await _chatClient.GetResponseAsync<EnrichmentAnswer>(
                     BuildMessages(batch),
-                    new ChatOptions
-                    {
-                        ResponseFormat = ChatResponseFormat.ForJsonSchema(
-                            AIJsonUtilities.CreateJsonSchema(typeof(EnrichmentAnswer)), "chunk_enrichment"),
-                        MaxOutputTokens = 200 + batch.Count * 300
-                    },
-                    cancellationToken);
+                    new ChatOptions { MaxOutputTokens = 200 + batch.Count * 300 },
+                    cancellationToken: cancellationToken);
                 InputTokenCount += response.Usage?.InputTokenCount ?? 0;
                 OutputTokenCount += response.Usage?.OutputTokenCount ?? 0;
-                return LlmJson.Read<EnrichmentAnswer>(response.Text) ?? throw new FormatException("The model returned no answer.");
+                return LlmJson.Read(response);
             }
             catch (Exception exception) when (attempt < MaxAttempts && exception is System.Text.Json.JsonException or FormatException)
             {
@@ -311,6 +307,7 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
             .Take(maxCount)
             .ToArray();
 
+    [DisplayName("chunk_enrichment")]
     protected sealed class EnrichmentAnswer
     {
         public List<EnrichedPassage> Chunks { get; set; } = [];

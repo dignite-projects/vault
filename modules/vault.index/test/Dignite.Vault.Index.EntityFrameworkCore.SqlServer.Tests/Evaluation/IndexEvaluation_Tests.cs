@@ -657,16 +657,12 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
 
         // An answer that cannot be read is asked for again, as the summary compiler does, so both outlines are judged on
         // what the navigator chose rather than on the model's occasional whitespace runaway in JSON schema mode.
-        ChatResponse response = default!;
+        ChatResponse<NavigationAnswer> response = default!;
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            response = await ServiceProvider.GetRequiredKeyedService<IChatClient>(VaultIndexConsts.ChatClientKey).GetResponseAsync(
+            response = await ServiceProvider.GetRequiredKeyedService<IChatClient>(VaultIndexConsts.ChatClientKey).GetResponseAsync<NavigationAnswer>(
                 [new ChatMessage(ChatRole.System, NavigatorInstructions), new ChatMessage(ChatRole.User, user)],
-                new ChatOptions
-                {
-                    ResponseFormat = ChatResponseFormat.ForJsonSchema(AIJsonUtilities.CreateJsonSchema(typeof(NavigationAnswer)), "section_pick"),
-                    MaxOutputTokens = 100
-                });
+                new ChatOptions { MaxOutputTokens = 100 });
             if (response.Text.Contains("\"path\"", StringComparison.Ordinal))
             {
                 break;
@@ -676,14 +672,14 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         try
         {
             // A model may write the path as a JSON number (1.2) or echo the title after it: take the first token either way.
-            var path = Ai.LlmJson.Read<NavigationAnswer>(response.Text)?.Path;
+            var path = Ai.LlmJson.Read(response).Path;
             var text = path is not { } element ? null
                 : element.ValueKind == System.Text.Json.JsonValueKind.String ? element.GetString() : element.GetRawText();
             return text is null
                 ? "no path: " + response.Text[..Math.Min(60, response.Text.Length)]
                 : text.Trim().Split(' ', 2)[0].TrimEnd('.');
         }
-        catch (System.Text.Json.JsonException)
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException)
         {
             return "unreadable: " + response.Text[..Math.Min(60, response.Text.Length)];
         }
@@ -852,6 +848,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
     private sealed record NavigationResult(
         EvaluationCase Case, bool WithSummaries, bool Precise, bool Covers, int ChunkCount, string? Answer, string? PickedTitle);
 
+    [System.ComponentModel.DisplayName("section_pick")]
     private sealed class NavigationAnswer
     {
         public System.Text.Json.JsonElement? Path { get; set; }

@@ -143,6 +143,37 @@ public class IndexChunkEnricher_Tests
     }
 
     [Fact]
+    public async Task The_answer_is_asked_for_in_the_named_schema_within_the_output_budget()
+    {
+        var model = new ScriptedEnrichmentChatClient();
+
+        await RunAsync(new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance), 2);
+
+        var options = model.Options.ShouldHaveSingleItem().ShouldNotBeNull();
+        options.MaxOutputTokens.ShouldBe(200 + 2 * 300);
+        var format = options.ResponseFormat.ShouldBeOfType<ChatResponseFormatJson>();
+        format.SchemaName.ShouldBe("chunk_enrichment");
+        format.Schema.ShouldNotBeNull().GetProperty("properties").TryGetProperty("chunks", out _).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task An_answer_in_a_code_fence_is_read()
+    {
+        var model = new ScriptedEnrichmentChatClient
+        {
+            Answer = passages => "```json\n" + JsonSerializer.Serialize(new {
+                chunks = Enumerable.Range(0, passages).Select(i => new { index = i, keywords = new[] { "kw" + i } })
+            }) + "\n```"
+        };
+        var enricher = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance);
+
+        var chunks = await RunAsync(enricher, 2);
+
+        chunks.ShouldAllBe(c => c.Metadata.ContainsKey(IndexChunkEnricher.KeywordsKey));
+        (enricher.CallCount, enricher.FailedChunkCount).ShouldBe((1, 0));
+    }
+
+    [Fact]
     public async Task A_call_that_throws_is_not_asked_again()
     {
         var model = new ScriptedEnrichmentChatClient { FailOnCall = 1 };
@@ -274,6 +305,9 @@ public sealed class ScriptedEnrichmentChatClient : IChatClient
 {
     public List<(string System, string User)> Calls { get; } = [];
 
+    /// <summary>The options each call was made with.</summary>
+    public List<ChatOptions?> Options { get; } = [];
+
     /// <summary>The model the client names in its metadata; <c>null</c> names none.</summary>
     public string? ModelId { get; set; }
 
@@ -289,6 +323,7 @@ public sealed class ScriptedEnrichmentChatClient : IChatClient
     {
         var list = messages.ToList();
         Calls.Add((list.First(m => m.Role == ChatRole.System).Text, list.First(m => m.Role == ChatRole.User).Text));
+        Options.Add(options);
         if (FailOnCall == Calls.Count)
         {
             throw new InvalidOperationException("model down");

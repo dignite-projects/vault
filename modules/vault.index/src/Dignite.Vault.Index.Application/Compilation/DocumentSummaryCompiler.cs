@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -528,7 +529,7 @@ public class DocumentSummaryCompiler
             new(ChatRole.User, user.ToString())
         ];
 
-        var answer = await AskAsync<SectionAnswer>(messages, "section_summaries", 200 + batch.Count * 200, cancellationToken);
+        var answer = await AskAsync<SectionAnswer>(messages, 200 + batch.Count * 200, cancellationToken);
         var answered = new HashSet<int>();
         foreach (var item in answer?.Summaries ?? [])
         {
@@ -591,7 +592,7 @@ public class DocumentSummaryCompiler
 
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
-            var answer = await AskAsync<DocumentAnswer>(messages, "document_summary", 800, cancellationToken);
+            var answer = await AskAsync<DocumentAnswer>(messages, 800, cancellationToken);
             if (answer is null)
             {
                 document.Failed = true;
@@ -616,10 +617,11 @@ public class DocumentSummaryCompiler
     }
 
     /// <summary>
-    /// One model call with a JSON schema answer, asked again once when the answer cannot be read; <c>null</c> when the
-    /// call fails or no answer can be read.
+    /// One model call with a JSON schema answer (<c>GetResponseAsync&lt;T&gt;</c>, the schema named by the answer type's
+    /// <see cref="DisplayNameAttribute"/>), asked again once when the answer cannot be read; <c>null</c> when the call
+    /// fails or no answer can be read.
     /// </summary>
-    protected virtual async Task<T?> AskAsync<T>(List<ChatMessage> messages, string schemaName, int maxOutputTokens, CancellationToken cancellationToken)
+    protected virtual async Task<T?> AskAsync<T>(List<ChatMessage> messages, int maxOutputTokens, CancellationToken cancellationToken)
         where T : class
     {
         for (var attempt = 1; ; attempt++)
@@ -627,26 +629,22 @@ public class DocumentSummaryCompiler
             _calls++;
             try
             {
-                var response = await _chatClient.GetResponseAsync(
+                var response = await _chatClient.GetResponseAsync<T>(
                     messages,
-                    new ChatOptions
-                    {
-                        ResponseFormat = ChatResponseFormat.ForJsonSchema(AIJsonUtilities.CreateJsonSchema(typeof(T)), schemaName),
-                        MaxOutputTokens = maxOutputTokens
-                    },
-                    cancellationToken);
+                    new ChatOptions { MaxOutputTokens = maxOutputTokens },
+                    cancellationToken: cancellationToken);
                 _inputTokens += response.Usage?.InputTokenCount ?? 0;
                 _outputTokens += response.Usage?.OutputTokenCount ?? 0;
-                return LlmJson.Read<T>(response.Text) ?? throw new FormatException("The model returned no answer.");
+                return LlmJson.Read(response);
             }
             catch (Exception exception) when (attempt < MaxAttempts && exception is System.Text.Json.JsonException or FormatException)
             {
-                _logger.LogInformation("A summary answer ({Schema}) could not be read; asking again.", schemaName);
+                _logger.LogInformation("A summary answer ({Schema}) could not be read; asking again.", typeof(T).Name);
                 _failedCalls++;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                _logger.LogWarning(exception, "A summary call ({Schema}) failed; its items are left without summaries.", schemaName);
+                _logger.LogWarning(exception, "A summary call ({Schema}) failed; its items are left without summaries.", typeof(T).Name);
                 _failedCalls++;
                 if (ProviderRefusal.IsPermanent(exception))
                 {
@@ -692,6 +690,7 @@ public class DocumentSummaryCompiler
         public bool Unsupported { get; set; }
     }
 
+    [DisplayName("section_summaries")]
     protected sealed class SectionAnswer
     {
         public List<SectionSummary> Summaries { get; set; } = [];
@@ -704,6 +703,7 @@ public class DocumentSummaryCompiler
         public string? Summary { get; set; }
     }
 
+    [DisplayName("document_summary")]
     protected sealed class DocumentAnswer
     {
         public string? Summary { get; set; }
