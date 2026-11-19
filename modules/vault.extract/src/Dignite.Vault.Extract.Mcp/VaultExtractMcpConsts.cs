@@ -42,6 +42,24 @@ public static class VaultExtractMcpConsts
     public const int MaxDocumentTypeResults = 100;
 
     /// <summary>
+    /// Hard cap on the fields one document type's schema lists (the <c>vault-extract://document-types/{code}</c>
+    /// resource, and each type of <c>vault_extract_list_document_types</c>). The field count of a type is not capped
+    /// when it is configured, so without this the schema of one type is unbounded. A field serializes to roughly 150 to
+    /// 300 characters, so 200 fields stay well under <see cref="MaxDocumentMarkdownChars"/>; a type with more than 200
+    /// extractable fields is far beyond any real one. Fields are cut in display order and the cut is announced
+    /// (<c>fieldsTruncated</c> + <c>fieldCount</c>).
+    /// </summary>
+    public const int MaxDocumentTypeFields = 200;
+
+    /// <summary>
+    /// Hard cap on the fields one <c>vault_extract_list_document_types</c> call lists across all its types:
+    /// <see cref="MaxDocumentTypeResults"/> types of <see cref="MaxDocumentTypeFields"/> fields each would be 20,000.
+    /// 1,000 fields are about the size of one capped document body. Types are filled in typeCode order; a type past
+    /// the budget lists fewer or no fields, announces it, and is read alone by passing its <c>documentTypeCode</c>.
+    /// </summary>
+    public const int MaxDocumentTypeListFields = 1_000;
+
+    /// <summary>
     /// Hard cap on the number of Markdown characters of a single document body handed to an MCP client
     /// (<c>vault_extract_get_document</c> tool and the <c>vault-extract://documents/{id}</c> resource, including its
     /// explicit-tenant equivalent). The existing

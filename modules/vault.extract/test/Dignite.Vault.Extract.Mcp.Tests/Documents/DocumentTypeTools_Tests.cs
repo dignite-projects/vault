@@ -266,6 +266,83 @@ public class DocumentTypeTools_Tests : VaultExtractTestBase<DocumentTypeToolsTes
             Arg.Is<GetFieldDefinitionListInput>(i => i.DocumentTypeId == null));
     }
 
+    [Fact]
+    public async Task A_type_lists_at_most_its_field_cap_and_says_how_many_it_has()
+    {
+        var types = BuildTypes(1);
+        var count = VaultExtractMcpConsts.MaxDocumentTypeFields + 7;
+        _documentTypeAppService.GetVisibleSummariesAsync().Returns(types);
+        _fieldDefinitionAppService.GetListAsync(Arg.Any<GetFieldDefinitionListInput>()).Returns(BuildFields(types[0].Id, count));
+
+        var schema = (await DocumentTypeTools.ListAsync(
+            _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver, _fieldTypeExtensionRegistry)).Types[0];
+
+        schema.Fields.Count.ShouldBe(VaultExtractMcpConsts.MaxDocumentTypeFields);
+        schema.FieldCount.ShouldBe(count);
+        schema.FieldsTruncated.ShouldBeTrue();
+        // Cut in display order: the first fields are kept.
+        schema.Fields[0].Name.ShouldBe(FieldNameOf(0));
+        schema.Fields[^1].Name.ShouldBe(FieldNameOf(VaultExtractMcpConsts.MaxDocumentTypeFields - 1));
+    }
+
+    [Fact]
+    public async Task One_call_lists_at_most_the_list_budget_across_types_in_type_code_order()
+    {
+        // Ten types of 150 fields: 1,500 fields, past the 1,000 a call may carry.
+        var types = BuildTypes(10);
+        _documentTypeAppService.GetVisibleSummariesAsync().Returns(types);
+        _fieldDefinitionAppService.GetListAsync(Arg.Any<GetFieldDefinitionListInput>())
+            .Returns(types.SelectMany(t => BuildFields(t.Id, 150)).ToList());
+
+        var result = await DocumentTypeTools.ListAsync(
+            _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver, _fieldTypeExtensionRegistry);
+
+        result.Types.Count.ShouldBe(10);
+        result.Types.Sum(t => t.Fields.Count).ShouldBe(VaultExtractMcpConsts.MaxDocumentTypeListFields);
+        result.Types.Select(t => t.Fields.Count).ShouldBe([150, 150, 150, 150, 150, 150, 100, 0, 0, 0]);
+        result.Types.Select(t => t.FieldsTruncated).ShouldBe([false, false, false, false, false, false, true, true, true, true]);
+        result.Types.ShouldAllBe(t => t.FieldCount == 150);
+    }
+
+    [Fact]
+    public async Task A_type_code_returns_that_type_alone_with_its_fields()
+    {
+        var types = BuildTypes(10);
+        _documentTypeAppService.GetVisibleSummariesAsync().Returns(types);
+        _fieldDefinitionAppService.GetListAsync(Arg.Any<GetFieldDefinitionListInput>())
+            .Returns(types.SelectMany(t => BuildFields(t.Id, 150)).ToList());
+
+        var result = await DocumentTypeTools.ListAsync(
+            _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver, _fieldTypeExtensionRegistry,
+            documentTypeCode: TypeCodeOf(8));
+
+        result.Types.Select(t => t.TypeCode).ShouldBe([TypeCodeOf(8)]);
+        result.Types[0].Fields.Count.ShouldBe(150);
+        result.Types[0].FieldsTruncated.ShouldBeFalse();
+        result.TotalCount.ShouldBe(1);
+
+        (await DocumentTypeTools.ListAsync(
+            _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver, _fieldTypeExtensionRegistry,
+            documentTypeCode: "no.such.type")).Types.ShouldBeEmpty();
+    }
+
+    private static string FieldNameOf(int index) => $"field_{index:D4}";
+
+    private static List<FieldDefinitionDto> BuildFields(Guid typeId, int count)
+    {
+        return Enumerable.Range(0, count)
+            .Select(i => new FieldDefinitionDto
+            {
+                DocumentTypeId = typeId,
+                Name = FieldNameOf(i),
+                FieldTypeName = TextFieldType.ControlName,
+                DisplayName = $"Field {i}",
+                DisplayOrder = i
+            })
+            .Reverse()
+            .ToList();
+    }
+
     private static string TypeCodeOf(int index) => $"type.{index:D4}";
 
     private static List<DocumentTypeSummaryDto> BuildTypes(int count)

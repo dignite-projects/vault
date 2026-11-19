@@ -1,9 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Extract.Permissions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Volo.Abp.Authorization;
+using Volo.Abp.DependencyInjection;
+using Volo.Abp.Security.Claims;
 using NSubstitute;
 using Shouldly;
 using Xunit;
@@ -18,8 +26,47 @@ namespace Dignite.Vault.Extract.Slugging;
 /// </summary>
 public class SlugSuggestionAppService_Tests
 {
-    private static SlugSuggestionAppService CreateService(IChatClient chatClient)
-        => new(chatClient, NullLogger<SlugSuggestionAppService>.Instance);
+    /// <summary>
+    /// The service as the host builds it, with its permission check answered by a grant set: by default the
+    /// document-type creator's, so the output-handling facts below run past the check.
+    /// </summary>
+    private static SlugSuggestionAppService CreateService(IChatClient chatClient, params string[] granted)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ICurrentPrincipalAccessor, ThreadCurrentPrincipalAccessor>();
+        services.AddSingleton<IAuthorizationService>(sp => new GrantSetAuthorizationService(sp)
+        {
+            Granted = granted.Length == 0 ? [VaultExtractPermissions.DocumentTypes.Create] : granted.ToHashSet()
+        });
+
+        return new SlugSuggestionAppService(chatClient, NullLogger<SlugSuggestionAppService>.Instance)
+        {
+            LazyServiceProvider = new AbpLazyServiceProvider(services.BuildServiceProvider())
+        };
+    }
+
+    [Theory]
+    [InlineData(VaultExtractPermissions.DocumentTypes.Create)]
+    [InlineData(VaultExtractPermissions.FieldDefinitions.Create)]
+    public async Task A_type_or_field_creator_gets_a_suggestion(string permission)
+    {
+        var svc = CreateService(ChatClientReturning("{\"slug\": \"contract_amount\"}"), permission);
+
+        (await svc.SuggestAsync(new SuggestSlugInput { Label = "合同金额" })).Slug.ShouldBe("contract_amount");
+    }
+
+    [Theory]
+    [InlineData(VaultExtractPermissions.Documents.ConfirmClassification)]
+    [InlineData(VaultExtractPermissions.DocumentTypes.Default)]
+    [InlineData(VaultExtractPermissions.FieldDefinitions.Update)]
+    public async Task Anyone_who_cannot_create_a_type_or_field_is_refused_before_the_model_is_called(string permission)
+    {
+        var chatClient = ChatClientReturning("{\"slug\": \"contract_amount\"}");
+        var svc = CreateService(chatClient, permission);
+
+        await Should.ThrowAsync<AbpAuthorizationException>(() => svc.SuggestAsync(new SuggestSlugInput { Label = "合同金额" }));
+        chatClient.ReceivedCalls().ShouldBeEmpty();
+    }
 
     private static IChatClient ChatClientReturning(string responseText)
     {

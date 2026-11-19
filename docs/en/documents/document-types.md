@@ -33,7 +33,7 @@ Types are managed on **Vault Extract → Document Types** (`IDocumentTypeAppServ
 | `Priority` | Integer | Candidate order in the classification prompt (higher first). When a layer has more types than `MaxDocumentTypesInClassificationPrompt` (default 50), the lowest-priority ones are left out |
 | `DuplicateScope` | `Layer` (default) or `Uploader` | Where [duplicate detection](#duplicate-detection) looks |
 
-While typing a display name, the editor suggests a code through `ISlugSuggestionAppService`, which asks the LLM for an English, URL-safe slug.
+While typing a display name, the editor suggests a code through `ISlugSuggestionAppService`, which asks the LLM for an English, URL-safe slug. The field editor does the same for field names. It needs `DocumentTypes.Create` or `FieldDefinitions.Create`.
 
 ### Deleting and Restoring
 

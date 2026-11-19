@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Volo.Abp.Authorization;
 
 namespace Dignite.Vault.Extract.Slugging;
 
@@ -23,10 +24,11 @@ namespace Dignite.Vault.Extract.Slugging;
 /// Covenant" / .claude/rules/llm-call-anti-patterns.md) point by point:
 /// </para>
 /// <list type="number">
-///   <item><b>Fail-closed authorization</b>: class-level <c>[Authorize(ConfirmClassification)]</c>.
-///         This is a real HTTP AppService exposed through SlugSuggestionController, so the attribute
-///         is enforced at the HTTP boundary, matching FieldDefinitionAppService /
-///         DocumentTypeAppService.</item>
+///   <item><b>Fail-closed authorization</b>: the callers are the document-type and field creation forms, so
+///         the caller must hold <c>DocumentTypes.Create</c> or <c>FieldDefinitions.Create</c>. An attribute cannot
+///         express that OR, and does not fire off the HTTP path, so it is checked in the method body
+///         (<see cref="CheckSuggestPermissionAsync"/>), like FieldDraftSuggestionAppService; the class-level
+///         <c>[Authorize]</c> only turns anonymous HTTP callers away first.</item>
 ///   <item><b>No DB query</b>: plain text in, text out. It touches no <c>IRepository</c> / raw SQL, so
 ///         Take(N) and explicit TenantId predicates do not apply.</item>
 ///   <item><b>PromptBoundary</b>: the user-derived free-text Label is wrapped with
@@ -39,7 +41,7 @@ namespace Dignite.Vault.Extract.Slugging;
 ///         Create path still goes through FieldDefinition/DocumentType whitelist validation.</item>
 /// </list>
 /// </summary>
-[Authorize(VaultExtractPermissions.Documents.ConfirmClassification)]
+[Authorize]
 public class SlugSuggestionAppService : VaultExtractAppService, ISlugSuggestionAppService
 {
     private readonly IChatClient _chatClient;
@@ -79,6 +81,8 @@ public class SlugSuggestionAppService : VaultExtractAppService, ISlugSuggestionA
         SuggestSlugInput input,
         CancellationToken cancellationToken = default)
     {
+        await CheckSuggestPermissionAsync();
+
         var messages = new List<ChatMessage>
         {
             new(ChatRole.System, SlugSystemPrompt + "\n\n" + PromptBoundary.BoundaryRule),
@@ -95,6 +99,18 @@ public class SlugSuggestionAppService : VaultExtractAppService, ISlugSuggestionA
             _chatClient, messages, SlugResponseFormat, SuggestTimeout, _logger, "Slug suggestion", cancellationToken);
 
         return new SlugSuggestionDto { Slug = ExtractSlug(rawJson) };
+    }
+
+    /// <summary>
+    /// Fail-closed: the caller must be able to create a document type or a field, the two forms that ask for a slug.
+    /// </summary>
+    protected virtual async Task CheckSuggestPermissionAsync()
+    {
+        if (!await AuthorizationService.IsGrantedAsync(VaultExtractPermissions.DocumentTypes.Create)
+            && !await AuthorizationService.IsGrantedAsync(VaultExtractPermissions.FieldDefinitions.Create))
+        {
+            throw new AbpAuthorizationException();
+        }
     }
 
     /// <summary>

@@ -404,6 +404,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A field schema over `MaxFieldSchemaPromptLength` at extraction time (a host that lowered the ceiling after the
     types were configured) now ends the run Failed instead of being retried for days: the call-site check throws
     `InvalidDataException`, which marks a permanent failure, not `InvalidOperationException`.
+  - The code suggestion on the document-type and field creation forms (`ISlugSuggestionAppService`) needs
+    `DocumentTypes.Create` or `FieldDefinitions.Create`, checked in the method. It asked for
+    `Documents.ConfirmClassification`, so a schema admin without document rights got no suggestion.
+  - The MCP type schema lists at most 200 fields per type (`MaxDocumentTypeFields`), and
+    `vault_extract_list_document_types` at most 1,000 per call (`MaxDocumentTypeListFields`), filled in typeCode
+    order; the field count of a type is not capped when it is configured, so the payload had no ceiling. A cut type
+    reports `fieldsTruncated` and `fieldCount`, and the tool's new `documentTypeCode` parameter returns one type
+    alone.
 - **PDF reading (from the refactor review).**
   - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is
     taken, outside the per-page guard. The page is dropped and the document marked incomplete.
@@ -456,6 +464,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     so a spreadsheet of thousands of rows indexed by table row paid a model call for every ten rows and then failed.
   - A by-page cut no longer fails the document when its Markdown opens with an empty line and a page starts on a
     table line right after it.
+  - A chunk longer than the 6,000 characters the enricher sends is followed by a note that it is cut, as summaries
+    already mark theirs.
 
 - **Index: a table with an empty cell no longer fails the document.** DataIngestion's Markdown reader
   (11.0.0-preview.1) throws `ArgumentNullException` on a table cell with no text (dotnet/extensions#7956), so every

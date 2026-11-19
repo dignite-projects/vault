@@ -29,7 +29,7 @@ Every tool name starts with `vault_extract_`, and every resource URI uses the `v
 | `resources/list` | Bounded enumeration of the visible document-type and cabinet resources |
 | Tool `vault_extract_search_documents` | Structured search; see [Search](#search) |
 | Tool `vault_extract_get_document` | One document by id: title, type, lifecycle, language, created-at, the Markdown body and every extracted field value. For clients that cannot read resources |
-| Tool `vault_extract_list_document_types` | The visible document types with their complete field schemas (name, field type, multi-value flag, display name, required flag). For clients that cannot list resources |
+| Tool `vault_extract_list_document_types` | The visible document types with their field schemas (name, field type, multi-value flag, display name, required flag), or one type with `documentTypeCode`. For clients that cannot list resources |
 | Tool `vault_extract_list_cabinets` | Bounded cabinet name-to-id discovery with `totalCount` and `truncated` |
 
 All tools are read-only. The server declares the bare `resources` capability with **no `subscribe` or `listChanged`**: clients read on demand. The transport is **Streamable HTTP** at `/mcp`; the legacy SSE transport is not exposed.
@@ -61,6 +61,8 @@ These ceilings are compile-time constants (`VaultExtractMcpConsts`), so runtime 
 | Rows returned by `vault_extract_search_documents` | 50 (`MaxSearchResultCount`); `truncated` and `totalCount` report what was left out |
 | Field filters per search | 10 (`MaxSearchFieldFilters`) |
 | Document types returned by `vault_extract_list_document_types` and `resources/list` | 100 (`MaxDocumentTypeResults`) |
+| Fields in one type's schema (tool and resource) | 200 (`MaxDocumentTypeFields`), in display order. A cut type reports `fieldsTruncated` and `fieldCount` |
+| Fields in one `vault_extract_list_document_types` call | 1,000 (`MaxDocumentTypeListFields`), filled in typeCode order. Pass `documentTypeCode` to get a cut type alone |
 | Markdown characters of one document body (tool and resource) | 200,000 (`MaxDocumentMarkdownChars`). A clipped body reports `markdownTruncated` and `markdownTotalChars` |
 
 `vault_extract_get_document` also reports `fieldExtractionDeclined` when the document was too large for field extraction, so a client does not read an empty field set as the document's real values.

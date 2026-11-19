@@ -162,6 +162,20 @@ public class IndexChunkEnricher_Tests
         await RunAsync(enricher, 1, _ => new string('あ', IndexChunkEnricher.MaxChunkLength + 500));
 
         model.Calls[0].User.Count(c => c == 'あ').ShouldBe(IndexChunkEnricher.MaxChunkLength);
+        // The cut is announced right after the wrapped passage.
+        model.Calls[0].User.ShouldContain(
+            PromptBoundary.WrapDocument(new string('あ', IndexChunkEnricher.MaxChunkLength)) + Environment.NewLine + IndexChunkEnricher.CutNote);
+    }
+
+    [Fact]
+    public async Task A_passage_within_the_limit_carries_no_cut_note()
+    {
+        var model = new ScriptedEnrichmentChatClient();
+        var enricher = new IndexChunkEnricher(model, IndexEnrichment.Keywords, NullLogger.Instance);
+
+        await RunAsync(enricher, 1, _ => new string('あ', IndexChunkEnricher.MaxChunkLength));
+
+        model.Calls[0].User.ShouldNotContain(IndexChunkEnricher.CutNote);
     }
 
     [Fact]
