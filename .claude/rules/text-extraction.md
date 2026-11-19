@@ -45,7 +45,7 @@ Every engine is found through `[ExposeServices(typeof(ParseExtractionClient), ..
 
 Every engine's tree renders to Markdown, so classification, field extraction and downstream chunkers consume a single format. An engine whose source has no structure fills the tree with flat paragraphs. For unstructured content that Markdown carries no extra signal; it is only the common container. Internal LLM prompts say that the input is Markdown.
 
-A Markdown-native answer read into the tree and rendered back is the same Markdown up to blank lines and the indentation of nested list items (each is indented to its parent's content), and scores the same on the evaluation corpus. Three things Parse relies on that the shared contract lacks (a failed-page signal, a durable native result, a language hint) were raised upstream in dotnet/extensions#7587; until it answers, Vault carries the first as a metadata key and the last as an option key.
+A Markdown-native answer read into the tree and rendered back is the same Markdown up to blank lines and the indentation of nested list items (each is indented to its parent's content), and scores the same on the evaluation corpus. What Parse relies on that the shared contract lacks, a partial-extraction signal and language (hints in, detected languages out), is proposed upstream in dotnet/extensions#7961. Until then Vault carries the signal and the detected language as metadata keys (`vault.incompleteReason`, `vault.language`) and the hints as an option key (`vault.languageHints`).
 
 ## Re-parse
 
