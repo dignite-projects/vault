@@ -157,7 +157,10 @@ public class SqlServerChunkSearchIndex : IChunkSearchIndex, ITransientDependency
         // to and filtered, and exact distance over the rows the scope leaves is fast enough up to about 50,000 of them.
         var rows = await ChunkScopeFilter.Apply(dbContext.ChunkVectors.Where(v => v.GenerationId == generationId), scope)
             .Select(v => new { v.ChunkId, v.DocumentId, Distance = EF.Functions.VectorDistance("cosine", v.Embedding, query) })
+            // Ties broken by chunk id, as the keyword leg breaks its own: identical texts (a document uploaded twice) embed to
+            // one distance, and without it which of them makes the cut, and their ranks, could change between searches.
             .OrderBy(x => x.Distance)
+            .ThenBy(x => x.ChunkId)
             .Take(take)
             .ToListAsync(cancellationToken);
 

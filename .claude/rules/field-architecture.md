@@ -72,7 +72,7 @@ Classification schedules one field-extraction run in the same transaction as its
 4. re-reads the definitions and discards any value whose field was deleted, renamed or retyped while the call was in flight (the guards compare both `FieldTypeName` and `Name`);
 5. validates and converts each value with `FlexFieldValueReader`;
 6. writes the whole set and synchronizes the index. No event is published here: egress is `DocumentReadyEto`;
-7. locates the passages the model quoted per field (`sources` in the response, LangExtract's approach) in the Markdown with `FieldSourceLocator` (exact, then compared as `NormalizedMarkdown` keys, the normalization Index also finds its chunks with) and stores them as `FieldSources`, unless the Markdown changed during the call.
+7. locates the passages the model quoted per field (`sources` in the response, LangExtract's approach) in the Markdown with `FieldSourceLocator` (exact, then compared as `NormalizedMarkdown` keys, the normalization Index also finds its chunks with; a passage the matching comparison finds more than once is dropped) and stores them as `FieldSources`, unless the Markdown changed during the call.
 
 The layout endpoint turns those ranges into page regions through `ExtractionDocumentMarkdown.Map`, which renders the tree and records where each element and table cell landed in the Markdown.
 

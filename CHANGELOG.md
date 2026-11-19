@@ -412,11 +412,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     order; the field count of a type is not capped when it is configured, so the payload had no ceiling. A cut type
     reports `fieldsTruncated` and `fieldCount`, and the tool's new `documentTypeCode` parameter returns one type
     alone.
+  - A quoted passage found more than once in the Markdown gives its field no source (`fieldSources`). A bare value
+    quoted without the words around it ("1", "13,200") was placed at its first occurrence, which could be anywhere.
+    A verbatim quote found once is placed there, whatever looser variants the text also holds.
 - **PDF reading (from the refactor review).**
   - One page PdfPig cannot parse no longer fails the whole PDF: PdfPig runs a page's content stream when the page is
     taken, outside the per-page guard. The page is dropped and the document marked incomplete.
   - A line repeated at the page edge is dropped as a running header or footer only when its numbers are the same on
     every page or a page number. Per-page subtotals and ledger rows at the top or bottom of each page were dropped.
+    One stray line of the same shape (a bare number above a bare page number) now stays by itself; it made every
+    page keep its page number.
+  - A line of a document's own text, or of a picture's transcription, that reads as a figure marker (`*[Image OCR]*`,
+    `*[End OCR]*`) is written with a backslash before its first `*`, which Markdown shows as the same text. It opened
+    or closed a figure span no figure made, which sub-document detection then read.
   - An HTML table cell keeps text its entities encode as angle brackets (`p &lt; 0.05`): tags are removed before the
     entities are decoded.
   - A table that starts the next page under a different header row is a table of its own, not the previous one's
@@ -448,6 +456,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     until the document's next event. Where the chunks were cut by page is now stored apart from the text's hash
     (`IndexedDocument.PageCutsHash`).
   - A zero-width space in a document's own text no longer keeps its line from being placed.
+  - A summary compilation whose every model call the provider refused for good (a 4xx other than 408 and 429: a
+    rejected key, an unknown model) ends without a retry and logs why; the next sync or rebuild compiles again. It
+    was retried for days, every attempt making the same calls.
+  - Vector candidates at the same distance (a document uploaded twice) are ordered by chunk id, as keyword candidates
+    already were, so which of them makes the cut does not depend on the plan.
 - **Index search (from the refactor review).**
   - A search no longer fails, or waits minutes, on the embedding model. The query is embedded through the HTTP client
     ingestion uses, whose retries are sized for a throttled bulk run and whose circuit breaker opens for every caller

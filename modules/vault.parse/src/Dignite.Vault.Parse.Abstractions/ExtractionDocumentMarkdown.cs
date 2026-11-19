@@ -15,7 +15,8 @@ namespace Dignite.Vault.Parse;
 /// <para>
 /// One block per element, a blank line between blocks: a heading at its level, a paragraph's text as written (it may
 /// carry inline Markdown), consecutive list items as one list, a table as a pipe table, or as an HTML table when a cell
-/// spans rows or columns (a pipe table cannot say so), and an image's OCR text inside <see cref="ImageOcrMarkup"/>.
+/// spans rows or columns (a pipe table cannot say so), and an image's OCR text inside <see cref="ImageOcrMarkup"/>. A
+/// line of text that would read as one of those markers is escaped (<see cref="ImageOcrMarkup.Escape"/>).
 /// Page headers and footers stay in the tree and out of the Markdown. Sections only group; a section's own text payload
 /// is a paragraph.
 /// </para>
@@ -47,7 +48,7 @@ public static class ExtractionDocumentMarkdown
             case ExtractionDocumentSection section:
                 if (section.Content is TextContent { Text.Length: > 0 } payload)
                 {
-                    writer.Block(payload.Text.TrimEnd(), section.Sources);
+                    writer.Block(ImageOcrMarkup.Escape(payload.Text.TrimEnd()), section.Sources);
                 }
 
                 var items = new List<ExtractionDocumentTextElement>();
@@ -78,7 +79,7 @@ public static class ExtractionDocumentMarkdown
             case ExtractionDocumentTextElement text:
                 if (RenderText(text) is { Length: > 0 } rendered)
                 {
-                    writer.Block(rendered, text.Sources);
+                    writer.Block(ImageOcrMarkup.Escape(rendered), text.Sources);
                 }
 
                 break;
@@ -149,7 +150,7 @@ public static class ExtractionDocumentMarkdown
 
             var indent = parents.Count > 0 ? parents.Peek().ContentColumn : 0;
             var contentColumn = indent + marker.Length + 1;
-            var text = ((TextContent)item.Content!).Text.TrimEnd().Split('\n');
+            var text = ImageOcrMarkup.Escape(((TextContent)item.Content!).Text.TrimEnd()).Split('\n');
             if (index > 0)
             {
                 writer.Append("\n");

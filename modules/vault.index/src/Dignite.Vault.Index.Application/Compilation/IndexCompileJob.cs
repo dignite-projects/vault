@@ -105,6 +105,16 @@ public class IndexCompileJob : AsyncBackgroundJob<IndexCompileJobArgs>, ITransie
             }
 
             var compilation = await compiler.CompileAsync(source.Title, source.Chunks);
+            if (compilation.Refused)
+            {
+                // A retry sends the same calls to a provider that refused them for good. The next sync or rebuild compiles
+                // again, once the host has fixed its key or model.
+                Logger.LogWarning(
+                    "Compiling the summaries of document {DocumentId} failed: the model provider refused all {Calls} calls; not retried.",
+                    args.DocumentId, compilation.CallCount);
+                return;
+            }
+
             if (compilation.Failed)
             {
                 throw new AbpException(

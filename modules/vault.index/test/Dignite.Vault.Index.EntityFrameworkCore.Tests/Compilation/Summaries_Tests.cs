@@ -283,6 +283,34 @@ public class Summaries_Tests : VaultIndexTestBase<VaultIndexSummaryTestModule>
         (await SummariesAsync()).ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Unauthorized)]
+    [InlineData(System.Net.HttpStatusCode.BadRequest)]
+    public async Task When_the_provider_refuses_every_call_for_good_the_job_ends_without_a_retry(System.Net.HttpStatusCode status)
+    {
+        await SetProfileAsync(IndexCompilation.Summaries);
+        await IndexAsync(Lease);
+        _model.FailOnCalls = [1, 2, 3];
+        _model.Failure = () => new System.Net.Http.HttpRequestException("refused", null, status);
+
+        await CompileAsync();
+
+        (await SummariesAsync()).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.TooManyRequests)]
+    [InlineData(System.Net.HttpStatusCode.ServiceUnavailable)]
+    public async Task When_every_call_fails_for_a_reason_a_retry_can_fix_the_job_throws(System.Net.HttpStatusCode status)
+    {
+        await SetProfileAsync(IndexCompilation.Summaries);
+        await IndexAsync(Lease);
+        _model.FailOnCalls = [1, 2, 3];
+        _model.Failure = () => new System.Net.Http.HttpRequestException("busy", null, status);
+
+        await Should.ThrowAsync<Exception>(() => CompileAsync());
+    }
+
     [Fact]
     public async Task The_estimate_counts_the_documents_whose_summaries_would_be_compiled()
     {

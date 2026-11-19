@@ -18,8 +18,9 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 /// <see cref="NormalizedMarkdown"/>'s, shared with Index, which finds its chunks the same way.
 /// </para>
 /// <para>
-/// A passage found more than once is located at its first occurrence. A passage not found is dropped: no source is
-/// better than a wrong one.
+/// A passage is located only where it is unique: verbatim, or failing that, compared normalized. A passage found more
+/// than once (a value quoted bare, "1" or "13,200", without the words around it) or not at all is dropped: no source is
+/// better than a wrong one, and nothing tells which occurrence the model read.
 /// </para>
 /// </summary>
 public static class FieldSourceLocator
@@ -46,7 +47,7 @@ public static class FieldSourceLocator
                     continue;
                 }
 
-                var span = FindExact(markdown, passage) ?? ToSpan((normalized ??= NormalizedMarkdown.Of(markdown)).Find(passage));
+                var span = FindUnique(markdown, normalized ??= NormalizedMarkdown.Of(markdown), passage);
                 if (span is not null && !spans.Contains(span))
                 {
                     spans.Add(span);
@@ -62,13 +63,28 @@ public static class FieldSourceLocator
         return result;
     }
 
-    private static DocumentTextSpan? FindExact(string markdown, string passage)
+    /// <summary>
+    /// The passage's one occurrence: the verbatim one when the passage is there verbatim, otherwise the normalized one;
+    /// <c>null</c> when the comparison that finds it finds it more than once, or nothing finds it. A verbatim quote found
+    /// once is what the model read, whatever looser variants the text also holds.
+    /// </summary>
+    private static DocumentTextSpan? FindUnique(string markdown, NormalizedMarkdown normalized, string passage)
     {
         var trimmed = passage.Trim();
-        var index = markdown.IndexOf(trimmed, StringComparison.Ordinal);
-        return index < 0 ? null : new DocumentTextSpan(index, trimmed.Length);
-    }
+        var exact = markdown.IndexOf(trimmed, StringComparison.Ordinal);
+        if (exact >= 0)
+        {
+            return markdown.IndexOf(trimmed, exact + 1, StringComparison.Ordinal) < 0 ? new DocumentTextSpan(exact, trimmed.Length) : null;
+        }
 
-    private static DocumentTextSpan? ToSpan((int Offset, int Length)? range)
-        => range is { } r ? new DocumentTextSpan(r.Offset, r.Length) : null;
+        var key = NormalizedMarkdown.Key(passage);
+        var first = normalized.IndexOf(key);
+        if (first < 0 || normalized.IndexOf(key, first + 1) >= 0)
+        {
+            return null;
+        }
+
+        var (offset, length) = normalized.ToSource(first, first + key.Length);
+        return new DocumentTextSpan(offset, length);
+    }
 }

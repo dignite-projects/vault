@@ -111,6 +111,20 @@ public class DocumentTree_Tests
     }
 
     [Fact]
+    public void Text_that_reads_as_a_figure_marker_is_written_escaped_so_no_figure_is_made_of_it()
+    {
+        // A document's own text with a line that is a marker: a paragraph (an open marker no close follows, which the
+        // reader keeps as text) and a list item's continuation.
+        var paragraph = Render("*[Image OCR]*\n本文");
+        var list = Render("- 項目\n  *[End OCR]*");
+
+        paragraph.ShouldBe("\\*[Image OCR]*\n本文");
+        list.ShouldBe("- 項目\n  \\*[End OCR]*");
+        ImageOcrMarkup.Contains(paragraph + "\n\n" + list).ShouldBeFalse();
+        ImageOcrMarkup.ExtractBodies(paragraph + "\n\n" + list).ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Code_quotes_and_what_the_tree_does_not_model_are_kept_as_written()
     {
         const string markdown = "```json\n{ \"a\": 1 }\n```\n\n> 引用文\n> 二行目\n\n<!-- Slide number: 2 -->\n\n---";

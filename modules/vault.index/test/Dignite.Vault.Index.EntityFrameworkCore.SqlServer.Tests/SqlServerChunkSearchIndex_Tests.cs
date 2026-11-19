@@ -52,6 +52,27 @@ public class SqlServerChunkSearchIndex_Tests : VaultIndexTestBase<VaultIndexSqlS
     }
 
     [SqlServerFact]
+    public async Task Vectors_at_the_same_distance_rank_by_chunk_id()
+    {
+        // Twelve copies of one text embed to one distance; a cut of five takes the lowest chunk ids, in SQL Server's
+        // uniqueidentifier order, on every search.
+        await ClearAsync();
+        var ids = new List<Guid>();
+        for (var i = 0; i < 12; i++)
+        {
+            ids.Add((await AddAsync(TypeA, OwnerX, "copy", [1, 0, 0, 0])).ChunkId);
+        }
+
+        var expected = ids.OrderBy(id => new System.Data.SqlTypes.SqlGuid(id)).Take(5).ToList();
+        for (var i = 0; i < 3; i++)
+        {
+            var found = await WithUnitOfWorkAsync(async () => (await GetRequiredService<IChunkSearchIndex>()
+                .SearchVectorsAsync(Generation1, new float[] { 1, 0, 0, 0 }, Everything, 5)).Select(m => m.ChunkId).ToList());
+            found.ShouldBe(expected);
+        }
+    }
+
+    [SqlServerFact]
     public async Task The_keyword_leg_ranks_full_text_within_scope_and_tenant()
     {
         await ClearAsync();

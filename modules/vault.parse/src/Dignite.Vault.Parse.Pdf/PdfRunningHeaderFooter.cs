@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig.Content;
@@ -113,26 +114,34 @@ internal static class PdfRunningHeaderFooter
             }
         }
 
+        // Per template, only the lines whose numbers agree with the template's chrome pattern go, and only when those
+        // lines alone repeat on enough pages: one stray line of the same shape (a bare number at the foot of one page
+        // beside its page number) stays, instead of making every page keep its page number.
         var threshold = Math.Max(MinRepeatPageCount, (int)Math.Ceiling(pageCount * MinRepeatPageFraction));
-        var runningKeys = pagesByKey
-            .Where(kv => kv.Value.Count >= threshold)
-            .Select(kv => kv.Key)
-            .Where(key => NumbersAreChrome(candidates.Where(c => c.Key == key).ToList()))
-            .ToHashSet();
+        var running = new List<Candidate>();
+        foreach (var template in candidates.GroupBy(c => c.Key))
+        {
+            if (pagesByKey[template.Key].Count < threshold)
+            {
+                continue;
+            }
 
-        if (runningKeys.Count == 0)
+            var chrome = ChromeLines(template.ToList());
+            if (chrome.Select(c => c.Page).Distinct().Count() >= threshold)
+            {
+                running.AddRange(chrome);
+            }
+        }
+
+        if (running.Count == 0)
         {
             return result;
         }
 
         // Materialize the per-page drop sets only for pages that actually have running content.
         var dropByPage = new Dictionary<int, HashSet<Word>>();
-        foreach (var candidate in candidates)
+        foreach (var candidate in running)
         {
-            if (!runningKeys.Contains(candidate.Key))
-            {
-                continue;
-            }
 
             if (!dropByPage.TryGetValue(candidate.Page, out var set))
             {
@@ -187,34 +196,49 @@ internal static class PdfRunningHeaderFooter
     }
 
     /// <summary>
-    /// Whether the numbers of one template's lines are chrome's: each number either the same on every page (a date in a
-    /// header, the "10" of "of 10") or a page number, its value minus the page's index the same on every page (so it
-    /// may start anywhere and skip a page). A number that changes otherwise is the page's own data.
+    /// The lines of one template whose numbers are chrome's. Each number of the template is either the same on every
+    /// page (a date in a header, the "10" of "of 10") or a page number, its value minus the page's index the same on
+    /// every page (so it may start anywhere and skip a page). For each number the pattern that the lines of the most
+    /// pages share is taken (a fixed value, or a fixed offset from the page index; the fixed value when they tie), and a
+    /// line is chrome when every number of it follows its pattern. A number that changes otherwise is the page's own
+    /// data, so a ledger row or subtotal shares no pattern beyond a page or two.
     /// </summary>
-    private static bool NumbersAreChrome(IReadOnlyList<Candidate> lines)
+    private static List<Candidate> ChromeLines(IReadOnlyList<Candidate> lines)
     {
-        var numbers = lines.Select(line => DigitRun.Matches(line.Text).Select(m => Value(m.Value)).ToList()).ToList();
-        var count = numbers[0].Count;
-        if (numbers.Any(n => n.Count != count))
-        {
-            return false;
-        }
-
+        // A fixed number is compared by value, or as written when it is too long to be a page number; an offset needs
+        // the value.
+        var digits = lines.Select(line => DigitRun.Matches(line.Text).Select(m => m.Value).ToList()).ToList();
+        var follows = Enumerable.Repeat(true, lines.Count).ToArray();
+        var count = digits.Min(n => n.Count);
         for (var run = 0; run < count; run++)
         {
-            var values = numbers.Select(n => n[run]).ToList();
-            if (values.Distinct().Count() == 1)
+            var fixedValue = Dominant(lines, i => Fixed(digits[i][run]));
+            var fixedOffset = Dominant(lines, i => Offset(digits[i][run], lines[i].Page));
+            var byOffset = fixedOffset.Pages > fixedValue.Pages;
+            for (var i = 0; i < lines.Count; i++)
             {
-                continue;
-            }
-
-            if (values.Any(v => v is null) || lines.Select((line, i) => values[i] - line.Page).Distinct().Count() != 1)
-            {
-                return false;
+                follows[i] &= byOffset
+                    ? Offset(digits[i][run], lines[i].Page) is { } offset && offset == fixedOffset.Pattern
+                    : Fixed(digits[i][run]) == fixedValue.Pattern;
             }
         }
 
-        return true;
+        return lines.Where((line, i) => follows[i] && digits[i].Count == count).ToList();
+    }
+
+    private static string Fixed(string digits) => Value(digits)?.ToString(CultureInfo.InvariantCulture) ?? digits;
+
+    private static string? Offset(string digits, int page) => (Value(digits) - page)?.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The pattern the lines of the most pages share, and how many pages that is.</summary>
+    private static (string? Pattern, int Pages) Dominant(IReadOnlyList<Candidate> lines, Func<int, string?> patternOf)
+    {
+        return Enumerable.Range(0, lines.Count)
+            .Where(i => patternOf(i) is not null)
+            .GroupBy(patternOf)
+            .Select(g => (g.Key, Pages: g.Select(i => lines[i].Page).Distinct().Count()))
+            .OrderByDescending(g => g.Pages)
+            .FirstOrDefault();
     }
 
     /// <summary>The value of a run of ASCII or full-width digits; null when it is too long to be a page number.</summary>

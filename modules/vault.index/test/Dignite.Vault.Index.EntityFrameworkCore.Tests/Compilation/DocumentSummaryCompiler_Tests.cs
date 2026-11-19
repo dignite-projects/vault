@@ -355,6 +355,9 @@ public sealed class ScriptedSummaryChatClient : IChatClient
     /// <summary>The calls (from 1) that throw.</summary>
     public HashSet<int> FailOnCalls { get; set; } = [];
 
+    /// <summary>What a failing call throws.</summary>
+    public Func<Exception> Failure { get; set; } = () => new InvalidOperationException("model down");
+
     /// <summary>The calls (from 1) that answer an open object and whitespace, as a model in JSON schema mode can.</summary>
     public HashSet<int> UnreadableOnCalls { get; set; } = [];
 
@@ -379,7 +382,7 @@ public sealed class ScriptedSummaryChatClient : IChatClient
         Calls.Add((list.First(m => m.Role == ChatRole.System).Text, list.First(m => m.Role == ChatRole.User).Text));
         if (FailOnCalls.Contains(Calls.Count))
         {
-            throw new InvalidOperationException("model down");
+            throw Failure();
         }
 
         string text;

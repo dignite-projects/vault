@@ -43,11 +43,18 @@ public class FieldSourceLocator_Tests
     }
 
     [Fact]
-    public void A_passage_found_twice_is_placed_at_its_first_occurrence()
+    public void A_passage_found_more_than_once_gives_no_source()
     {
-        var spans = FieldSourceLocator.Locate(Markdown, Quotes("13,200"));
+        // "13,200" is the table's total and the closing line's: nothing tells which one the model read.
+        FieldSourceLocator.Locate(Markdown, Quotes("13,200")).ShouldBeEmpty();
+        // Not verbatim, and twice once normalized: "１１月" in full-width digits and "11月" are the same key.
+        FieldSourceLocator.Locate(Markdown + "\n\n11月分", Quotes("11 月")).ShouldBeEmpty();
+    }
 
-        spans["field"].ShouldBe([new DocumentTextSpan(Markdown.IndexOf("13,200", System.StringComparison.Ordinal), 6)]);
+    [Fact]
+    public void The_words_around_a_repeated_value_make_it_unique()
+    {
+        Located("| 合計 | 13,200 |").ShouldBe("| 合計 | 13,200 |");
     }
 
     [Fact]
