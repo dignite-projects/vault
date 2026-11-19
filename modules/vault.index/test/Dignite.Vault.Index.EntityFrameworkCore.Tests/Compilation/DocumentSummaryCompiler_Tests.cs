@@ -49,6 +49,8 @@ public class DocumentSummaryCompiler_Tests
         model.Calls[2].User.ShouldContain(PromptBoundary.WrapField("Contract")!);
         model.Calls[2].User.ShouldContain(PromptBoundary.WrapDocument("preamble"));
         model.Calls[2].User.ShouldContain(PromptBoundary.WrapDocument("A: about A\nB: about B"));
+        model.Options.Select(o => o.ShouldNotBeNull().ResponseFormat.ShouldBeOfType<ChatResponseFormatJson>().SchemaName)
+            .ShouldBe(["section_summaries", "section_summaries", "document_summary"]);
 
         result.Summaries.Document.ShouldBe("the whole document");
         result.Summaries.Sections.ShouldBe(new Dictionary<string, string>
@@ -349,6 +351,9 @@ public sealed class ScriptedSummaryChatClient : IChatClient
 
     public List<(string System, string User)> Calls { get; } = [];
 
+    /// <summary>The options each call was made with.</summary>
+    public List<ChatOptions?> Options { get; } = [];
+
     /// <summary>The model the client names in its metadata; <c>null</c> names none.</summary>
     public string? ModelId { get; set; }
 
@@ -380,6 +385,7 @@ public sealed class ScriptedSummaryChatClient : IChatClient
 
         var list = messages.ToList();
         Calls.Add((list.First(m => m.Role == ChatRole.System).Text, list.First(m => m.Role == ChatRole.User).Text));
+        Options.Add(options);
         if (FailOnCalls.Contains(Calls.Count))
         {
             throw Failure();
