@@ -100,7 +100,9 @@ var matched = await _documentAppService.GetIdsByFieldsAsync(new GetDocumentIdsBy
 });
 ```
 
-`DocumentTypeCode` is required, and `FieldFilters` takes 1 to 10 conditions with the same rules as the document list's ([REST API](rest-api.md#listing-and-filtering-documents)). `Ids` holds the matching documents in ascending id order, only Ready ones (released, typed, not a container) and only those the calling user may read; `HasMore` says more matched than `MaxResultCount` (1 to 10,000, default 10,000).
+`DocumentTypeCode` is required, and `FieldFilters` takes 1 to 10 conditions with the same rules as the document list's ([REST API](rest-api.md#listing-and-filtering-documents)). `Ids` holds the matching documents in ascending id order, only those of that type the calling user may read, never a container; `HasMore` says more matched than `MaxResultCount` (1 to 10,000, default 10,000).
+
+The lifecycle status is not a condition. Your rows hold what was released, and a document sent back to review or being re-parsed after its release keeps its rows at the released version, so it must keep matching; its current field values are the ones tested. A document never released is matched too and finds no rows of yours, but it counts toward `MaxResultCount`.
 
 - **Refuse, do not truncate, when `HasMore` is `true`.** Searching the first 10,000 ids silently drops the rest. Vault Index refuses with `VaultIndex:FieldFilterTooBroad`.
 - **It throws like the document list:** `AbpAuthorizationException` without `Documents.Default`, and a `BusinessException` (`Extract:UnknownExtractedField`) for a type code or field the current layer does not define.

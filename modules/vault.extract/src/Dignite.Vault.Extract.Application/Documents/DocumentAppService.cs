@@ -202,10 +202,13 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         var fieldQueries = await DocumentFieldQueryResolver.ResolveAsync(
             _fieldRepository, _fieldTypeResolver, input.FieldFilters, type.Id, input.DocumentTypeCode);
 
+        // No Ready gate: the caller keeps what was released and narrows those rows by these ids, so a document sent back
+        // to review or being re-parsed after its release must still match. A document never released matches here and
+        // finds no rows there.
         var query = await _flexFieldQueryExecutor.ApplyFilterAsync(await _documentRepository.GetQueryableAsync(), fieldQueries);
         query = query
             .ApplyMetadataFilter(new DocumentMetadataFilter { DocumentTypeId = type.Id, ReadScope = scope })
-            .Where(DocumentQueries.ReadyForConsumers);
+            .Where(d => !d.IsContainer);
 
         var ids = await AsyncExecuter.ToListAsync(query.OrderBy(d => d.Id).Select(d => d.Id).Take(input.MaxResultCount + 1));
         return new DocumentIdListDto

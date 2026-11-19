@@ -20,7 +20,7 @@ namespace Dignite.Vault.Extract.EntityFrameworkCore.Documents;
 
 /// <summary>
 /// <see cref="IDocumentAppService.GetIdsByFieldsAsync"/> over real EF (SQLite) and the field index: the ids of the
-/// Ready documents of a type whose fields meet the conditions, for Vault Index's field filters.
+/// documents of a type whose fields meet the conditions, for Vault Index's field filters.
 /// </summary>
 public class DocumentIdsByFields_Tests : VaultExtractTestBase<DocumentIdsByFieldsTestModule>
 {
@@ -44,7 +44,7 @@ public class DocumentIdsByFields_Tests : VaultExtractTestBase<DocumentIdsByField
     }
 
     [Fact]
-    public async Task Returns_the_ready_documents_whose_fields_match_in_ascending_order()
+    public async Task Returns_the_documents_whose_fields_match_in_ascending_order()
     {
         var ids = new List<Guid>();
         await WithUnitOfWorkAsync(async () =>
@@ -53,14 +53,30 @@ public class DocumentIdsByFields_Tests : VaultExtractTestBase<DocumentIdsByField
             ids.Add(await SeedDocumentAsync(100m));
             ids.Add(await SeedDocumentAsync(100m));
             await SeedDocumentAsync(200m);
-            // Matches, but is not released: not something a consumer may build on.
-            await SeedDocumentAsync(100m, DocumentLifecycleStatus.PendingReview);
         });
 
         var result = await _appService.GetIdsByFieldsAsync(Input("100"));
 
         result.Ids.ShouldBe(ids.OrderBy(id => id).ToList());
         result.HasMore.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(DocumentLifecycleStatus.PendingReview)]
+    [InlineData(DocumentLifecycleStatus.Processing)]
+    [InlineData(DocumentLifecycleStatus.Failed)]
+    public async Task A_document_that_left_ready_still_matches(DocumentLifecycleStatus status)
+    {
+        // Sent back to review, being re-parsed, or failed a re-parse after its release: the calling module still serves
+        // the version it was released with, so a field filter must not make it vanish from that module's results.
+        var id = Guid.Empty;
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await SeedSchemaAsync();
+            id = await SeedDocumentAsync(100m, status);
+        });
+
+        (await _appService.GetIdsByFieldsAsync(Input("100"))).Ids.ShouldBe([id]);
     }
 
     [Fact]
