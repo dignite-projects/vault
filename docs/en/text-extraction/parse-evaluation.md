@@ -86,7 +86,7 @@ Dated runs, with the OCR documents and what they found, are kept in `Reports/`.
 
 ## Scoring a Client's Markdown
 
-A client that [submits processed content](../documents/submitting-content.md) converts documents itself, so its output is measured on the same corpus. Have the client convert each corpus file with the conversion instructions the submission returns, save each result as `<id>.md` (for example `contract.md` for `contract.pdf`), and point `VAULT_PARSE_EVAL_CLIENT_MARKDOWN` at the directory:
+A client that [submits processed content](../documents/submitting-content.md) converts documents itself, so its output is measured on the same corpus. Have the client convert each corpus file following [the rules a submission's Markdown follows](../documents/submitting-content.md#writing-the-markdown) (the MCP submit tool's description carries them), save each result as `<id>.md` (for example `contract.md` for `contract.pdf`), and point `VAULT_PARSE_EVAL_CLIENT_MARKDOWN` at the directory:
 
 ```bash
 VAULT_PARSE_EVAL_CLIENT_MARKDOWN=/path/to/client-output VAULT_PARSE_EVAL_REPORT=client.md dotnet test modules/vault.parse/test/Dignite.Vault.Parse.Evaluation.Tests/Dignite.Vault.Parse.Evaluation.Tests.csproj --filter "FullyQualifiedName~client_markdown"

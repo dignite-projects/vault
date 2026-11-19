@@ -218,6 +218,22 @@ public sealed class DocumentAccessRule
         OwnerArm: DocumentOwnerArm.Never);
 
     /// <summary>
+    /// <c>SubmitAsync</c>'s second subject: bringing one's own content. A submission creates a document, which
+    /// <see cref="Upload"/> judges on the declared type exactly as for a file; this row judges what an upload does not
+    /// carry — a caller-made text, type and field values that skip the server's extraction, classification and field
+    /// extraction. Judged on <see cref="DocumentAccessSubject.None"/>, the same pair shape as a re-parse's
+    /// <see cref="DeclareType"/>.
+    /// <para>
+    /// Module-wide only, by decision: the right is about trusting a caller's processing, which a per-type grant does
+    /// not speak to, and a tenant decides it per role. No owner arm: nothing exists yet to own.
+    /// </para>
+    /// </summary>
+    public static readonly DocumentAccessRule Submit = new(
+        [VaultExtractPermissions.Documents.Submit],
+        ResourcePermission: null,
+        OwnerArm: DocumentOwnerArm.Never);
+
+    /// <summary>
     /// <c>PermanentDeleteAsync</c>. Module-wide only, by decision: it is irreversible, and it destroys the blob a
     /// restorable sub-document reaches through its provenance pointer. Ownership does not open it either — an
     /// uploader withdraws through <see cref="Delete"/>, which is recoverable.

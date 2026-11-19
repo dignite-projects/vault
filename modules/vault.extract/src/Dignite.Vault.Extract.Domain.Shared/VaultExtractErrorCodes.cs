@@ -37,6 +37,11 @@ public static class VaultExtractErrorCodes
         // not in whitelist).
         public const string FileTooLarge = "Extract:DocumentFileTooLarge";
         public const string UnsupportedFileType = "Extract:DocumentUnsupportedFileType";
+        // A submission (DocumentAppService.SubmitAsync) whose Markdown holds no text once read, or is longer than
+        // DocumentConsts.MaxSubmittedMarkdownLength, and one that brings field values without naming their type.
+        public const string SubmittedMarkdownEmpty = "Extract:DocumentSubmittedMarkdownEmpty";
+        public const string SubmittedMarkdownTooLong = "Extract:DocumentSubmittedMarkdownTooLong";
+        public const string SubmittedFieldsNeedType = "Extract:DocumentSubmittedFieldsNeedType";
         // #485 (B1): re-added after #481 removed it assuming FileOrigin can never be null. Same string as before
         // #481 (nothing consumed it in the interim, so this is not a wire break) — a legacy pre-#481 derived row
         // can still carry a null FileOrigin during the documented binaries-first deploy window.

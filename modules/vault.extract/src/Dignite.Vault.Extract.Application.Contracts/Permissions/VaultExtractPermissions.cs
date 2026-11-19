@@ -40,6 +40,14 @@ public class VaultExtractPermissions
         public const string Upload = Default + ".Upload";
 
         /// <summary>
+        /// Create documents from content the caller processed itself (<c>SubmitAsync</c>): its own Markdown, type and
+        /// field values, which skip the server's text extraction, classification and field extraction. Held on top of
+        /// the upload right for the type, never instead of it, so a tenant can let a user upload without letting them
+        /// bring their own content. Module-wide only.
+        /// </summary>
+        public const string Submit = Default + ".Submit";
+
+        /// <summary>
         /// Soft-delete documents of <b>every</b> type of the caller's layer, and restore them from the recycle bin
         /// (#645 merged the former separate restore permission into this name: whoever may delete may undo). The
         /// per-type counterpart is <see cref="VaultExtractResourcePermissions.Delete"/>.

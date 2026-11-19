@@ -18,6 +18,7 @@ public class VaultExtractPermissionDefinitionProvider : PermissionDefinitionProv
         var documents = group.AddPermission(VaultExtractPermissions.Documents.Default, L("Permission:Documents"));
         documents.AddChild(VaultExtractPermissions.Documents.ReadAll, L("Permission:Documents.ReadAll"));
         documents.AddChild(VaultExtractPermissions.Documents.Upload, L("Permission:Documents.Upload"));
+        documents.AddChild(VaultExtractPermissions.Documents.Submit, L("Permission:Documents.Submit"));
         documents.AddChild(VaultExtractPermissions.Documents.Delete, L("Permission:Documents.Delete"));
         documents.AddChild(VaultExtractPermissions.Documents.PermanentDelete, L("Permission:Documents.PermanentDelete"));
         // #645: no separate restore permission. Restoring is Documents.Delete (or the Delete grant, or ownership):

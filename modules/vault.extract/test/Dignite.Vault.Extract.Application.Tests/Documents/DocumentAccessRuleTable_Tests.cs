@@ -68,6 +68,11 @@ public class DocumentAccessRuleTable_Tests
             DocumentOwnerArm.Never
         },
         {
+            // Bringing one's own content, judged on top of Upload: module-wide only, by decision.
+            nameof(DocumentAccessRule.Submit), DocumentAccessRule.Submit,
+            [VaultExtractPermissions.Documents.Submit], null, DocumentOwnerArm.Never
+        },
+        {
             nameof(DocumentAccessRule.PermanentDelete), DocumentAccessRule.PermanentDelete,
             [VaultExtractPermissions.Documents.PermanentDelete], null, DocumentOwnerArm.Never
         },

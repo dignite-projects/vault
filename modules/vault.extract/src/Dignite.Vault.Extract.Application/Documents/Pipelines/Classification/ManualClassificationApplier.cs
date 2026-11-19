@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
+using Dignite.Vault.Extract.Documents.Pipelines;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.EventBus.Distributed;
@@ -62,6 +63,29 @@ public class ManualClassificationApplier : ITransientDependency
         await _pipelineJobScheduler.QueueAsync(
             document, VaultExtractPipelines.FieldExtraction, expectedEventTypeCode: typeDef.TypeCode);
 
+        await CompleteAsync(document, run, typeDef);
+    }
+
+    /// <summary>
+    /// The same manual classification for a document whose field values the caller already has (a submission): the
+    /// field-extraction run is started instead of queued with a job, still BEFORE classification completes (#527 §8),
+    /// and returned for the caller to complete with those values. No model is asked for fields.
+    /// </summary>
+    public virtual async Task<DocumentPipelineRun> ApplyWithFieldValuesAsync(Document document, DocumentType typeDef)
+    {
+        Check.NotNull(typeDef, nameof(typeDef));
+
+        var run = await _pipelineRunManager.QueueAsync(document, VaultExtractPipelines.Classification);
+        await _pipelineRunManager.BeginAsync(document, run);
+
+        var fieldRun = await _pipelineRunManager.StartAsync(document, VaultExtractPipelines.FieldExtraction);
+
+        await CompleteAsync(document, run, typeDef);
+        return fieldRun;
+    }
+
+    protected virtual async Task CompleteAsync(Document document, DocumentPipelineRun run, DocumentType typeDef)
+    {
         await _pipelineRunManager.CompleteManualClassificationAsync(document, run, typeDef);
 
         await _distributedEventBus.PublishAsync(

@@ -58,6 +58,12 @@ public class DocumentController : VaultExtractController, IDocumentAppService
         return _documentAppService.UploadAsync(input);
     }
 
+    [HttpPost("submit")]
+    public virtual Task<DocumentDto> SubmitAsync([FromBody] SubmitDocumentInput input)
+    {
+        return _documentAppService.SubmitAsync(input);
+    }
+
     [HttpGet("{id}/layout")]
     public virtual Task<IRemoteStreamContent> GetLayoutAsync(Guid id)
     {
