@@ -113,14 +113,15 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
 
         var types = await GetVisibleTypesAsync();
         var scope = await GetScopeAsync(null, types);
-        var chunks = await GetOutlineChunksAsync(documentId, scope);
+        var outlineChunks = await GetOutlineChunksAsync(documentId, scope);
+        var chunks = outlineChunks.Where(c => !c.IsDisabled).ToList();
         var document = await _documentRepository.FindAsync(documentId);
         if (chunks.Count == 0 || document is null)
         {
             throw new EntityNotFoundException(typeof(IndexedDocument), documentId);
         }
 
-        var outline = DocumentOutline.Build(chunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath)));
+        var outline = DocumentOutline.Build(outlineChunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath, !c.IsDisabled)));
         var summaries = (await GetFreshSummariesAsync(
                 [document],
                 chunks.Select(c => new SummarySourceRow(documentId, c.Ordinal, c.HeadingPath, c.ContentHash))))
@@ -253,7 +254,7 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
     {
         var documentId = pointer.Id;
         var outlineChunks = await GetOutlineChunksAsync(documentId, scope);
-        var node = DocumentOutline.Build(outlineChunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath))).Find(pointer.NodePath)
+        var node = DocumentOutline.Build(outlineChunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath, !c.IsDisabled))).Find(pointer.NodePath)
                    ?? throw new EntityNotFoundException(typeof(Chunk), pointer.ToString());
 
         var inNode = ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope)
@@ -304,16 +305,17 @@ public class IndexSearchAppService : VaultIndexAppService, IIndexSearchAppServic
         => _scopeResolver.GetVisibleTypesAsync();
 
     /// <summary>A document's chunks within the scope, with only the outline's columns: a document can have thousands.</summary>
+    /// <summary>The document's chunks the caller may reach, disabled ones included and marked: the outline numbers over them.</summary>
     protected virtual async Task<List<OutlineRow>> GetOutlineChunksAsync(Guid documentId, ChunkSearchScope scope)
     {
         return await AsyncExecuter.ToListAsync(
-            ChunkScopeFilter.Apply(await _chunkRepository.GetQueryableAsync(), scope)
+            ChunkScopeFilter.ApplyWithDisabled(await _chunkRepository.GetQueryableAsync(), scope)
                 .Where(c => c.DocumentId == documentId)
                 .OrderBy(c => c.Ordinal)
-                .Select(c => new OutlineRow(c.Ordinal, c.HeadingPath, c.DocumentTypeId, c.ContentHash)));
+                .Select(c => new OutlineRow(c.Ordinal, c.HeadingPath, c.DocumentTypeId, c.ContentHash, c.IsDisabled)));
     }
 
-    protected sealed record OutlineRow(int Ordinal, string? HeadingPath, Guid DocumentTypeId, string ContentHash);
+    protected sealed record OutlineRow(int Ordinal, string? HeadingPath, Guid DocumentTypeId, string ContentHash, bool IsDisabled);
 
     /// <summary>
     /// The documents' compiled summaries, each only while it was built from exactly the chunks given for its document,

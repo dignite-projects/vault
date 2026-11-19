@@ -75,7 +75,7 @@ public class IndexCompileJob : AsyncBackgroundJob<IndexCompileJobArgs>, ITransie
                 return;
             }
 
-            if (!source.Compilation.HasFlag(IndexCompilation.Summaries) || source.Chunks.Count == 0)
+            if (!source.Compilation.HasFlag(IndexCompilation.Summaries) || !source.Chunks.Any(c => c.IsServed))
             {
                 // The profile no longer asks for summaries: drop them, so turning them off and rebuilding removes them.
                 if (source.HasSummaries)
@@ -143,20 +143,22 @@ public class IndexCompileJob : AsyncBackgroundJob<IndexCompileJobArgs>, ITransie
         }
 
         var profile = await _profileResolver.ResolveAsync(row.DocumentTypeId);
+        // Disabled chunks too, without their text: they number the outline as the served outline numbers it.
         var chunks = await _asyncExecuter.ToListAsync((await _chunkRepository.GetQueryableAsync())
-            .Where(c => c.DocumentId == documentId && !c.IsDisabled)
+            .Where(c => c.DocumentId == documentId)
             .OrderBy(c => c.Ordinal)
-            .Select(c => new { c.Ordinal, c.HeadingPath, c.Text, c.ContentHash }));
+            .Select(c => new { c.Ordinal, c.HeadingPath, Text = c.IsDisabled ? string.Empty : c.Text, c.ContentHash, c.IsDisabled }));
         var summaries = await FindSummariesAsync(documentId);
         await uow.CompleteAsync();
 
+        var served = chunks.Where(c => !c.IsDisabled).ToList();
         return new CompileSource(
             row.DocumentTypeId,
             row.Title,
             row.Language,
             profile.Compilation,
-            chunks.Select(c => new CompileChunk(c.Ordinal, c.HeadingPath, c.Text)).ToList(),
-            DocumentSummaries.SourceHash(row.Language, chunks.Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash))),
+            chunks.Select(c => new CompileChunk(c.Ordinal, c.HeadingPath, c.Text, !c.IsDisabled)).ToList(),
+            DocumentSummaries.SourceHash(row.Language, served.Select(c => (c.Ordinal, c.HeadingPath, c.ContentHash))),
             summaries is not null,
             summaries?.DocumentTypeId,
             summaries?.SourceHash,

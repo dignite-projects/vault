@@ -66,6 +66,26 @@ public class Summaries_Tests : VaultIndexTestBase<VaultIndexSummaryTestModule>
     }
 
     [Fact]
+    public async Task With_a_sections_only_chunk_disabled_each_summary_stays_on_its_own_section()
+    {
+        await SetProfileAsync(IndexCompilation.Summaries);
+        await IndexAsync(Lease);
+        var chunks = await ChunksAsync();
+        chunks[1].HeadingPath.ShouldBe("# 賃貸借契約書 ## 第1条（目的）");
+
+        await GetRequiredService<IIndexChunkAppService>().DisableAsync(chunks[1].Id);
+        await CompileAsync();
+
+        // Article 1 is out of the outline; article 2 keeps node 1.2 and its own summary.
+        var outline = await OutlineAsync();
+        outline.Nodes.Select(n => (n.Title, n.Pointer.Split('/')[^1], n.Summary)).ShouldBe(
+        [
+            ("賃貸借契約書", "1", "about 賃貸借契約書"),
+            ("第2条（賃料）", "1.2", "about 賃貸借契約書 > 第2条（賃料）")
+        ]);
+    }
+
+    [Fact]
     public async Task A_sync_queues_the_compilation_and_the_outline_serves_what_it_wrote()
     {
         await SetProfileAsync(IndexCompilation.Summaries);

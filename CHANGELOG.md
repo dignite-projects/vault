@@ -471,6 +471,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - With `MinRerankScore` set, the retrieval test lists every candidate again, marks the ones search drops and shows
     the floor. It showed only the hits above it, so the floor could not be measured where the docs say to measure it.
   - Reading on from a chunk steps over a disabled chunk. `nextPointer` was `null` before one, as at the document's end.
+  - Disabling a section's only chunk leaves the outline's other pointers where they were: the outline is numbered over
+    disabled chunks too, and the section is left out with a gap in its siblings' numbers. Before, the sections after
+    it moved up, so a `node:` pointer an agent already held read another section. Summaries are keyed the same way;
+    their template version moves to 3, so summaries compiled before are out of date until recompiled (**Recompile**,
+    or the next sync).
   - A host's own `IReranker` that answers with more or fewer scores than texts is a failed rerank: the fused order is
     kept. One score short made the search fail with an index error; a surplus was ignored.
   - A document over `MaxChunksPerDocument` fails before the enricher reads any chunk. It was counted after enrichment,

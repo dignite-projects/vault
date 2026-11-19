@@ -14,7 +14,11 @@ using Microsoft.Extensions.Logging;
 namespace Dignite.Vault.Index.Compilation;
 
 /// <summary>A chunk as compilation reads it.</summary>
-public sealed record CompileChunk(int Ordinal, string? HeadingPath, string Text);
+/// <summary>
+/// A chunk to compile from. A disabled chunk is passed with <paramref name="IsServed"/> <c>false</c> (and no text): it
+/// numbers the outline, as the served outline is numbered, so the summaries land on the nodes the outline shows.
+/// </summary>
+public sealed record CompileChunk(int Ordinal, string? HeadingPath, string Text, bool IsServed = true);
 
 /// <summary>What one compilation produced and what it took.</summary>
 public sealed class SummaryCompilation
@@ -165,8 +169,8 @@ public class DocumentSummaryCompiler
         _inputTokens = _outputTokens = 0;
         _calls = _failedCalls = _refusedCalls = _reused = 0;
 
-        var ordered = chunks.OrderBy(c => c.Ordinal).ToList();
-        var outline = DocumentOutline.Build(ordered.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath)));
+        var outline = DocumentOutline.Build(chunks.Select(c => new OutlineChunk(c.Ordinal, c.HeadingPath, c.IsServed)));
+        var ordered = chunks.Where(c => c.IsServed).OrderBy(c => c.Ordinal).ToList();
         var notes = new List<string>();
         var sections = KeepSections(outline.Nodes, notes);
         var document = Plan(title, ordered, sections, out var sectionTasks);

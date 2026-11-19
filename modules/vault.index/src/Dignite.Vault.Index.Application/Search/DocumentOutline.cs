@@ -5,8 +5,11 @@ using System.Text.RegularExpressions;
 
 namespace Dignite.Vault.Index.Search;
 
-/// <summary>A chunk as the outline needs it: where it is and which headings are above it.</summary>
-public sealed record OutlineChunk(int Ordinal, string? HeadingPath);
+/// <summary>
+/// A chunk as the outline needs it: where it is, which headings are above it, and whether it is served. A disabled chunk
+/// is passed with <paramref name="IsServed"/> <c>false</c>: it still numbers the tree, and serves nothing in it.
+/// </summary>
+public sealed record OutlineChunk(int Ordinal, string? HeadingPath, bool IsServed = true);
 
 /// <summary>
 /// One heading of a document's tree. <see cref="FirstOrdinal"/> to <see cref="LastOrdinal"/> covers the node and its
@@ -37,6 +40,11 @@ public sealed class OutlineNode
 /// exactly, and a node pointer (its 1-based position) is valid as long as they are, until the document is indexed
 /// again. The heading paths come from DataIngestion's <c>HeaderChunker</c>, which writes the headings above a chunk
 /// as their Markdown markers joined by spaces (<c># 契約書 ## 第1条</c>).
+/// <para>
+/// The tree is numbered over every chunk of the document, disabled ones included, and a node none of whose chunks is
+/// served is left out. Disabling a section's only chunk therefore hides that section and leaves a gap in its siblings'
+/// numbers, instead of moving the sections after it onto the pointers an agent already holds.
+/// </para>
 /// </summary>
 public sealed class DocumentOutline
 {
@@ -91,21 +99,30 @@ public sealed class DocumentOutline
                     Path = parent is null ? [position] : [.. parent.Path, position],
                     Level = headings[i].Level,
                     Title = headings[i].Title,
-                    HeadingPath = string.Join(' ', headings.Take(i + 1).Select(h => new string('#', h.Level) + " " + h.Title)),
-                    FirstOrdinal = chunk.Ordinal
+                    HeadingPath = string.Join(' ', headings.Take(i + 1).Select(h => new string('#', h.Level) + " " + h.Title))
                 };
                 nodes.Add(node);
                 stack.Add(node);
             }
 
+            if (!chunk.IsServed)
+            {
+                continue;
+            }
+
             foreach (var open in stack)
             {
+                if (open.ChunkCount == 0)
+                {
+                    open.FirstOrdinal = chunk.Ordinal;
+                }
+
                 open.LastOrdinal = chunk.Ordinal;
                 open.ChunkCount++;
             }
         }
 
-        return new DocumentOutline(nodes);
+        return new DocumentOutline(nodes.Where(n => n.ChunkCount > 0).ToList());
     }
 
     public OutlineNode? Find(IReadOnlyList<int> path)
