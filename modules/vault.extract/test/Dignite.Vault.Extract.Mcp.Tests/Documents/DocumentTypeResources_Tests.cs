@@ -139,6 +139,32 @@ public class DocumentTypeResources_Tests : VaultExtractTestBase<DocumentTypeReso
     }
 
     [Fact]
+    public async Task A_type_schema_lists_at_most_its_field_cap_and_says_how_many_it_has()
+    {
+        var typeId = Guid.NewGuid();
+        var count = VaultExtractMcpConsts.MaxDocumentTypeFields + 3;
+        _documentTypeAppService.GetVisibleSummariesAsync()
+            .Returns(new List<DocumentTypeSummaryDto> { new() { Id = typeId, TypeCode = "contract.general", DisplayName = "合同" } });
+        _fieldDefinitionAppService.GetListAsync(Arg.Any<GetFieldDefinitionListInput>())
+            .Returns(Enumerable.Range(0, count)
+                .Select(i => new FieldDefinitionDto
+                {
+                    Id = Guid.NewGuid(), DocumentTypeId = typeId, Name = $"field_{i:D4}", DisplayName = $"Field {i}",
+                    FieldTypeName = TextFieldType.ControlName, DisplayOrder = i
+                })
+                .ToList());
+
+        var result = await DocumentTypeResources.ReadAsync(
+            "contract.general", _documentTypeAppService, _fieldDefinitionAppService, _fieldTypeResolver,
+            _fieldTypeExtensionRegistry);
+        var schema = JsonSerializer.Deserialize<DocumentTypeSchema>(((TextResourceContents)result).Text)!;
+
+        schema.Fields.Count.ShouldBe(VaultExtractMcpConsts.MaxDocumentTypeFields);
+        schema.FieldCount.ShouldBe(count);
+        schema.FieldsTruncated.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Returns_schema_with_wrapped_display_names_ordered_by_display_order()
     {
         // #222: ReadAsync delegates to GetVisibleSummariesAsync to filter type by code, then GetListAsync

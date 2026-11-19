@@ -24,7 +24,8 @@ namespace Dignite.Vault.Index.Ingestion;
 /// Not DataIngestion's <c>KeywordEnricher</c>: it builds its prompt with the chunk text bare, while every document text
 /// sent to a model here is wrapped with <see cref="PromptBoundary"/> under a boundary rule (the LLM call rules, A); and
 /// one call that returns both kinds costs half of two. Every chunk sent is cut at <see cref="MaxChunkLength"/>: the
-/// keywords and questions of a chunk do not need its last lines, and the batch stays bounded.
+/// keywords and questions of a chunk do not need its last lines, and the batch stays bounded. A cut passage is
+/// followed by <see cref="CutNote"/>, so the model does not take the cut for the passage's end.
 /// </para>
 /// <para>
 /// An answer that cannot be read is asked for once more: in JSON schema mode a model can open the object and then emit
@@ -69,6 +70,9 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
 
     private const string ContentInstruction =
         " Return only what the passage supports; for a passage with no content, return empty lists.";
+
+    /// <summary>Follows a passage cut at <see cref="MaxChunkLength"/>, as <c>DocumentSummaryCompiler</c> marks its cuts.</summary>
+    public const string CutNote = "(The passage is cut here; it continues beyond what is shown.)";
 
     private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
 
@@ -263,8 +267,13 @@ public class IndexChunkEnricher : IngestionChunkProcessor<string>
         var user = new StringBuilder();
         for (var i = 0; i < batch.Count; i++)
         {
+            var passage = Passage(batch[i]);
             user.Append("Passage ").Append(i).AppendLine(":");
-            user.AppendLine(PromptBoundary.WrapDocument(Passage(batch[i])));
+            user.AppendLine(PromptBoundary.WrapDocument(passage));
+            if (passage.Length < batch[i].Content.Length)
+            {
+                user.AppendLine(CutNote);
+            }
         }
 
         return

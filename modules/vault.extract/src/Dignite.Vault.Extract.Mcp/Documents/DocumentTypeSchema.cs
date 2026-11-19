@@ -21,7 +21,14 @@ public sealed record DocumentTypeSchema
     /// <summary>Type display name, already wrapped with PromptBoundary.</summary>
     public string? DisplayName { get; init; }
 
+    /// <summary>The type's fields in display order, capped (see <see cref="FieldsTruncated"/>).</summary>
     public required IReadOnlyList<DocumentTypeFieldSchema> Fields { get; init; }
+
+    /// <summary>How many fields the type has, including those <see cref="Fields"/> leaves out.</summary>
+    public int FieldCount { get; init; }
+
+    /// <summary><c>true</c> when <see cref="Fields"/> holds fewer than <see cref="FieldCount"/>.</summary>
+    public bool FieldsTruncated { get; init; }
 }
 
 /// <summary>

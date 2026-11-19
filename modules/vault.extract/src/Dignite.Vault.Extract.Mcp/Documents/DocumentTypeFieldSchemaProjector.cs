@@ -16,13 +16,20 @@ namespace Dignite.Vault.Extract.Mcp.Documents;
 /// </summary>
 public static class DocumentTypeFieldSchemaProjector
 {
+    /// <summary>
+    /// The first <paramref name="maxFields"/> fields in display order (then by name, so the cut is stable). The count of
+    /// all of them is the caller's to report beside the list.
+    /// </summary>
     public static List<DocumentTypeFieldSchema> Project(
         IEnumerable<FieldDefinitionDto> fields,
+        int maxFields,
         IFieldTypeResolver fieldTypeResolver,
         IVaultExtractFieldTypeRegistry fieldTypeExtensionRegistry)
     {
         return fields
             .OrderBy(f => f.DisplayOrder)
+            .ThenBy(f => f.Name, System.StringComparer.Ordinal)
+            .Take(maxFields)
             .Select(f => Project(f, fieldTypeResolver, fieldTypeExtensionRegistry))
             .ToList();
     }

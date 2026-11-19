@@ -14,7 +14,7 @@ using Volo.Abp.Domain.Entities;
 namespace Dignite.Vault.Index.Mcp.Search;
 
 /// <summary>
-/// The three Index tools. Descriptions are compile-time constants. Every text that came from a document (titles,
+/// The four Index tools. Descriptions are compile-time constants. Every text that came from a document (titles,
 /// headings, chunk text) is wrapped with <see cref="PromptBoundary"/>; ids, pointers, counts and flags are not. The
 /// application service caps every payload and the results say when it cut.
 /// </summary>

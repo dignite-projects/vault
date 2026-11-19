@@ -9,7 +9,8 @@ namespace Dignite.Vault.Index.Reranking;
 /// candidates retrieval found. Microsoft.Extensions.AI has no reranking abstraction, so Index defines this one; a host
 /// registers an implementation, and without one search skips the step.
 /// <para>
-/// The scores order candidates within one call and mean nothing across calls or models, so Index never filters by them.
+/// The scores order candidates within one call and their scale is the model's, so Index filters by them only when the
+/// host sets a floor for that model (<c>VaultIndexSearchOptions.MinRerankScore</c>).
 /// </para>
 /// </summary>
 public interface IReranker
