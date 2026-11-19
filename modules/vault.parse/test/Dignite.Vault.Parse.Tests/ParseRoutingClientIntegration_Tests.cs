@@ -210,7 +210,7 @@ public class ParseRoutingClientIntegration_Tests : AbpIntegratedTest<ParseRoutin
     public async Task Digital_path_names_the_catch_all_engine()
     {
         var result = await _extractor.ParseAsync(
-            new MemoryStream(Encoding.UTF8.GetBytes("# Title\n\nbody text")), "readme.md", "text/markdown");
+            new MemoryStream(Encoding.UTF8.GetBytes("Title\n\nbody text")), "readme.txt", "text/plain");
 
         result.ProviderName.ShouldBe(ElBrunoExtractionClient.ProviderIdentifier);
     }

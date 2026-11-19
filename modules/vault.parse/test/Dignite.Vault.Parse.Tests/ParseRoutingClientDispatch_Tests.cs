@@ -59,6 +59,16 @@ public class ParseRoutingClientDispatch_Tests : AbpIntegratedTest<ParseRoutingCl
         result.Markdown.ShouldNotContain(FakePdfMarkdown);
     }
 
+    [Fact]
+    public async Task Dispatches_markdown_to_the_markdown_engine_over_the_catch_all()
+    {
+        var result = await _extractor.ParseAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes("# Title\n\n<!-- PageBreak -->\n\nBody")), "client.md", "text/markdown");
+
+        result.ProviderName.ShouldBe(MarkdownExtractionClient.ProviderIdentifier);
+        result.Document.SourcePages.Count.ShouldBe(2);
+    }
+
     [DependsOn(
         typeof(VaultParseModule),
         typeof(VaultParseElBrunoMarkItDownModule))]

@@ -349,9 +349,9 @@ public static partial class FigureMarkup
     /// <summary>
     /// Which lines are inside a fenced code block, fences included (CommonMark: three or more backticks or tildes,
     /// indented at most three spaces; closed by a run of the same character at least as long). A block left open runs to
-    /// the end.
+    /// the end. Shared with <see cref="PageMarkup"/>, which reads its comments by the same rule.
     /// </summary>
-    private static bool[] CodeLines(string[] lines)
+    internal static bool[] CodeLines(string[] lines)
     {
         var code = new bool[lines.Length];
         var fence = '\0';
