@@ -93,7 +93,7 @@ public class VisionLlmOcrClient : ParseOcrClient, ITransientDependency
         var section = new ExtractionDocumentSection();
         section.Sources.Add(new ExtractionDocumentSourceReference(page));
         document.Sections.Add(section);
-        MarkdownDocumentReader.ReadInto(document, section, markdown, page);
+        MarkdownDocumentReader.ReadInto(section, markdown, page);
     }
 
     /// <summary>Single-image transcription: one vision-LLM call, guarded against repetition loops.</summary>

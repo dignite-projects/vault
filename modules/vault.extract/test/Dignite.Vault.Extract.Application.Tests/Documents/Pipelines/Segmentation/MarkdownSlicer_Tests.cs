@@ -151,4 +151,26 @@ public class MarkdownSlicer_Tests
         slices[0].Text.ShouldContain("<order> details here");
         slices[1].Text.ShouldBe("Invoice B body");
     }
+
+    [Fact]
+    public void A_span_opened_at_a_figure_is_a_figure_even_when_its_marker_came_back_encoded()
+    {
+        // The LLM sees a figure's opening line as "&lt;figure>" and returns it so; the span's kind is read from the
+        // line it was cut at, not from the marker.
+        var markdown = "Contract body\n\n" + Dignite.Vault.Parse.FigureMarkup.Write("INVOICE 42", "図1") + "\n\nMore contract";
+        var boundaries = new List<SegmentBoundary>
+        {
+            new("Contract body", IsSubDocument: false),
+            new("&lt;figure>", IsSubDocument: true),
+            new("More contract", IsSubDocument: false)
+        };
+
+        MarkdownSlicer.TrySlice(markdown, boundaries, out var slices).ShouldBeTrue();
+
+        slices.Count.ShouldBe(3);
+        slices[0].IsFigure.ShouldBeFalse();
+        slices[1].IsFigure.ShouldBeTrue();
+        slices[1].Text.ShouldStartWith("<figure>\n<figcaption>図1</figcaption>");
+        slices[2].IsFigure.ShouldBeFalse();
+    }
 }

@@ -171,19 +171,19 @@ public class DocxExtractor_Tests
     }
 
     [Fact]
-    public async Task Escapes_metacharacters_in_an_image_caption()
+    public async Task Keeps_markup_in_an_image_caption_as_text()
     {
-        // #320/#480: alt-text is author-controlled source text; a bracketed link in it must not become a clickable
-        // link. The caption is block-escaped (as on the PDF path) and placed before the *[Image OCR]* marker — no
-        // longer bolded.
+        // #320: alt-text is author-controlled source text. It is the figure's <figcaption>, inside an HTML block where
+        // Markdown is not parsed (a bracketed link is text), and HTML-encoded (a tag is text too).
         StubOcr("TRANSCRIPT");
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
-            .Image(Png(alt: "See [details](http://evil.example)")));
+            .Image(Png(alt: "See [details](http://evil.example) <b>now</b>")));
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        result.Markdown.ShouldContain("See \\[details\\](http://evil.example)");
-        result.Markdown.ShouldNotContain("**See");
+        result.Markdown.ShouldContain("<figcaption>See [details](http://evil.example) &lt;b&gt;now&lt;/b&gt;</figcaption>");
+        result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem()
+            .AlternativeText.ShouldBe("See [details](http://evil.example) <b>now</b>");
     }
 
     [Fact]
@@ -249,24 +249,19 @@ public class DocxExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        result.Markdown.ShouldContain("Quarterly Revenue Diagram");
-        result.Markdown.ShouldNotContain("**Quarterly Revenue Diagram**");
-        var caption = result.Markdown.IndexOf("Quarterly Revenue Diagram", StringComparison.Ordinal);
-        var open = result.Markdown.IndexOf("*[Image OCR]*", StringComparison.Ordinal);
-        var body = result.Markdown.IndexOf("transcribed chart text", StringComparison.Ordinal);
-        caption.ShouldBeGreaterThanOrEqualTo(0);
-        open.ShouldBeGreaterThan(caption, "the caption labels the figure block above the open marker");
-        body.ShouldBeGreaterThan(open, "the transcription sits inside the markers, below the caption");
+        // The alt text is the image's alternative text, written as the figure's <figcaption>.
+        var image = result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem();
+        image.Text.ShouldBe("transcribed chart text");
+        image.AlternativeText.ShouldBe("Quarterly Revenue Diagram");
+        result.Markdown.ShouldContain(FigureMarkup.Write("transcribed chart text", "Quarterly Revenue Diagram"));
     }
 
     [Fact]
-    public async Task Wraps_the_figure_transcription_in_ImageOcrMarkup_markers()
+    public async Task Writes_the_figure_as_a_figure_block()
     {
-        // #480: the deterministic segmentation trigger keys on ImageOcrMarkup.Contains(Document.Markdown). Before
-        // #480 OpenXML figures carried no markers, so a Word-embedded standalone document (e.g. a pasted invoice
-        // photo) was never deterministically routed — only the classifier's subjective flag could catch it, exactly
-        // the single-leg unreliability #379 fixed for the PDF path. DOCX is a flow document, so the marker is the
-        // bare page-less form, byte-compatible with the PDF path.
+        // #480: the deterministic segmentation trigger keys on FigureMarkup.Contains(Document.Markdown), so a
+        // Word-embedded standalone document (e.g. a pasted invoice photo) is routed like a PDF one. DOCX is a flow
+        // document: the image refers to no page.
         StubOcr("INVOICE TOTAL 42");
 
         var docx = DocxFixtures.Build(new DocxFixtures.DocSpec()
@@ -275,9 +270,9 @@ public class DocxExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        result.Markdown.ShouldContain("*[Image OCR]*");
-        result.Markdown.ShouldContain("*[End OCR]*");
-        ImageOcrMarkup.Contains(result.Markdown).ShouldBeTrue();
+        result.Markdown.ShouldContain(FigureMarkup.Write("INVOICE TOTAL 42", caption: null));
+        FigureMarkup.Contains(result.Markdown).ShouldBeTrue();
+        result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem().Sources.ShouldBeEmpty();
     }
 
     [Fact]

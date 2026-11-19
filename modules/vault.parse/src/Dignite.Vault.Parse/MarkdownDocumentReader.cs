@@ -19,8 +19,9 @@ namespace Dignite.Vault.Parse;
 /// <see cref="ExtractionDocumentMarkdown"/>, so reading and rendering again gives the same Markdown up to blank lines.
 /// <para>
 /// Headings keep their level; a paragraph, a list item and a table cell keep their inline Markdown as written; a list
-/// item records its depth and marker; a pipe table and an HTML table become a table, the HTML one with its spans; an
-/// <see cref="ImageOcrMarkup"/> span becomes an image whose text is the transcription; a fenced block is code. Anything
+/// item records its depth and marker; a pipe table and an HTML table become a table, the HTML one with its spans; a
+/// <see cref="FigureMarkup"/> figure becomes an image whose text is its content and whose alternative text is its
+/// caption; a fenced block is code. Anything
 /// else (raw HTML, a rule, an indented block) is kept as written under <see cref="ParseElementRoles.Markdown"/>. An
 /// indented block in engine output is rarely code: it is the continuation of a construct CommonMark does not know, such
 /// as the second paragraph of a footnote definition, and read as code it would come back fenced.
@@ -39,29 +40,32 @@ public static partial class MarkdownDocumentReader
         var document = new ExtractionDocument(identifier);
         var section = new ExtractionDocumentSection();
         document.Sections.Add(section);
-        ReadInto(document, section, markdown);
+        ReadInto(section, markdown);
         return document;
     }
 
     /// <summary>
     /// Appends the blocks of <paramref name="markdown"/> to <paramref name="section"/>, each referring to
-    /// <paramref name="page"/> when one is given. An image whose markup names a page without one given refers to that
-    /// page, added to the document's source pages.
+    /// <paramref name="page"/> when one is given.
     /// </summary>
     public static void ReadInto(
-        ExtractionDocument document,
         ExtractionDocumentSection section,
         string markdown,
         ExtractionDocumentSourcePage? page = null)
     {
-        foreach (var part in SplitFigures(markdown.Replace("\r\n", "\n")))
+        foreach (var part in FigureMarkup.Split(markdown.Replace("\r\n", "\n")))
         {
             if (part.IsFigure)
             {
-                var image = new ExtractionDocumentImageElement(text: part.Text);
-                if ((page ?? PageNumbered(document, part.FigurePage)) is { } figurePage)
+                // A figure (Azure Document Intelligence's <figure>, or one an engine wrote with FigureMarkup): its
+                // content is the image's text, its <figcaption> the image's alternative text.
+                var image = new ExtractionDocumentImageElement(text: part.Text.Length > 0 ? part.Text : null)
                 {
-                    image.Sources.Add(new ExtractionDocumentSourceReference(figurePage));
+                    AlternativeText = string.IsNullOrEmpty(part.Caption) ? null : part.Caption
+                };
+                if (page is not null)
+                {
+                    image.Sources.Add(new ExtractionDocumentSourceReference(page));
                 }
 
                 section.Elements.Add(image);
@@ -282,57 +286,6 @@ public static partial class MarkdownDocumentReader
     /// <summary>A list item's continuation lines, without the indentation that put them under its marker.</summary>
     private static string Dedent(string raw)
         => string.Join('\n', raw.Split('\n').Select((line, index) => index == 0 ? line : line.TrimStart()));
-
-    private static ExtractionDocumentSourcePage? PageNumbered(ExtractionDocument document, int? number)
-    {
-        if (number is not { } n)
-        {
-            return null;
-        }
-
-        var existing = document.SourcePages.FirstOrDefault(p => p.PageNumber == n);
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var page = new ExtractionDocumentSourcePage("page-" + n.ToString(CultureInfo.InvariantCulture), n);
-        document.SourcePages.Add(page);
-        return page;
-    }
-
-    /// <summary>The Markdown between figure transcriptions, and each transcription; an open marker never closed is text.</summary>
-    private static IEnumerable<(bool IsFigure, string Text, int? FigurePage)> SplitFigures(string markdown)
-    {
-        var lines = markdown.Split('\n');
-        var text = new List<string>();
-        for (var i = 0; i < lines.Length; i++)
-        {
-            if (ImageOcrMarkup.IsOpenLine(lines[i]))
-            {
-                var close = Array.FindIndex(lines, i + 1, line => ImageOcrMarkup.IsCloseLine(line));
-                if (close > 0)
-                {
-                    if (text.Count > 0)
-                    {
-                        yield return (false, string.Join('\n', text), null);
-                        text.Clear();
-                    }
-
-                    yield return (true, string.Join('\n', lines[(i + 1)..close]).Trim('\n'), ImageOcrMarkup.TryParsePage(lines[i]));
-                    i = close;
-                    continue;
-                }
-            }
-
-            text.Add(lines[i]);
-        }
-
-        if (text.Count > 0)
-        {
-            yield return (false, string.Join('\n', text), null);
-        }
-    }
 
     [GeneratedRegex(@"^\s{0,3}#{1,6}[ \t]*")]
     private static partial Regex AtxOpening();

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Azure;
@@ -76,6 +77,22 @@ public class AzureDocumentIntelligenceOcrClient_Tests
         result.Markdown.ShouldBe("# Invoice\n\n| Item | Price |");
         result.DetectedLanguage.ShouldBe("ja");
         result.IsComplete.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Should_Read_A_Figure_Into_An_Image_With_Its_Caption()
+    {
+        // The layout model's Markdown writes a figure as <figure>, its caption as <figcaption>: the format Vault's own
+        // engines write, so it becomes an image element like theirs and renders back the same.
+        const string figure = "<figure>\n<figcaption>Figure 2 Sales</figcaption>\n\nValues\n300\n\nJan Feb Mar\n\n</figure>";
+        var transport = new MockTransport(SucceededBody("# Report\n\n" + figure + "\n\nThis is footnote if the figure have."));
+
+        var result = await Provider(transport).ParseAsync(FakeImage(), "upload", "");
+
+        var image = result.Document.EnumerateContent().OfType<Microsoft.Extensions.Documents.ExtractionDocumentImageElement>().ShouldHaveSingleItem();
+        image.Text.ShouldBe("Values\n300\n\nJan Feb Mar");
+        image.AlternativeText.ShouldBe("Figure 2 Sales");
+        result.Markdown.ShouldBe("# Report\n\n" + figure + "\n\nThis is footnote if the figure have.");
     }
 
     [Fact]

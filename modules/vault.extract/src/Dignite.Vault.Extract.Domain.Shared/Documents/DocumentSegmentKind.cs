@@ -28,9 +28,9 @@ public enum DocumentSegmentKind
 
     /// <summary>
     /// An embedded-figure OCR span (#306) that the detection pass judged a standalone document of its own — an
-    /// invoice or receipt photo, a scanned certificate. In the document Markdown such a span is bracketed by the
-    /// in-band <c>*[Image OCR]*…*[End OCR]*</c> provenance markers, and the child seeds from the marker bodies
-    /// only (<c>ImageOcrMarkup.ExtractBodies</c>, #373).
+    /// invoice or receipt photo, a scanned certificate. In the document Markdown such a span is a
+    /// <c>&lt;figure&gt;</c>, and the child seeds from the figure's content only, without its caption
+    /// (<c>FigureMarkup.ExtractBodies</c>, #373).
     /// </summary>
     Figure = 1
 }

@@ -492,12 +492,9 @@ internal static class PdfReadingOrder
             if (item.IsFigure)
             {
                 FlushParagraph();
-                // #371/#381: bracket the figure's OCR transcription with in-band *[Image OCR p:N]*…*[End OCR]*
-                // provenance markers (MarkItDown-style). These stay in Document.Markdown (the egress payload): they
-                // annotate the bracketed text as OCR for any consumer, and the pipeline reads them to recognize the
-                // figure span (the classification embedded-document signal + the unified sub-document detection pass).
-                // The caption is a digital-text-layer line bound to this figure, so escape it; item.Text is the OCR
-                // transcription (already Markdown) and is emitted verbatim inside the markers.
+                // The figure becomes an image element: item.Text (the OCR transcription, already Markdown) is its text
+                // and the caption line bound to it its alternative text. The renderer writes it as a <figure>
+                // (FigureMarkup), which stays in Document.Markdown and which the pipeline reads as the figure span.
                 blocks.Add(new PdfFigureBlock(item.Bounds, item.Text, item.Caption, item.PageNumber));
                 continue;
             }

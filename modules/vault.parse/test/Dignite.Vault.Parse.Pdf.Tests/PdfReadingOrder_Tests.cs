@@ -73,9 +73,8 @@ public class PdfReadingOrder_Tests
         md.ShouldContain("TRANSCRIPT");
         // Caption is consumed by the figure block and rendered once (not left in the body text too).
         CountOccurrences(md, "Figure 1: A sample chart").ShouldBe(1);
-        // The caption labels the figure: it sits immediately before the transcription.
-        md.IndexOf("Figure 1", StringComparison.Ordinal)
-            .ShouldBeLessThan(md.IndexOf("TRANSCRIPT", StringComparison.Ordinal));
+        // The caption is the figure's alternative text: its <figcaption>, ahead of the transcription.
+        md.ShouldContain(FigureMarkup.Write("TRANSCRIPT", "Figure 1: A sample chart"));
     }
 
     [Fact]
@@ -259,15 +258,14 @@ public class PdfReadingOrder_Tests
     public void Render_does_not_escape_the_ocr_transcription_of_a_figure()
     {
         // A figure transcription is OCR-provider Markdown (here, a table); it is intentional structure and
-        // must be emitted verbatim, never escaped. #371/#381: it is now bracketed by the *[Image OCR]*…*[End OCR]*
-        // provenance markers (no page anchor here — the Figure carries no page number), but the transcription is verbatim.
+        // must be emitted verbatim, never escaped, inside its <figure>.
         var figures = new List<PdfReadingOrder.Figure>
         {
             new(new PdfRectangle(0, 400, 200, 520), "| a | b |\n| --- | --- |\n| 1 | 2 |")
         };
 
         PdfReadingOrder.Render(Array.Empty<PdfReadingOrder.TextLine>(), figures)
-            .ShouldBe(ImageOcrMarkup.OpenMarker + "\n| a | b |\n| --- | --- |\n| 1 | 2 |\n" + ImageOcrMarkup.CloseMarker);
+            .ShouldBe("<figure>\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n</figure>");
     }
 
     [Fact]

@@ -14,7 +14,7 @@ One uploaded file does not always hold one document. A scan of a whole folder ca
 | Case | Detected when | The parent document | What becomes a sub-document |
 | --- | --- | --- | --- |
 | **Container** (a bundle) | The classifier judges the document to be a bundle of several documents | Gets **no type and no fields**, and never fires `DocumentReadyEto` | Each constituent document found in its text |
-| **Embedded documents** | The classifier flags an embedded standalone document, or the text contains transcribed images (`*[Image OCR]*` blocks) | Keeps its own type and fields | Each embedded standalone document (a photographed receipt inside a report, for example) |
+| **Embedded documents** | The classifier flags an embedded standalone document, or the text contains transcribed images (`<figure>` blocks) | Keeps its own type and fields | Each embedded standalone document (a photographed receipt inside a report, for example) |
 
 In both cases an LLM reads the whole Markdown once and proposes where each part starts and ends; cover sheets, indexes and transmittal pages are skipped. A container needs at least two parts; anything less, an untrusted split, more than `MaxSegmentsPerDocument` parts (default 50), or Markdown over `MaxSegmentationMarkdownLength` (default 200,000 characters) leaves the container unsplit with the non-blocking `SegmentationIncomplete` review reason. Both limits are in [`Vault:ExtractBehavior`](../configuration/ai-provider.md#cross-cutting-llm-behavior-extractbehavior).
 

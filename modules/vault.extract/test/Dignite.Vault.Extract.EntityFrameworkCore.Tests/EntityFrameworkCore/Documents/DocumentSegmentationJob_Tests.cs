@@ -54,7 +54,7 @@ public class DocumentSegmentationJobTestModule : AbpModule
         context.Services.AddSingleton(workflow);
 
         // Lower the caps so the bound tests don't need 50 slices / 200k chars. All other tests in this class use
-        // <= 2 distinct slices and < 130-char Markdown (the *[Image OCR p:N]* / *[End OCR]* figure markers add ~30 chars per figure),
+        // <= 2 distinct slices and < 130-char Markdown (a figure's <figure> / </figure> tags add ~20 chars),
         // so they are unaffected.
         context.Services.Configure<VaultExtractBehaviorOptions>(o =>
         {
@@ -152,13 +152,13 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         // with no file of its own; the parent keeps its own type, extracts normally with the transcription still
         // inline, and is never flagged.
         var invoiceText = "INVOICE No 42 Total 100";
-        var marked = $"Contract body\n{ImageOcrMarkup.Wrap(invoiceText, 1)}";
+        var marked = $"Contract body\n{FigureMarkup.Write(invoiceText, caption: null)}";
         var docId = await ArrangeContainerAsync(
             markdown: "Contract body", asContainer: false, markedMarkdown: marked);
 
         // The figure span's first line IS the open sentinel — that is the verbatim marker the LLM returns for it.
         // The parent's own prose is returned as a non-sub-document span.
-        StubSplit(("Contract body", false), (ImageOcrMarkup.OpenPagePrefix + "1]*", true));
+        StubSplit(("Contract body", false), ("&lt;figure>", true));
 
         await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = docId });
 
@@ -200,11 +200,11 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         // container was flagged SegmentationIncomplete and spawned nothing, stranding a legitimate bundle in the
         // review queue with no path out.
         var receiptText = "RECEIPT No 7 Total 70";
-        var marked = $"Invoice A first\n{ImageOcrMarkup.Wrap(receiptText, 2)}";
+        var marked = $"Invoice A first\n{FigureMarkup.Write(receiptText, caption: null)}";
         var containerId = await ArrangeContainerAsync(
             markdown: "Invoice A first", asContainer: true, markedMarkdown: marked);
 
-        StubSplit(("Invoice A first", true), (ImageOcrMarkup.OpenPagePrefix + "2]*", true));
+        StubSplit(("Invoice A first", true), ("&lt;figure>", true));
 
         await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
 
@@ -230,11 +230,11 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         // The element-of-parent case the segmentation prompt's reject-list covers (a logo / stamp / chart). The LLM
         // returns the figure span with isSubDocument=false, so nothing routes: no row, no child, no review flag.
         // Restoring figure routing (#494) must not make every logo-bearing document sprout a sub-document.
-        var marked = $"Report body\n{ImageOcrMarkup.Wrap("ACME logo", 1)}";
+        var marked = $"Report body\n{FigureMarkup.Write("ACME logo", caption: null)}";
         var docId = await ArrangeContainerAsync(
             markdown: "Report body", asContainer: false, markedMarkdown: marked);
 
-        StubSplit(("Report body", false), (ImageOcrMarkup.OpenPagePrefix + "1]*", false));
+        StubSplit(("Report body", false), ("&lt;figure>", false));
 
         await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = docId });
 
@@ -281,17 +281,17 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
     public async Task Text_Constituent_Embedding_An_Inline_Figure_Is_Kind_Text_Not_Figure()
     {
         // #371 hardening (own /code-review): a genuine text constituent (a contract) that embeds an inline figure —
-        // its slice is prose PLUS an *[Image OCR]* block (#301) — must be recorded Kind.Text. The span's kind is
+        // its slice is prose PLUS a <figure> (#301) — must be recorded Kind.Text. The span's kind is
         // the kind of its OPENING boundary (prose), NOT "does the body contain a sentinel somewhere". Otherwise it
         // would be mislabeled Figure and survive the container→type retraction (which keeps Kind==Figure), a
         // #364-class stale-sub-document leak. The child's seed also strips the sentinels (the inline figure is just
         // inline text in the spawned child).
-        var marked = $"Contract A clauses\n{ImageOcrMarkup.Wrap("FIG seal stamp", 1)}\nmore clauses\nContract B clauses";
+        var marked = $"Contract A clauses\n{FigureMarkup.Write("FIG seal stamp", caption: null)}\nmore clauses\nContract B clauses";
         var containerId = await ArrangeContainerAsync(
             markdown: "Contract A clauses\nmore clauses\nContract B clauses", asContainer: true, markedMarkdown: marked);
 
         // The LLM returns each contract as ONE span keyed on its prose first line; the inline figure stays inside
-        // contract A's span rather than being emitted as its own *[Image OCR]* boundary.
+        // contract A's span rather than being emitted as its own <figure> boundary.
         StubSplit(
             ("Contract A clauses", true),
             ("Contract B clauses", true));
@@ -302,14 +302,14 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         {
             var segments = await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId);
             segments.Count.ShouldBe(2);
-            // Both opened on prose -> both Kind.Text, even though contract A's slice body carries an *[Image OCR]*
+            // Both opened on prose -> both Kind.Text, even though contract A's slice body carries a <figure>
             // block. NONE mislabeled Figure.
             segments.ShouldAllBe(s => s.Kind == DocumentSegmentKind.Text);
 
             var contractASeg = segments.Single(s => s.SliceText.Contains("Contract A clauses"));
             contractASeg.SliceText.ShouldContain("FIG seal stamp");
-            contractASeg.SliceText.ShouldNotContain(ImageOcrMarkup.OpenPagePrefix); // sentinels stripped from the child seed
-            contractASeg.SliceText.ShouldNotContain(ImageOcrMarkup.CloseMarker);
+            contractASeg.SliceText.ShouldNotContain(FigureMarkup.OpenTag); // tags stripped from the child seed
+            contractASeg.SliceText.ShouldNotContain(FigureMarkup.CloseTag);
         });
     }
 
@@ -324,7 +324,7 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         // indexes. The container split re-detects that same figure, and it is inserted idempotently (skipped, never
         // duplicated).
         var figureText = "INVOICE No 9 Total 9";
-        var marked = $"Invoice A first\n{ImageOcrMarkup.Wrap(figureText, 1)}\nInvoice B second";
+        var marked = $"Invoice A first\n{FigureMarkup.Write(figureText, caption: null)}\nInvoice B second";
         var containerId = await ArrangeContainerAsync(
             markdown: "Invoice A first\nInvoice B second", asContainer: true, markedMarkdown: marked);
 
@@ -342,7 +342,7 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         // The container split re-detects all three spans, INCLUDING the already-routed figure.
         StubSplit(
             ("Invoice A first", true),
-            (ImageOcrMarkup.OpenPagePrefix + "1]*", true),
+            ("&lt;figure>", true),
             ("Invoice B second", true));
 
         await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
@@ -371,11 +371,11 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
     {
         // #377 edge 1: a concrete doc with one already-routed figure is re-recognized as a container; the
         // container-mode re-split returns exactly ONE new text constituent and (non-deterministically) OMITS the
-        // figure's *[Image OCR]* boundary this run. The "≥2 real bundle" guard must count the surviving figure row
+        // figure's <figure> boundary this run. The "≥2 real bundle" guard must count the surviving figure row
         // toward the bundle (not just this run's spans), so the legitimate text constituent is PERSISTED rather than
         // dropped and the container flagged incomplete. Pre-#377 the guard saw prepared.Count == 1 < 2 and flagged.
         var figureText = "INVOICE No 9 Total 9";
-        var marked = $"Invoice A whole body\n{ImageOcrMarkup.Wrap(figureText, 1)}";
+        var marked = $"Invoice A whole body\n{FigureMarkup.Write(figureText, caption: null)}";
         var containerId = await ArrangeContainerAsync(
             markdown: "Invoice A whole body", asContainer: true, markedMarkdown: marked);
 
@@ -990,8 +990,8 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
                     fileSize: 2048,
                     originalFileName: "bundle.pdf"));
 
-            // #381: the unified pass reads Document.Markdown, which now carries the inline *[Image OCR]*…*[End OCR]*
-            // figure markers (no separate marked artifact). A figure test supplies that marked content via
+            // #381: the unified pass reads Document.Markdown, which carries each figure inline as a <figure>
+            // (no separate marked artifact). A figure test supplies that marked content via
             // markedMarkdown and it becomes Document.Markdown; a non-figure test just passes plain markdown.
             var documentMarkdown = markedMarkdown ?? markdown;
             typeof(Document)

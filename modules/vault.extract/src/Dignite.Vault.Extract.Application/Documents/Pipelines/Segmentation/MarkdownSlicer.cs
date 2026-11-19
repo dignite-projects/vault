@@ -6,15 +6,15 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 
 /// <summary>
 /// A span boundary proposed by the unified sub-document detection pass (#346/#371): a <b>verbatim</b> start marker
-/// copied from the source Markdown (the <c>*[Image OCR]*</c> marker line for a figure span) plus whether the span it
+/// copied from the source Markdown (the <c>&lt;figure&gt;</c> line for a figure span) plus whether the span it
 /// opens is itself a standalone sub-document (vs the parent's own content / a cover / an element of the parent).
 /// </summary>
 public sealed record SegmentBoundary(string StartMarker, bool IsSubDocument);
 
 /// <summary>
 /// A deterministically-cut span of a source document's Markdown (#346/#371). <see cref="IsFigure"/> is the span's
-/// STRUCTURAL kind — true when its opening boundary marker is an <c>*[Image OCR]*</c> marker line (the span IS a
-/// figure), false for a text span even when it embeds an inline figure block (#371: kind comes from the boundary,
+/// STRUCTURAL kind — true when it opens at a <see cref="FigureMarkup.OpenTag"/> line (the span IS a
+/// figure), false for a text span even when it embeds an inline figure (#371: kind comes from the boundary,
 /// not from scanning the body). <see cref="Start"/> and <see cref="End"/> are the span's place in the Markdown it was
 /// cut from, <c>[Start, End)</c>, before <see cref="Text"/> was trimmed.
 /// </summary>
@@ -82,14 +82,21 @@ public static class MarkdownSlicer
                 continue; // defensively skip an empty slice (e.g. adjacent markers)
             }
 
-            // #371: the span's figure-ness is a structural property of the boundary the LLM opened it with — an
-            // *[Image OCR]* marker line means the span IS a figure; a prose first line means a text span (even if
-            // it embeds an inline figure block). Carry it here rather than scanning the slice body downstream.
+            // #371: the span's figure-ness is a structural property of the line the LLM opened it at — a <figure> line
+            // means the span IS a figure; a prose first line means a text span (even if it embeds an inline figure).
+            // Read from the Markdown, not from the marker: the LLM saw "&lt;figure>" and may return it encoded.
             slices.Add(new MarkdownSlice(
-                text, boundaries[i].IsSubDocument, slices.Count, ImageOcrMarkup.IsOpenLine(boundaries[i].StartMarker), start, end));
+                text, boundaries[i].IsSubDocument, slices.Count, FigureMarkup.IsOpenLine(LineAt(markdown, positions[i])), start, end));
         }
 
         return slices.Count > 0;
+    }
+
+    /// <summary>The line of <paramref name="markdown"/> that starts at <paramref name="start"/>.</summary>
+    private static string LineAt(string markdown, int start)
+    {
+        var end = markdown.IndexOf('\n', start);
+        return end < 0 ? markdown[start..] : markdown[start..end];
     }
 
     private static int FindMarker(string markdown, string? marker, int cursor)

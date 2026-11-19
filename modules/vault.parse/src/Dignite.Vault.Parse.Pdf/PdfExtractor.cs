@@ -316,10 +316,9 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
                     var transcription = ExtractionDocumentMarkdown.Render(ocr).Trim();
                     if (transcription.Length > 0)
                     {
-                        // Inline output (#301): woven into the page Markdown at the reading position, bracketed by
-                        // *[Image OCR p:N]*…*[End OCR]* provenance markers (#371/#381) carrying the page anchor. The
-                        // figure span — its transcription + page — travels in Document.Markdown (the markers stay in
-                        // the egress); the unified sub-document detection pass routes it from there.
+                        // Inline output (#301): an image element at the reading position, its text the transcription
+                        // and its source this page. Document.Markdown carries it as a <figure> (FigureMarkup); the
+                        // unified sub-document detection pass routes it from there.
                         figures.Add(new PdfReadingOrder.Figure(
                             image.BoundingBox, transcription, pageContent.Frame.Number));
                     }

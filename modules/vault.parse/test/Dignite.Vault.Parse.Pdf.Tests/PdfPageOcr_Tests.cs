@@ -118,7 +118,7 @@ public class PdfPageOcr_Tests
         var result = await CreateExtractor(ocrPages: false).ParseAsync(new MemoryStream(DigitalThenScanned()), "mixed.pdf", "application/pdf");
 
         result.Markdown.ShouldContain("Figure transcription");
-        ImageOcrMarkup.Contains(result.Markdown).ShouldBeTrue();
+        FigureMarkup.Contains(result.Markdown).ShouldBeTrue();
         ((string)_ocr.ReceivedCalls().ShouldHaveSingleItem().GetArguments()[2]!).ShouldStartWith("image/");
     }
 

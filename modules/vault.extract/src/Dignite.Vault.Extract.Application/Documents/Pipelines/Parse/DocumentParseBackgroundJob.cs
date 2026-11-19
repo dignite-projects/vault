@@ -200,12 +200,10 @@ public class DocumentParseBackgroundJob
                 }
             }
 
-            // #381: the PDF provider brackets each embedded-figure transcription with *[Image OCR p:N]*…*[End OCR]*
-            // provenance markers (#371). These are no longer stripped — they are MarkItDown-style annotations that
-            // stay in Document.Markdown (the egress payload) so any consumer — human, RAG engine, LLM — can see the
-            // bracketed text came from OCR. The title generated below therefore runs over the marked Markdown, which
-            // is fine: the markers are ordinary italic-annotated content, exactly as a re-ingested MarkItDown document
-            // already carries them.
+            // #381: each embedded image is written as a <figure> holding its transcription (FigureMarkup, the way
+            // Azure Document Intelligence writes a figure). It stays in Document.Markdown (the egress payload), so any
+            // consumer — human, RAG engine, LLM — can see the text came from an image. The title generated below runs
+            // over that Markdown, figures included.
             var title = await TryGenerateTitleAsync(result!.Markdown, _cancellationTokenProvider.Token)
                 ?? MarkdownTitleExtractor.ExtractTitle(result.Markdown)
                 ?? FallbackTitleFromFileName(workItem.OriginalFileName);
@@ -362,7 +360,7 @@ public class DocumentParseBackgroundJob
         // Advance classification as soon as text extraction completes. OCR has no quality gate:
         // #196 found average OCR confidence does not predict real quality. Quality issues are handled later through classification review
         // plus operator rerun / re-upload. Figure sub-document routing now rides classification (#371): the embedded
-        // *[Image OCR]* markers make the classifier flag an embedded document and enqueue the unified pass — no
+        // <figure> blocks make the classifier flag an embedded document and enqueue the unified pass — no
         // separate figure-routing enqueue here anymore.
         //
         // #623: a document that already carries an operator-confirmed declared type at this point (set by

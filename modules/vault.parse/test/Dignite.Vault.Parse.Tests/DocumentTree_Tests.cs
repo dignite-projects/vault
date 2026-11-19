@@ -90,38 +90,41 @@ public class DocumentTree_Tests
     }
 
     [Fact]
-    public void A_figure_transcription_becomes_an_image_on_its_page()
+    public void A_figure_becomes_an_image_whose_caption_is_its_alternative_text()
     {
-        const string markdown = "前文\n\n*[Image OCR p:2]*\n| a | b |\n| --- | --- |\n*[End OCR]*\n\n後文";
+        const string markdown = "前文\n\n<figure>\n<figcaption>表1 売上</figcaption>\n\n| a | b |\n| --- | --- |\n\n</figure>\n\n後文";
 
         var document = MarkdownDocumentReader.Read(markdown, "doc");
         var elements = document.Sections.Single().Elements;
 
         var image = elements[1].ShouldBeOfType<ExtractionDocumentImageElement>();
         image.Text.ShouldBe("| a | b |\n| --- | --- |");
-        image.Sources.Single().Page.PageNumber.ShouldBe(2);
-        document.SourcePages.Single().PageNumber.ShouldBe(2);
+        image.AlternativeText.ShouldBe("表1 売上");
         ExtractionDocumentMarkdown.Render(document).ShouldBe(markdown);
     }
 
     [Fact]
-    public void An_open_figure_marker_never_closed_is_ordinary_text()
+    public void An_open_figure_tag_never_closed_is_ordinary_text()
     {
-        Elements("*[Image OCR]*\n本文").Single().ShouldBeOfType<ExtractionDocumentTextElement>();
+        Elements("<figure>\n本文").Single().ShouldBeOfType<ExtractionDocumentTextElement>();
     }
 
     [Fact]
-    public void Text_that_reads_as_a_figure_marker_is_written_escaped_so_no_figure_is_made_of_it()
+    public void Text_that_reads_as_a_figure_tag_is_written_escaped_so_no_figure_is_made_of_it()
     {
-        // A document's own text with a line that is a marker: a paragraph (an open marker no close follows, which the
-        // reader keeps as text) and a list item's continuation.
-        var paragraph = Render("*[Image OCR]*\n本文");
-        var list = Render("- 項目\n  *[End OCR]*");
+        // A document's own text with a line that is a tag: an open tag no close follows (which the reader keeps as
+        // text) and a list item holding a close tag line.
+        var paragraph = Render("<figure>\n本文");
+        var document = new ExtractionDocument("doc");
+        var section = new ExtractionDocumentSection();
+        document.Sections.Add(section);
+        section.Elements.Add(new ExtractionDocumentTextElement(new TextContent("項目\n</figure>"), ParseElementRoles.ListItem));
+        var list = ExtractionDocumentMarkdown.Render(document);
 
-        paragraph.ShouldBe("\\*[Image OCR]*\n本文");
-        list.ShouldBe("- 項目\n  \\*[End OCR]*");
-        ImageOcrMarkup.Contains(paragraph + "\n\n" + list).ShouldBeFalse();
-        ImageOcrMarkup.ExtractBodies(paragraph + "\n\n" + list).ShouldBeEmpty();
+        paragraph.ShouldBe("\\<figure>\n本文");
+        list.ShouldBe("- 項目\n  \\</figure>");
+        FigureMarkup.Contains(paragraph + "\n\n" + list).ShouldBeFalse();
+        FigureMarkup.ExtractBodies(paragraph + "\n\n" + list).ShouldBeEmpty();
     }
 
     [Fact]
@@ -159,9 +162,10 @@ public class DocumentTree_Tests
         var section = new ExtractionDocumentSection();
         document.Sections.Add(section);
 
-        MarkdownDocumentReader.ReadInto(document, section, "## 見出し\n\n本文\n\n| a |\n| --- |\n| 1 |", page);
+        MarkdownDocumentReader.ReadInto(section, "## 見出し\n\n本文\n\n| a |\n| --- |\n| 1 |\n\n<figure>\n\n図\n\n</figure>", page);
 
-        section.Elements.Count.ShouldBe(3);
+        section.Elements.Count.ShouldBe(4);
+        section.Elements[3].ShouldBeOfType<ExtractionDocumentImageElement>();
         section.Elements.ShouldAllBe(element => element.Sources.Single().Page == page);
     }
 

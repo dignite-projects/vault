@@ -791,9 +791,8 @@ public class DocxExtractor : ParseExtractionClient, ITransientDependency
         DocxExtractionState state,
         CancellationToken cancellationToken)
     {
-        // DOCX is a flow document — no page concept — so the figure marker is the bare page-less form (#480).
         var block = await OpenXmlFigureTranscriber.TranscribeAsync(
-            mainPart, relationshipId, caption, pageNumber: null, state, _options, _ocr, Logger, cancellationToken);
+            mainPart, relationshipId, caption, state, _options, _ocr, Logger, cancellationToken);
         if (block is not null)
         {
             blocks.Add(block);

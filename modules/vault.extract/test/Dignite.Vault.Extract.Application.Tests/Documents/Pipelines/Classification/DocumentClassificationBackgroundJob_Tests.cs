@@ -292,8 +292,8 @@ public class DocumentClassificationBackgroundJob_Tests
     {
         // #371 D6(b): the common case — a small, figure-FREE document the classifier does NOT flag as embedding a
         // standalone document must NOT pay for the heavy segmentation pass. After #379 the figure arm keys purely on
-        // the deterministic ImageOcrMarkup.Contains signal, so this guards a regression that drops the
-        // ContainsEmbeddedDocument disjunct or spuriously routes a document with no figure sentinels at all.
+        // the deterministic FigureMarkup.Contains signal, so this guards a regression that drops the
+        // ContainsEmbeddedDocument disjunct or spuriously routes a document with no figure at all.
         var doc = CreateDocument("A short single service agreement with no embedded documents.");
         SetupDocumentRepository(doc);
 
@@ -319,11 +319,11 @@ public class DocumentClassificationBackgroundJob_Tests
         // #379 (HIGH) — the within-window embedded-figure recall hole. A figure-bearing document whose Document.Markdown
         // fits INSIDE the classification truncation window (MaxTextLengthPerExtraction = 8000) but whose embedded figure
         // the multi-objective classifier under-flagged (ContainsEmbeddedDocument = false) must STILL route the unified
-        // pass — figure recall keys purely on the deterministic ImageOcrMarkup.Contains signal over Document.Markdown
-        // (#381: the *[Image OCR]* markers now live in Document.Markdown itself), decoupled from both the LLM flag and
+        // pass — figure recall keys purely on the deterministic FigureMarkup.Contains signal over Document.Markdown
+        // (#381: each figure is a <figure> in Document.Markdown itself), decoupled from both the LLM flag and
         // the truncation window. The focused segmentation pass then owns the per-span standalone-vs-element judgment (a
         // decorative figure is a clean no-op there, not a review flag).
-        var markdown = "Contract body.\n" + ImageOcrMarkup.Wrap("INVOICE\nVendor: Acme\nTotal: $4,200", pageNumber: 2);
+        var markdown = "Contract body.\n\n" + FigureMarkup.Write("INVOICE\nVendor: Acme\nTotal: $4,200", caption: null);
         markdown.Length.ShouldBeLessThan(8000); // guards the in-window premise (distinct from the over-window case below)
         var doc = CreateDocument(markdown);
         SetupDocumentRepository(doc);
@@ -353,9 +353,9 @@ public class DocumentClassificationBackgroundJob_Tests
         // #371/#379: a figure-bearing document whose Document.Markdown exceeds the classification truncation window
         // (MaxTextLengthPerExtraction = 8000) may carry an embedded figure the classifier never saw (the tail was
         // truncated out of the prompt). It must route even when ContainsEmbeddedDocument is false. Routing is
-        // window-INDEPENDENT: ImageOcrMarkup.Contains is evaluated over the FULL Document.Markdown (#381), not the
-        // truncated classification input, so the figure marker at the tail is still detected.
-        var markdown = ImageOcrMarkup.Wrap(new string('x', 9000), pageNumber: 2);
+        // window-INDEPENDENT: FigureMarkup.Contains is evaluated over the FULL Document.Markdown (#381), not the
+        // truncated classification input, so the figure at the tail is still detected.
+        var markdown = FigureMarkup.Write(new string('x', 9000), caption: null);
         markdown.Length.ShouldBeGreaterThan(8000); // guards the over-window premise
         var doc = CreateDocument(markdown);
         SetupDocumentRepository(doc);

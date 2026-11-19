@@ -148,12 +148,11 @@ internal static class PdfElements
                     break;
 
                 case PdfFigureBlock figure:
-                    if (figure.Caption is { Length: > 0 } caption)
+                    // The caption line bound to the figure is its alternative text, as the shared tree defines it.
+                    var image = new ExtractionDocumentImageElement(text: figure.Transcription)
                     {
-                        yield return Sourced(new ExtractionDocumentTextElement(new TextContent(MarkdownText.EscapeBlockText(caption))), page, figure.Bounds);
-                    }
-
-                    var image = new ExtractionDocumentImageElement(text: figure.Transcription);
+                        AlternativeText = figure.Caption is { Length: > 0 } caption ? caption : null
+                    };
                     if (page is not null)
                     {
                         image.Sources.Add(new ExtractionDocumentSourceReference(page, Polygon(figure.Bounds)));

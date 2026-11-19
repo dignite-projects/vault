@@ -15,8 +15,9 @@ namespace Dignite.Vault.Parse;
 /// <para>
 /// One block per element, a blank line between blocks: a heading at its level, a paragraph's text as written (it may
 /// carry inline Markdown), consecutive list items as one list, a table as a pipe table, or as an HTML table when a cell
-/// spans rows or columns (a pipe table cannot say so), and an image's OCR text inside <see cref="ImageOcrMarkup"/>. A
-/// line of text that would read as one of those markers is escaped (<see cref="ImageOcrMarkup.Escape"/>).
+/// spans rows or columns (a pipe table cannot say so), and an image as a figure (<see cref="FigureMarkup"/>): its OCR
+/// text inside, its alternative text as the caption. A line of text that would read as a figure's opening or closing
+/// tag is escaped (<see cref="FigureMarkup.Escape"/>).
 /// Page headers and footers stay in the tree and out of the Markdown. Sections only group; a section's own text payload
 /// is a paragraph.
 /// </para>
@@ -48,7 +49,7 @@ public static class ExtractionDocumentMarkdown
             case ExtractionDocumentSection section:
                 if (section.Content is TextContent { Text.Length: > 0 } payload)
                 {
-                    writer.Block(ImageOcrMarkup.Escape(payload.Text.TrimEnd()), section.Sources);
+                    writer.Block(FigureMarkup.Escape(payload.Text.TrimEnd()), section.Sources);
                 }
 
                 var items = new List<ExtractionDocumentTextElement>();
@@ -79,7 +80,7 @@ public static class ExtractionDocumentMarkdown
             case ExtractionDocumentTextElement text:
                 if (RenderText(text) is { Length: > 0 } rendered)
                 {
-                    writer.Block(ImageOcrMarkup.Escape(rendered), text.Sources);
+                    writer.Block(FigureMarkup.Escape(rendered), text.Sources);
                 }
 
                 break;
@@ -100,8 +101,9 @@ public static class ExtractionDocumentMarkdown
                 writer.Span(tableStart, table.Sources);
                 break;
 
-            case ExtractionDocumentImageElement image when !string.IsNullOrWhiteSpace(image.Text):
-                writer.Block(ImageOcrMarkup.Wrap(image.Text.Trim('\n'), image.Sources.FirstOrDefault()?.Page.PageNumber), image.Sources);
+            case ExtractionDocumentImageElement image
+                when !string.IsNullOrWhiteSpace(image.Text) || !string.IsNullOrWhiteSpace(image.AlternativeText):
+                writer.Block(FigureMarkup.Write(image.Text, image.AlternativeText), image.Sources);
                 break;
         }
     }
@@ -150,7 +152,7 @@ public static class ExtractionDocumentMarkdown
 
             var indent = parents.Count > 0 ? parents.Peek().ContentColumn : 0;
             var contentColumn = indent + marker.Length + 1;
-            var text = ImageOcrMarkup.Escape(((TextContent)item.Content!).Text.TrimEnd()).Split('\n');
+            var text = FigureMarkup.Escape(((TextContent)item.Content!).Text.TrimEnd()).Split('\n');
             if (index > 0)
             {
                 writer.Append("\n");

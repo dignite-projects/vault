@@ -60,26 +60,32 @@ public class DefaultPromptProvider_Tests
     [Fact]
     public void Segmentation_Prompt_Is_The_Unified_Sub_Document_Detection_Prompt()
     {
-        // #371: the unified pass decides per span isSubDocument over the marked Markdown, recognizing embedded-image
-        // OCR regions by their in-band *[Image OCR]* markers (the #359 "do not split an inlined figure" guard is
-        // dissolved — figure spans are now first-class detection candidates). Pin the unified framing so it cannot be
-        // silently reworded away without a deliberate test update.
+        // #371: the unified pass decides per span isSubDocument over the Markdown, recognizing embedded images by
+        // their <figure> (the #359 "do not split an inlined figure" guard is dissolved — figure spans are first-class
+        // detection candidates). Pin the unified framing so it cannot be silently reworded away without a deliberate
+        // test update, and pin the tags to how the LLM reads them.
         var instructions = _provider.GetSegmentationPrompt("en").SystemInstructions;
 
         instructions.ShouldContain("isSubDocument");
-        instructions.ShouldContain(ImageOcrMarkup.OpenMarker);
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.OpenTag));
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.CloseTag));
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.CaptionOpenTag));
     }
 
     [Fact]
     public void Classification_Prompt_Asks_For_The_Embedded_Document_Signal()
     {
         // #371: container detection and the embedded-standalone-document signal both ride the classification call.
-        // The unified sub-document pass keys off containsEmbeddedDocument, and the prompt names the in-band
-        // *[Image OCR]* markers that mark each embedded-image OCR region. Pin the wording so the signal cannot be
-        // silently dropped or reworded away without a deliberate test update.
+        // The unified sub-document pass keys off containsEmbeddedDocument, and the prompt names the <figure> that holds
+        // each embedded image's text, as the LLM reads it. Pin the wording so the signal cannot be silently dropped or
+        // reworded away without a deliberate test update.
         var instructions = _provider.GetClassificationPrompt("en").SystemInstructions;
 
         instructions.ShouldContain("containsEmbeddedDocument");
-        instructions.ShouldContain(ImageOcrMarkup.OpenMarker);
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.OpenTag));
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.CloseTag));
     }
+
+    /// <summary>A line of the document as the LLM receives it, after <see cref="PromptBoundary.WrapDocument"/>.</summary>
+    private static string AsTheLlmReadsIt(string line) => PromptBoundary.WrapDocument(line).Split('\n')[1];
 }
