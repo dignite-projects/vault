@@ -18,7 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Needs the upload right for the type plus the new `VaultExtract.Documents.Submit` permission. The MCP tool asks the
   user to confirm first: through the client (elicitation over a Multi Round-Trip Request) where it can, otherwise by
   refusing until `userConfirmed=true`. `vault_extract_list_document_types` takes `includeExtractionSchema` and then
-  gives each field its value schema and extraction prompt. See
+  gives each field its value schema and extraction prompt. The Markdown and the original file can instead be uploaded
+  with one-time links (`POST .../documents/submission-uploads`, MCP `vault_extract_create_submission_upload`, which
+  returns the `curl` command) and named by id; a submitted original is kept as an upload keeps its file, under the same
+  type, size and duplicate checks. The links are Dignite Blob Management upload tickets: **a host installs
+  `Dignite.Abp.BlobManagement.Application`, `.HttpApi` and `.EntityFrameworkCore` (a migration adds its two tables) and
+  declares the managed container `extract-submissions`**; until Blob Management has a stable release its packages come
+  from abp-modules' GitHub Packages feed (`GITHUB_PACKAGES_TOKEN` to restore). See
   [Submitting Processed Content](docs/en/documents/submitting-content.md).
 
 - **Markdown files are read with their pages.** `.md` / `text/markdown` goes to a Markdown engine beside the Parse

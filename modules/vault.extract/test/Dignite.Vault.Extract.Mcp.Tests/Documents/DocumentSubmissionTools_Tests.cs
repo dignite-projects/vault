@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents;
@@ -47,7 +48,7 @@ public class DocumentSubmissionTools_Tests : VaultExtractTestBase<DocumentSubmis
         var tool = McpServerTool.Create(method, target: null, new McpServerToolCreateOptions { Services = ServiceProvider });
 
         var properties = tool.ProtocolTool.InputSchema.GetProperty("properties");
-        foreach (var name in new[] { "markdown", "documentTypeCode", "fields", "fieldSources", "title", "language", "cabinetId", "userConfirmed", "tenantId" })
+        foreach (var name in new[] { "markdown", "markdownFileId", "originalFileId", "documentTypeCode", "fields", "fieldSources", "title", "language", "cabinetId", "userConfirmed", "tenantId" })
         {
             properties.TryGetProperty(name, out _).ShouldBeTrue(name);
         }
@@ -88,10 +89,10 @@ public class DocumentSubmissionTools_Tests : VaultExtractTestBase<DocumentSubmis
         var cabinetId = Guid.NewGuid();
 
         var result = await DocumentSubmissionTools.SubmitAsync(
-            "# Invoice",
             _documentAppService,
             Server(mrtr: false, elicitation: false),
             Context(Server(mrtr: false, elicitation: false)),
+            markdown: "# Invoice",
             documentTypeCode: "invoice",
             fields: new Dictionary<string, JsonElement> { ["total"] = JsonDocument.Parse("1200").RootElement.Clone() },
             fieldSources: new Dictionary<string, List<string>> { ["total"] = ["Total 1200"] },
@@ -153,16 +154,66 @@ public class DocumentSubmissionTools_Tests : VaultExtractTestBase<DocumentSubmis
         });
 
         var result = await DocumentSubmissionTools.SubmitAsync(
-            "# Invoice", _documentAppService, server, context, userConfirmed: true, serviceProvider: ServiceProvider);
+            _documentAppService, server, context, markdown: "# Invoice", userConfirmed: true, serviceProvider: ServiceProvider);
 
         result.Declined.ShouldBeTrue();
         result.Submitted.ShouldBeFalse();
         await _documentAppService.DidNotReceiveWithAnyArgs().SubmitAsync(default!);
     }
 
+    [Fact]
+    public async Task A_submission_with_its_original_file_is_not_asked_to_confirm()
+    {
+        var originalId = Guid.NewGuid();
+        var markdownId = Guid.NewGuid();
+        _documentAppService.SubmitAsync(Arg.Any<SubmitDocumentInput>()).Returns(new DocumentDto { Id = Guid.NewGuid() });
+        var server = Server(mrtr: true, elicitation: true);
+
+        var result = await DocumentSubmissionTools.SubmitAsync(
+            _documentAppService, server, Context(server),
+            markdownFileId: markdownId.ToString(), originalFileId: originalId.ToString(), serviceProvider: ServiceProvider);
+
+        result.Submitted.ShouldBeTrue();
+        await _documentAppService.Received(1).SubmitAsync(Arg.Is<SubmitDocumentInput>(input =>
+            input.Markdown == null && input.MarkdownFileId == markdownId && input.OriginalFileId == originalId));
+    }
+
+    [Fact]
+    public async Task An_upload_link_is_made_absolute_and_comes_with_its_commands()
+    {
+        var fileId = Guid.NewGuid();
+        _documentAppService.CreateSubmissionUploadAsync(Arg.Any<CreateSubmissionUploadInput>()).Returns(new SubmissionUploadDto
+        {
+            FileId = fileId,
+            UploadUrl = "/api/blob-management/uploads/abc",
+            ExpirationTime = DateTime.UtcNow.AddMinutes(10),
+            MaxSize = 1024
+        });
+        GetRequiredService<Microsoft.Extensions.Options.IOptions<VaultExtractMcpOptions>>().Value.PublicBaseUrl = "https://vault.example.com/";
+
+        var result = await DocumentSubmissionTools.CreateUploadAsync("Original", _documentAppService, serviceProvider: ServiceProvider);
+
+        result.FileId.ShouldBe(fileId);
+        result.Url.ShouldBe("https://vault.example.com/api/blob-management/uploads/abc");
+        result.Command.ShouldBe("curl -sS --fail-with-body -F \"file=@FILE_PATH\" \"https://vault.example.com/api/blob-management/uploads/abc\"");
+        result.PowerShellCommand.ShouldStartWith("curl.exe ");
+        await _documentAppService.Received(1).CreateSubmissionUploadAsync(
+            Arg.Is<CreateSubmissionUploadInput>(input => input.Kind == SubmissionFileKind.Original));
+    }
+
+    [Fact]
+    public void The_upload_tool_takes_only_its_kind_and_tenant()
+    {
+        var method = typeof(DocumentSubmissionTools).GetMethod(nameof(DocumentSubmissionTools.CreateUploadAsync))!;
+        var tool = McpServerTool.Create(method, target: null, new McpServerToolCreateOptions { Services = ServiceProvider });
+
+        var properties = tool.ProtocolTool.InputSchema.GetProperty("properties");
+        properties.EnumerateObject().Select(p => p.Name).ShouldBe(["kind", "tenantId"], ignoreOrder: true);
+    }
+
     private Task<DocumentSubmissionResult> SubmitAsync(McpServer server, bool userConfirmed)
         => DocumentSubmissionTools.SubmitAsync(
-            "# Invoice", _documentAppService, server, Context(server), userConfirmed: userConfirmed, serviceProvider: ServiceProvider);
+            _documentAppService, server, Context(server), markdown: "# Invoice", userConfirmed: userConfirmed, serviceProvider: ServiceProvider);
 
     private static McpServer Server(bool mrtr, bool elicitation)
     {

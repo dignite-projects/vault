@@ -86,6 +86,10 @@ using Volo.Abp.TenantManagement.EntityFrameworkCore;
 using Volo.Abp.Timing;
 using Volo.Abp.UI.Navigation.Urls;
 using Volo.Abp.VirtualFileSystem;
+using Dignite.Abp.BlobManagement;
+using Dignite.Abp.BlobManagement.EntityFrameworkCore;
+using Dignite.Abp.BlobManagement.Presets;
+using Dignite.Vault.Extract.Documents;
 
 namespace Dignite.Vault.Extract.Host;
 
@@ -161,6 +165,12 @@ namespace Dignite.Vault.Extract.Host;
     typeof(AbpNotificationCenterApplicationModule),
     typeof(AbpNotificationCenterHttpApiModule),
     typeof(AbpNotificationCenterEntityFrameworkCoreModule),
+
+    // Blob Management: the staging area of submission uploads (the extract-submissions container below). Its HTTP API
+    // serves the anonymous upload endpoint the links point at.
+    typeof(BlobManagementApplicationModule),
+    typeof(BlobManagementHttpApiModule),
+    typeof(BlobManagementEntityFrameworkCoreModule),
 
     // Extract infrastructure modules
     typeof(VaultParseModule),
@@ -633,6 +643,16 @@ public class VaultExtractHostModule : AbpModule
                     fileSystem.BasePath = Path.Combine(
                         hostingEnvironment.ContentRootPath, "App_Data", "blobs");
                 });
+            });
+
+            // Where a client's submission uploads wait until the submission takes them (a managed Blob Management
+            // container, on the default storage). Any type up to the upload limit: the upload link narrows the types
+            // per kind, and the submission checks an original against Extract's own allow-list.
+            options.Containers.Configure(DocumentSubmissionConsts.UploadContainerName, container =>
+            {
+                container.UseBlobManagementContainer();
+                container.UseAnyPreset(preset =>
+                    preset.MaxSizeInMegabytes = (int)Math.Ceiling(DocumentConsts.MaxUploadFileBytes / (1024d * 1024d)));
             });
         });
     }

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Dignite.Abp.BlobManagement.Files;
 using Dignite.Abp.FlexFields;
 using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Extract.Documents.Cabinets;
@@ -22,6 +23,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Volo.Abp;
 using Volo.Abp.BackgroundJobs;
+using Volo.Abp.BlobStoring;
+using Volo.Abp.Domain.Entities;
+using Volo.Abp.Users;
 using Volo.Abp.Clients;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.EventBus.Distributed;
@@ -69,6 +73,9 @@ public class DocumentSubmissionService : ITransientDependency
     private readonly ICurrentTenant _currentTenant;
     private readonly ICurrentClient _currentClient;
     private readonly ICancellationTokenProvider _cancellationTokenProvider;
+    private readonly ICurrentUser _currentUser;
+    private readonly IBlobContainer<VaultExtractDocumentContainer> _documentContainer;
+    private readonly IAbpLazyServiceProvider _lazyServiceProvider;
 
     public ILogger<DocumentSubmissionService> Logger { get; set; } = NullLogger<DocumentSubmissionService>.Instance;
 
@@ -90,8 +97,14 @@ public class DocumentSubmissionService : ITransientDependency
         IClock clock,
         ICurrentTenant currentTenant,
         ICurrentClient currentClient,
-        ICancellationTokenProvider cancellationTokenProvider)
+        ICancellationTokenProvider cancellationTokenProvider,
+        ICurrentUser currentUser,
+        IBlobContainer<VaultExtractDocumentContainer> documentContainer,
+        IAbpLazyServiceProvider lazyServiceProvider)
     {
+        _currentUser = currentUser;
+        _documentContainer = documentContainer;
+        _lazyServiceProvider = lazyServiceProvider;
         _documentRepository = documentRepository;
         _fieldRepository = fieldRepository;
         _extractionClient = extractionClient;
@@ -117,12 +130,21 @@ public class DocumentSubmissionService : ITransientDependency
     public virtual async Task<Document> SubmitAsync(SubmitDocumentInput input, DocumentType? type)
     {
         // Everything that can refuse the submission is checked before anything is written.
-        if (string.IsNullOrWhiteSpace(input.Markdown))
+        if (input.Markdown != null && input.MarkdownFileId.HasValue)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedMarkdownTwice);
+        }
+
+        var submittedMarkdown = input.MarkdownFileId.HasValue
+            ? await ReadStagedMarkdownAsync(input.MarkdownFileId.Value)
+            : input.Markdown;
+
+        if (string.IsNullOrWhiteSpace(submittedMarkdown))
         {
             throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedMarkdownEmpty);
         }
 
-        if (input.Markdown.Length > DocumentConsts.MaxSubmittedMarkdownLength)
+        if (submittedMarkdown.Length > DocumentConsts.MaxSubmittedMarkdownLength)
         {
             throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedMarkdownTooLong)
                 .WithData("MaxLength", DocumentConsts.MaxSubmittedMarkdownLength);
@@ -141,29 +163,56 @@ public class DocumentSubmissionService : ITransientDependency
             values = FlexFieldInputReader.Read(input.Fields, definitions, type.TypeCode, _fieldTypeExtensionRegistry);
         }
 
+        var original = input.OriginalFileId.HasValue
+            ? await ReadStagedOriginalAsync(input.OriginalFileId.Value)
+            : null;
+
         var documentId = _guidGenerator.Create();
-        var tree = await ReadMarkdownAsync(documentId, input.Markdown);
+        var tree = await ReadMarkdownAsync(documentId, submittedMarkdown);
         var markdown = ExtractionDocumentMarkdown.Render(tree);
         if (string.IsNullOrWhiteSpace(markdown))
         {
             throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedMarkdownEmpty);
         }
 
-        var document = new Document(documentId, _currentTenant.Id, fileOrigin: null, cabinetId: input.CabinetId);
+        // The original is stored as an upload stores its file, under a blob name of Extract's own container: the staged
+        // copy is Blob Management's and goes once the document holds it.
+        FileOrigin? fileOrigin = null;
+        if (original != null)
+        {
+            fileOrigin = new FileOrigin(
+                _guidGenerator.Create().ToString("N") + original.Extension,
+                _currentUser.UserName ?? string.Empty,
+                original.ContentType,
+                original.ContentHash,
+                original.Bytes.LongLength,
+                originalFileName: original.FileName);
+        }
+
+        var document = new Document(documentId, _currentTenant.Id, fileOrigin, cabinetId: input.CabinetId);
         if (type != null)
         {
             _pipelineRunManager.DeclareDocumentType(document, type.Id);
         }
 
+        if (fileOrigin != null)
+        {
+            using var saveStream = new MemoryStream(original!.Bytes, writable: false);
+            await _documentContainer.SaveAsync(fileOrigin.BlobName, saveStream);
+        }
+
         await _documentRepository.InsertAsync(document, autoSave: true);
 
-        // No file: the same shape a sub-document's announcement has.
+        // With no file, the same shape a sub-document's announcement has.
         await _distributedEventBus.PublishAsync(
             new DocumentUploadedEto
             {
                 DocumentId = document.Id,
                 TenantId = document.TenantId,
-                EventTime = _clock.Now
+                EventTime = _clock.Now,
+                FileName = fileOrigin?.OriginalFileName,
+                FileSize = fileOrigin?.FileSize ?? 0,
+                ContentType = fileOrigin?.ContentType
             });
 
         await CompleteTextExtractionAsync(document, tree, markdown, input);
@@ -194,12 +243,149 @@ public class DocumentSubmissionService : ITransientDependency
             await _flexFieldIndexManager.SynchronizeAsync(document);
         }
 
+        // The staged uploads have been taken; Blob Management removes their bytes once this unit of work commits.
+        foreach (var stagedId in new[] { input.MarkdownFileId, input.OriginalFileId })
+        {
+            if (stagedId.HasValue)
+            {
+                await FileService.DeleteAsync(stagedId.Value);
+            }
+        }
+
         Logger.LogInformation(
             "Document {DocumentId} submitted by client {ClientId}: type {TypeCode}, {FieldCount} field values, {PageCount} pages.",
             document.Id, _currentClient.Id, type?.TypeCode, values?.Count, tree.SourcePages.Count);
 
         return document;
     }
+
+    /// <summary>
+    /// A link that stages one file for a submission: in <see cref="DocumentSubmissionConsts.UploadContainerName"/>, for
+    /// the current user, limited to what the submission will accept - a Markdown file's longest text, or an upload's
+    /// largest file of an accepted type (by the content type detected from its bytes).
+    /// </summary>
+    public virtual async Task<SubmissionUploadDto> CreateUploadAsync(SubmissionFileKind kind)
+    {
+        var maxSize = kind == SubmissionFileKind.Markdown ? MaxMarkdownFileBytes : DocumentConsts.MaxUploadFileBytes;
+        var contentTypes = kind == SubmissionFileKind.Markdown
+            ? new List<string> { "text/markdown", "text/plain" }
+            : DocumentConsts.AllowedUploadContentTypesByExtension.Values
+                .SelectMany(types => types)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        var ticket = await FileService.CreateUploadTicketAsync(new CreateBlobManagementUploadTicketInput
+        {
+            ContainerName = DocumentSubmissionConsts.UploadContainerName,
+            MaxSize = maxSize,
+            AllowedContentTypes = contentTypes,
+            LifetimeInSeconds = DocumentSubmissionConsts.UploadLinkLifetimeSeconds
+        });
+
+        return new SubmissionUploadDto
+        {
+            FileId = ticket.FileId,
+            UploadUrl = ticket.UploadUrl,
+            ExpirationTime = ticket.ExpirationTime,
+            MaxSize = maxSize
+        };
+    }
+
+    /// <summary>The bytes the longest submittable Markdown can take in UTF-8, plus a byte order mark.</summary>
+    protected static long MaxMarkdownFileBytes => (long)DocumentConsts.MaxSubmittedMarkdownLength * 4 + 3;
+
+    /// <summary>Blob Management's file service: resolved only when a submission stages or names a file.</summary>
+    protected IBlobManagementFileService FileService => _lazyServiceProvider.LazyGetRequiredService<IBlobManagementFileService>();
+
+    /// <summary>A staged Markdown file's text: UTF-8, a byte order mark skipped; anything else is refused.</summary>
+    protected virtual async Task<string> ReadStagedMarkdownAsync(Guid fileId)
+    {
+        var (_, bytes) = await ReadStagedAsync(fileId, MaxMarkdownFileBytes, VaultExtractErrorCodes.Document.SubmittedMarkdownTooLong);
+        var start = bytes.AsSpan().StartsWith(Encoding.UTF8.Preamble) ? Encoding.UTF8.Preamble.Length : 0;
+        try
+        {
+            return StrictUtf8.GetString(bytes, start, bytes.Length - start);
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedMarkdownNotUtf8);
+        }
+    }
+
+    /// <summary>
+    /// A staged original file, held to what an upload is held to: an accepted extension and content type (the type
+    /// Blob Management detected from the bytes, not one a client declared), the size limit, and the uploader's own
+    /// duplicates by content hash.
+    /// </summary>
+    protected virtual async Task<StagedOriginal> ReadStagedOriginalAsync(Guid fileId)
+    {
+        var (file, bytes) = await ReadStagedAsync(fileId, DocumentConsts.MaxUploadFileBytes, VaultExtractErrorCodes.Document.FileTooLarge);
+        var extension = Path.GetExtension(file.Name);
+        if (!DocumentConsts.IsAllowedUploadType(extension, file.MimeType))
+        {
+            throw new BusinessException(VaultExtractErrorCodes.Document.UnsupportedFileType)
+                .WithData("FileName", file.Name)
+                .WithData("ContentType", file.MimeType);
+        }
+
+        // UploadAsync's rule (#655): the caller's own copy of these bytes is a duplicate, another user's is not.
+        var contentHash = ContentHasher.Sha256Hex(bytes);
+        var existing = await _documentRepository.FindByContentHashAsync(contentHash, _currentUser.Id);
+        if (existing != null)
+        {
+            throw new BusinessException(existing.IsDeleted
+                    ? VaultExtractErrorCodes.Document.InRecycleBin
+                    : VaultExtractErrorCodes.Document.Duplicate)
+                .WithData("FileName", file.Name)
+                .WithData("ExistingDocumentId", existing.Id);
+        }
+
+        return new StagedOriginal(file.Name, extension, file.MimeType, contentHash, bytes);
+    }
+
+    /// <summary>
+    /// A staged file of the caller's: pending (not yet taken by a submission), in the submission container, and uploaded
+    /// for the current user. Anything else gets one answer, not found, so an id discloses nothing about another user's
+    /// uploads. Its bytes are read in full; the size is checked first.
+    /// </summary>
+    protected virtual async Task<(BlobManagementFileDto File, byte[] Bytes)> ReadStagedAsync(Guid fileId, long maxBytes, string tooLargeCode)
+    {
+        BlobManagementFileDto? file;
+        try
+        {
+            file = await FileService.GetAsync(fileId);
+        }
+        catch (EntityNotFoundException)
+        {
+            file = null;
+        }
+
+        if (file is not { IsPending: true }
+            || !string.Equals(file.ContainerName, DocumentSubmissionConsts.UploadContainerName, StringComparison.Ordinal)
+            || file.CreatorId != _currentUser.Id)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedFileNotFound).WithData("FileId", fileId);
+        }
+
+        if (file.Size > maxBytes)
+        {
+            throw new BusinessException(tooLargeCode)
+                .WithData("FileName", file.Name)
+                .WithData("MaxBytes", maxBytes)
+                .WithData("MaxLength", DocumentConsts.MaxSubmittedMarkdownLength);
+        }
+
+        var content = await FileService.GetContentAsync(fileId);
+        await using var stream = content.GetStream();
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, _cancellationTokenProvider.Token);
+        return (file, buffer.ToArray());
+    }
+
+    /// <summary>A staged original file, checked and ready to be stored.</summary>
+    protected sealed record StagedOriginal(string FileName, string Extension, string ContentType, string ContentHash, byte[] Bytes);
+
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     /// <summary>The submitted Markdown read as Parse reads a Markdown file: pages from its page breaks.</summary>
     protected virtual async Task<ExtractionDocument> ReadMarkdownAsync(Guid documentId, string markdown)

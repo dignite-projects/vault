@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 namespace Dignite.Vault.Extract.Documents;
@@ -16,10 +15,26 @@ public class SubmitDocumentInput
     /// The document's text, as Markdown. Pages may be marked the way Azure Document Intelligence marks them
     /// (<c>&lt;!-- PageBreak --&gt;</c> between two pages; <c>PageHeader</c> / <c>PageFooter</c> / <c>PageNumber</c>
     /// comments for running headers, footers and page numbers): the pages then reach the document's layout, and the
-    /// markers do not reach its text. At most <c>DocumentConsts.MaxSubmittedMarkdownLength</c> characters.
+    /// markers do not reach its text. At most <c>DocumentConsts.MaxSubmittedMarkdownLength</c> characters. Give it
+    /// here or as an uploaded file (<see cref="MarkdownFileId"/>), one of the two.
     /// </summary>
-    [Required]
-    public string Markdown { get; set; } = default!;
+    public string? Markdown { get; set; }
+
+    /// <summary>
+    /// The Markdown as a UTF-8 file uploaded with a submission upload link
+    /// (<see cref="IDocumentAppService.CreateSubmissionUploadAsync"/>, <see cref="SubmissionFileKind.Markdown"/>), by
+    /// the file id the link gave: for a client that converts on its own machine and does not pass the text through a
+    /// model. Instead of <see cref="Markdown"/>.
+    /// </summary>
+    public Guid? MarkdownFileId { get; set; }
+
+    /// <summary>
+    /// The document's original file, uploaded with a submission upload link
+    /// (<see cref="SubmissionFileKind.Original"/>), by its file id. Optional: with it the document keeps its file as an
+    /// upload does (download, preview, re-parse from it), checked against the same accepted types and the uploader's
+    /// duplicates; without it the document has its text only.
+    /// </summary>
+    public Guid? OriginalFileId { get; set; }
 
     /// <summary>The title; the first heading of the Markdown when left out.</summary>
     public string? Title { get; set; }

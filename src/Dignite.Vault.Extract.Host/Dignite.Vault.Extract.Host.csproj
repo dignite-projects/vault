@@ -94,6 +94,14 @@
     <PackageReference Include="Volo.Abp.EntityFrameworkCore.SqlServer" />
   </ItemGroup>
 
+  <!-- Dignite Blob Management: stages the files a client uploads for a submission (upload tickets). Extract itself
+       references only its contracts; the host installs the module, its HTTP API (the upload endpoint) and its tables. -->
+  <ItemGroup>
+    <PackageReference Include="Dignite.Abp.BlobManagement.Application" />
+    <PackageReference Include="Dignite.Abp.BlobManagement.HttpApi" />
+    <PackageReference Include="Dignite.Abp.BlobManagement.EntityFrameworkCore" />
+  </ItemGroup>
+
   <ItemGroup Label="Operator notifications (#680)">
     <!-- Application publishes the uploader notifications; these are the host's choices for what happens to them:
          the live-push channel (SignalR hub at /signalr-hubs/notifications) and a persistent inbox + REST API

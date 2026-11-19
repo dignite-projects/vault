@@ -13,6 +13,7 @@ using Volo.Abp.Application;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DistributedLocking;
 using Volo.Abp.Gdpr;
+using Dignite.Abp.BlobManagement;
 using Volo.Abp.Mapperly;
 using Volo.Abp.Modularity;
 
@@ -28,6 +29,7 @@ namespace Dignite.Vault.Extract;
     typeof(AbpDistributedLockingAbstractionsModule),   // DocumentWriteLock
     typeof(AbpNotificationsAbstractionsModule),   // operator notifications for the uploader (#680)
     typeof(AbpGdprAbstractionsModule),   // the user-data deletion event the uploader's name is erased on (#698)
+    typeof(BlobManagementApplicationContractsModule),   // submission uploads; the host installs Blob Management itself
     typeof(AbpMapperlyModule)
     )]
 public class VaultExtractApplicationModule : AbpModule

@@ -553,6 +553,18 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         return await MapToDtoAsync(document);
     }
 
+    public virtual async Task<SubmissionUploadDto> CreateSubmissionUploadAsync(CreateSubmissionUploadInput input)
+    {
+        // Staging a file is the first step of a submission, so it needs what a submission needs before it knows its
+        // type: entry and the Submit row. The submission judges the type when it takes the file.
+        await _documentAccess.CheckEntryAsync();
+        await _documentAccess.CheckAsync(DocumentAccessRule.Submit, DocumentAccessSubject.None);
+
+        return await LazyServiceProvider
+            .LazyGetRequiredService<Submissions.DocumentSubmissionService>()
+            .CreateUploadAsync(input.Kind);
+    }
+
     /// <summary>
     /// The cabinet a new document is filed in (#194): with one given, the caller must hold the Cabinets permission
     /// (fail-closed, symmetric with the frontend canViewCabinets gate - the upload right does not cover filing, and

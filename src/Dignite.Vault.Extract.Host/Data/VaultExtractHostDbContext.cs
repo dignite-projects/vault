@@ -1,3 +1,4 @@
+using Dignite.Abp.BlobManagement.EntityFrameworkCore;
 using Dignite.NotificationCenter.EntityFrameworkCore;
 using Dignite.Vault.Extract.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -71,5 +72,9 @@ public class VaultExtractHostDbContext
         // same database. The outbox/inbox tables it also declares are already configured above, once - the outbox
         // stays on this context (ConfigureDistributedEventBus), so UseNotificationCenterEfCoreOutbox is NOT used.
         builder.ConfigureNotificationCenter();
+
+        // Dignite Blob Management tables (BlobFileDescriptors, BlobDirectoryDescriptors): the staged submission
+        // uploads. As above, this context only builds the migration; the module uses its own DbContext.
+        builder.ConfigureBlobManagement();
     }
 }
