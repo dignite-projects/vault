@@ -16,9 +16,10 @@ public sealed class DocumentSummaries
     /// <summary>
     /// Moves when compiling changes enough that summaries written before should not be served: outline and catalog
     /// serve only this version, and the next compilation redoes older ones. 2: document summaries no longer written from
-    /// one sentence or the title alone, and summaries stating numbers their text does not are dropped.
+    /// one sentence or the title alone, and summaries stating numbers their text does not are dropped. 3: sections are
+    /// keyed by an outline numbered over disabled chunks too, so a document with one keyed them on other sections.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 

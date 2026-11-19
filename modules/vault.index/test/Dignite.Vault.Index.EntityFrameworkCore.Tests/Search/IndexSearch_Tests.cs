@@ -397,6 +397,28 @@ public class IndexSearch_Tests : VaultIndexTestBase<VaultIndexIngestionTestModul
         last.NextPointer.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task Disabling_a_sections_only_chunk_hides_its_node_and_keeps_every_other_pointer()
+    {
+        await IndexAsync(LeaseDoc, LeaseType, Alice, Lease, "賃貸借契約書");
+        var before = await _search.GetOutlineAsync(LeaseDoc);
+        var article2 = before.Nodes.Single(n => n.Title == "第2条（賃料）").Pointer;
+        var chunks = await WithUnitOfWorkAsync(async () =>
+            (await GetRequiredService<IRepository<Chunk, Guid>>().GetListAsync(c => c.DocumentId == LeaseDoc)).OrderBy(c => c.Ordinal).ToList());
+        chunks[1].HeadingPath.ShouldBe("# 賃貸借契約書 ## 第1条（目的）");
+
+        await GetRequiredService<IIndexChunkAppService>().DisableAsync(chunks[1].Id);
+        var after = await _search.GetOutlineAsync(LeaseDoc);
+
+        // Article 1's only chunk is out: its node goes, and article 2 keeps the pointer an agent already holds.
+        after.Nodes.Select(n => n.Title).ShouldBe(["賃貸借契約書", "第2条（賃料）"]);
+        after.Nodes.Single(n => n.Title == "第2条（賃料）").Pointer.ShouldBe(article2);
+        (await _search.ReadAsync(new IndexReadInput { Pointer = article2 })).Text.ShouldContain("賃料を支払う");
+        await Should.ThrowAsync<EntityNotFoundException>(() => _search.ReadAsync(new IndexReadInput { Pointer = $"node:{LeaseDoc:D}/1.1" }));
+        after.ChunkCount.ShouldBe(2);
+        after.Nodes[0].ChunkCount.ShouldBe(2);
+    }
+
     private async Task<List<Guid>> DocumentsFoundAsync(string query, string? typeCode = null, List<DocumentFieldFilter>? fieldFilters = null)
         => (await _search.SearchAsync(new IndexSearchInput
         {

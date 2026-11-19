@@ -15,10 +15,18 @@ public static class ChunkScopeFilter
     /// <summary>Rows retrieval may return: in retrieval (document not hidden, chunk not disabled), and within the read scope.</summary>
     public static IQueryable<T> Apply<T>(IQueryable<T> query, ChunkSearchScope scope)
         where T : IChunkScopeFields
+        => ApplyWithDisabled(query.Where(x => !x.IsDisabled), scope);
+
+    /// <summary>
+    /// <see cref="Apply{T}"/> with the disabled chunks kept: what a document's outline numbers its nodes over, so that
+    /// disabling a chunk does not renumber the sections after it. Nothing read from these rows may be served.
+    /// </summary>
+    public static IQueryable<T> ApplyWithDisabled<T>(IQueryable<T> query, ChunkSearchScope scope)
+        where T : IChunkScopeFields
     {
         ArgumentNullException.ThrowIfNull(scope);
 
-        query = query.Where(x => !x.IsHidden && !x.IsDisabled);
+        query = query.Where(x => !x.IsHidden);
         if (scope.RequestedDocumentIds is not null)
         {
             var documentIds = scope.RequestedDocumentIds.ToList();
