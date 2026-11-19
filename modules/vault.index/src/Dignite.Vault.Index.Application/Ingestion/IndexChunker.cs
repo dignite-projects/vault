@@ -14,6 +14,7 @@ using Dignite.Vault.Index.Profiles;
 using Microsoft.Extensions.DataIngestion;
 using Microsoft.Extensions.DataIngestion.Chunkers;
 using Microsoft.ML.Tokenizers;
+using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Vault.Index.Ingestion;
@@ -83,12 +84,17 @@ public class IndexChunker : ITransientDependency
     /// The ranges of <paramref name="markdown"/> read from each page (Extract's layout), for
     /// <see cref="ChunkingStrategy.Page"/>; without them a page profile chunks by headings.
     /// </param>
+    /// <param name="maxChunks">
+    /// The most chunks the document may have; past it <see cref="VaultIndexErrorCodes.TooManyChunks"/> is thrown before
+    /// <paramref name="enricher"/> reads any chunk, since the enricher calls the model for every one of them.
+    /// </param>
     public virtual async Task<IReadOnlyList<IndexChunkDraft>> ChunkAsync(
         string markdown,
         string identifier,
         ResolvedIndexProfile profile,
         IngestionChunkProcessor<string>? enricher = null,
         IReadOnlyList<DocumentPageSpansDto>? pages = null,
+        int? maxChunks = null,
         CancellationToken cancellationToken = default)
     {
         var options = new IngestionChunkerOptions(SharedTokenizer.Value)
@@ -97,10 +103,28 @@ public class IndexChunker : ITransientDependency
             OverlapTokens = profile.OverlapTokens
         };
 
-        // DataIngestion's order: the chunker, then the chunk processors over its output.
-        var chunks = profile.Strategy == ChunkingStrategy.Page && pages is { Count: > 0 }
+        // DataIngestion's order: the chunker, then the chunk processors over its output. The chunks are counted between
+        // the two: a document over the cap fails before the enricher pays a model call for any of its chunks.
+        var cut = new List<IngestionChunk<string>>();
+        var chunker = profile.Strategy == ChunkingStrategy.Page && pages is { Count: > 0 }
             ? PageChunksAsync(markdown, identifier, pages, options, cancellationToken)
             : DocumentChunksAsync(Prepare(markdown), identifier, profile.Strategy, options, cancellationToken);
+        await foreach (var chunk in chunker)
+        {
+            if (!string.IsNullOrWhiteSpace(chunk.Content))
+            {
+                cut.Add(chunk);
+            }
+        }
+
+        if (maxChunks is { } max && cut.Count > max)
+        {
+            throw new BusinessException(VaultIndexErrorCodes.TooManyChunks)
+                .WithData("Count", cut.Count)
+                .WithData("Max", max);
+        }
+
+        var chunks = Replay(cut);
         if (enricher is not null)
         {
             chunks = enricher.ProcessAsync(chunks, cancellationToken);
@@ -126,6 +150,17 @@ public class IndexChunker : ITransientDependency
         }
 
         return drafts;
+    }
+
+    /// <summary>Chunks already cut, as the stream a chunk processor reads.</summary>
+    private static async IAsyncEnumerable<IngestionChunk<string>> Replay(IReadOnlyList<IngestionChunk<string>> chunks)
+    {
+        foreach (var chunk in chunks)
+        {
+            yield return chunk;
+        }
+
+        await Task.CompletedTask;
     }
 
     /// <summary>The chunks of one prepared Markdown text, by <paramref name="strategy"/>.</summary>
@@ -231,7 +266,10 @@ public class IndexChunker : ITransientDependency
 
         // Inside a pipe table: the line holding the offset and the line before it both start with a pipe.
         var lineStart = offset == 0 ? 0 : markdown.LastIndexOf('\n', offset - 1) + 1;
-        if (lineStart > 0 && IsTableLine(markdown, lineStart) && IsTableLine(markdown, markdown.LastIndexOf('\n', lineStart - 2) + 1))
+        // The line before starts after the newline before it; on the second line of the text (the first is empty, as
+        // after a leading newline) there is none.
+        var previousLineStart = lineStart >= 2 ? markdown.LastIndexOf('\n', lineStart - 2) + 1 : 0;
+        if (lineStart > 0 && IsTableLine(markdown, lineStart) && IsTableLine(markdown, previousLineStart))
         {
             var next = lineStart;
             while (next < markdown.Length && IsTableLine(markdown, next))

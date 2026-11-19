@@ -313,7 +313,9 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         }
 
         var enricher = _enricherProvider.Create(profile.Enrichment, document.Language);
-        var drafts = await _chunker.ChunkAsync(document.Markdown, document.Id.ToString(), profile, enricher, document.Pages);
+        // Over MaxChunksPerDocument the chunker throws TooManyChunks before the enricher calls the model.
+        var drafts = await _chunker.ChunkAsync(
+            document.Markdown, document.Id.ToString(), profile, enricher, document.Pages, _options.MaxChunksPerDocument);
         if (enricher is { CachedChunkCount: > 0 } reusing)
         {
             Logger.LogInformation(
@@ -323,13 +325,6 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         if (drafts.Count == 0)
         {
             throw new BusinessException(VaultIndexErrorCodes.EmptyDocument);
-        }
-
-        if (drafts.Count > _options.MaxChunksPerDocument)
-        {
-            throw new BusinessException(VaultIndexErrorCodes.TooManyChunks)
-                .WithData("Count", drafts.Count)
-                .WithData("Max", _options.MaxChunksPerDocument);
         }
 
         // The document title in front of every chunk (which already starts with its heading path) gives the vector
