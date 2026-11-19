@@ -125,4 +125,67 @@ public class FigureMarkup_Tests
         FigureMarkup.IsCloseLine("</figure>").ShouldBeTrue();
         FigureMarkup.IsCloseLine("</figure> trailing").ShouldBeFalse();
     }
+
+    [Fact]
+    public void A_numbered_figure_opens_with_its_id()
+    {
+        var written = FigureMarkup.Write("inv", "図1", FigureMarkup.Id(3));
+
+        written.ShouldStartWith("<figure id=\"fig-3\">\n<figcaption>図1</figcaption>");
+        FigureMarkup.IsOpenLine("<figure id=\"fig-3\">").ShouldBeTrue();
+        FigureMarkup.Split(written).Single().ShouldBe(new FigureMarkupPart(true, "inv", "図1"));
+        Should.Throw<System.ArgumentException>(() => FigureMarkup.OpenLine("a\"><script>"));
+    }
+
+    [Fact]
+    public void A_tag_indented_four_spaces_is_code_not_a_figure()
+    {
+        // CommonMark reads an HTML block only at three spaces of indentation or fewer.
+        FigureMarkup.IsOpenLine("   <figure>").ShouldBeTrue();
+        FigureMarkup.IsOpenLine("    <figure>").ShouldBeFalse();
+        FigureMarkup.IsCloseLine("\t</figure>").ShouldBeFalse();
+        FigureMarkup.Contains("text\n\n    <figure>\n\n    x\n\n    </figure>").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Tags_in_a_fenced_code_block_are_code()
+    {
+        const string markdown = "intro\n\n```html\n<figure>\n  <img src=\"a.png\">\n</figure>\n```\n\nafter";
+
+        FigureMarkup.Contains(markdown).ShouldBeFalse();
+        FigureMarkup.Split(markdown).Single().IsFigure.ShouldBeFalse();
+        FigureMarkup.Escape(markdown).ShouldBeSameAs(markdown);
+        FigureMarkup.ExtractBodies(markdown).ShouldBeEmpty();
+        FigureMarkup.Strip(markdown).ShouldBe(markdown);
+        FigureMarkup.OpensFigureAt(markdown, markdown.IndexOf("<figure>", System.StringComparison.Ordinal)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_figure_after_a_closed_code_block_is_a_figure()
+    {
+        var markdown = "~~~\ncode\n~~~\n\n" + FigureMarkup.Write("inv", null, FigureMarkup.Id(1));
+
+        FigureMarkup.Contains(markdown).ShouldBeTrue();
+        FigureMarkup.OpensFigureAt(markdown, markdown.IndexOf("<figure", System.StringComparison.Ordinal)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_transcription_with_code_keeps_its_code_and_its_figure_closes()
+    {
+        // A closing tag inside the transcription's code block is code: written as is, and the figure ends at its own.
+        var written = FigureMarkup.Write("```\n</figure>\n```\nafter", null);
+
+        written.ShouldBe("<figure>\n\n```\n</figure>\n```\nafter\n\n</figure>");
+        FigureMarkup.Split(written).Single().Text.ShouldBe("```\n</figure>\n```\nafter");
+    }
+
+    [Fact]
+    public void A_code_block_the_transcription_leaves_open_is_closed_inside_the_figure()
+    {
+        // A truncated transcription would otherwise hold the closing tag, and everything after it, as code.
+        var written = FigureMarkup.Write("```js\nlet a", null);
+
+        written.ShouldBe("<figure>\n\n```js\nlet a\n```\n\n</figure>");
+        FigureMarkup.Split(written + "\n\nafter").First().ShouldBe(new FigureMarkupPart(true, "```js\nlet a\n```", null));
+    }
 }

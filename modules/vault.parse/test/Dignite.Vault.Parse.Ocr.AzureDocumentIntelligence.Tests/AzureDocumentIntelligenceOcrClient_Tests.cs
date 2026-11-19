@@ -83,7 +83,7 @@ public class AzureDocumentIntelligenceOcrClient_Tests
     public async Task Should_Read_A_Figure_Into_An_Image_With_Its_Caption()
     {
         // The layout model's Markdown writes a figure as <figure>, its caption as <figcaption>: the format Vault's own
-        // engines write, so it becomes an image element like theirs and renders back the same.
+        // engines write, so it becomes an image element like theirs.
         const string figure = "<figure>\n<figcaption>Figure 2 Sales</figcaption>\n\nValues\n300\n\nJan Feb Mar\n\n</figure>";
         var transport = new MockTransport(SucceededBody("# Report\n\n" + figure + "\n\nThis is footnote if the figure have."));
 
@@ -92,7 +92,8 @@ public class AzureDocumentIntelligenceOcrClient_Tests
         var image = result.Document.EnumerateContent().OfType<Microsoft.Extensions.Documents.ExtractionDocumentImageElement>().ShouldHaveSingleItem();
         image.Text.ShouldBe("Values\n300\n\nJan Feb Mar");
         image.AlternativeText.ShouldBe("Figure 2 Sales");
-        result.Markdown.ShouldBe("# Report\n\n" + figure + "\n\nThis is footnote if the figure have.");
+        // Rendered back with the figure numbered.
+        result.Markdown.ShouldBe("# Report\n\n" + figure.Replace("<figure>", "<figure id=\"fig-1\">") + "\n\nThis is footnote if the figure have.");
     }
 
     [Fact]

@@ -132,7 +132,7 @@ public class PdfExtractor_Tests
         var image = result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem();
         image.Text.ShouldBe("INVOICE No. 42");
         image.Sources.ShouldHaveSingleItem().Page.PageNumber.ShouldBe(1);
-        result.Markdown.ShouldContain(FigureMarkup.Write("INVOICE No. 42", caption: null));
+        result.Markdown.ShouldContain(FigureMarkup.Write("INVOICE No. 42", caption: null, FigureMarkup.Id(1)));
     }
 
     [Fact]

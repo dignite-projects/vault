@@ -128,7 +128,7 @@ public class PptxExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(pptx), "deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
-        result.Markdown.ShouldContain(FigureMarkup.Write("EMBEDDED DOC TEXT", caption: null));
+        result.Markdown.ShouldContain(FigureMarkup.Write("EMBEDDED DOC TEXT", caption: null, FigureMarkup.Id(1)));
         FigureMarkup.Contains(result.Markdown).ShouldBeTrue();
         result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem()
             .Sources.ShouldHaveSingleItem().Page.PageNumber.ShouldBe(2);
@@ -147,7 +147,7 @@ public class PptxExtractor_Tests
         // The alt text is the image's alternative text, written as the figure's <figcaption>.
         result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem()
             .AlternativeText.ShouldBe("Quarterly Revenue Diagram");
-        result.Markdown.ShouldContain(FigureMarkup.Write("transcribed chart text", "Quarterly Revenue Diagram"));
+        result.Markdown.ShouldContain(FigureMarkup.Write("transcribed chart text", "Quarterly Revenue Diagram", FigureMarkup.Id(1)));
     }
 
     [Fact]

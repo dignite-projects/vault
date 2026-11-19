@@ -223,7 +223,7 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
             doc.Markdown.ShouldNotBeNull();
             var markdown = doc.Markdown!;
             FigureMarkup.Contains(markdown).ShouldBeTrue();
-            markdown.ShouldContain(FigureMarkup.Write(figureBody, caption: null));
+            markdown.ShouldContain(FigureMarkup.Write(figureBody, caption: null, FigureMarkup.Id(1)));
         });
     }
 

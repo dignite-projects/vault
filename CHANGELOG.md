@@ -240,7 +240,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Markdown; the block now maps one to one onto the shared tree's image element (`Text` inside, `AlternativeText` as the
   caption), and its page stays in the tree's source references. A PDF figure's caption line and a DOCX/PPTX picture's
   alt text are now the image's `AlternativeText` (`GET .../documents/{id}/layout` shows it) and the figure's
-  `<figcaption>`, instead of a paragraph above it. Figures Azure Document Intelligence finds were kept as raw HTML
+  `<figcaption>`, instead of a paragraph above it. Figures are numbered (`<figure id="fig-1">`, the HTML `id`), so a
+  sub-document cut cannot land on an earlier figure the LLM folded into the text, and a `<figure>` in a code block is
+  code. Figures Azure Document Intelligence finds were kept as raw HTML
   before; they are now images like any other engine's, so classification and sub-document segmentation see them.
   `ImageOcrMarkup` is replaced by `FigureMarkup`, and `MarkdownDocumentReader.ReadInto` no longer takes the document.
 - **The product is called Dignite Vault** (shipped host, Angular host app, docs). The host's `AppName` — the browser tab

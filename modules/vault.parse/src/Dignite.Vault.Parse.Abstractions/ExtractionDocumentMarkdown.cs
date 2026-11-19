@@ -103,7 +103,8 @@ public static class ExtractionDocumentMarkdown
 
             case ExtractionDocumentImageElement image
                 when !string.IsNullOrWhiteSpace(image.Text) || !string.IsNullOrWhiteSpace(image.AlternativeText):
-                writer.Block(FigureMarkup.Write(image.Text, image.AlternativeText), image.Sources);
+                // Numbered in render order, so each figure's opening line is unique in the document.
+                writer.Block(FigureMarkup.Write(image.Text, image.AlternativeText, FigureMarkup.Id(++writer.Figures)), image.Sources);
                 break;
         }
     }
@@ -287,6 +288,9 @@ public static class ExtractionDocumentMarkdown
         public List<ExtractionDocumentMarkdownSpan> Spans { get; } = [];
 
         public int Position => Text.Length;
+
+        /// <summary>How many figures have been written.</summary>
+        public int Figures { get; set; }
 
         public void BeginBlock()
         {

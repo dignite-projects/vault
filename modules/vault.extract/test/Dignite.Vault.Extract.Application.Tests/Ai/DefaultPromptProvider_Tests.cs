@@ -67,7 +67,7 @@ public class DefaultPromptProvider_Tests
         var instructions = _provider.GetSegmentationPrompt("en").SystemInstructions;
 
         instructions.ShouldContain("isSubDocument");
-        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.OpenTag));
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.OpenLine("fig-N")));
         instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.CloseTag));
         instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.CaptionOpenTag));
     }
@@ -82,7 +82,7 @@ public class DefaultPromptProvider_Tests
         var instructions = _provider.GetClassificationPrompt("en").SystemInstructions;
 
         instructions.ShouldContain("containsEmbeddedDocument");
-        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.OpenTag));
+        instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.OpenLine("fig-N")));
         instructions.ShouldContain(AsTheLlmReadsIt(FigureMarkup.CloseTag));
     }
 

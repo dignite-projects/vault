@@ -253,7 +253,7 @@ public class DocxExtractor_Tests
         var image = result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem();
         image.Text.ShouldBe("transcribed chart text");
         image.AlternativeText.ShouldBe("Quarterly Revenue Diagram");
-        result.Markdown.ShouldContain(FigureMarkup.Write("transcribed chart text", "Quarterly Revenue Diagram"));
+        result.Markdown.ShouldContain(FigureMarkup.Write("transcribed chart text", "Quarterly Revenue Diagram", FigureMarkup.Id(1)));
     }
 
     [Fact]
@@ -270,7 +270,7 @@ public class DocxExtractor_Tests
 
         var result = await CreateExtractor().ParseAsync(new MemoryStream(docx), "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-        result.Markdown.ShouldContain(FigureMarkup.Write("INVOICE TOTAL 42", caption: null));
+        result.Markdown.ShouldContain(FigureMarkup.Write("INVOICE TOTAL 42", caption: null, FigureMarkup.Id(1)));
         FigureMarkup.Contains(result.Markdown).ShouldBeTrue();
         result.Document.EnumerateContent().OfType<ExtractionDocumentImageElement>().ShouldHaveSingleItem().Sources.ShouldBeEmpty();
     }

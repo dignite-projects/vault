@@ -74,7 +74,7 @@ public class PdfReadingOrder_Tests
         // Caption is consumed by the figure block and rendered once (not left in the body text too).
         CountOccurrences(md, "Figure 1: A sample chart").ShouldBe(1);
         // The caption is the figure's alternative text: its <figcaption>, ahead of the transcription.
-        md.ShouldContain(FigureMarkup.Write("TRANSCRIPT", "Figure 1: A sample chart"));
+        md.ShouldContain(FigureMarkup.Write("TRANSCRIPT", "Figure 1: A sample chart", FigureMarkup.Id(1)));
     }
 
     [Fact]
@@ -265,7 +265,7 @@ public class PdfReadingOrder_Tests
         };
 
         PdfReadingOrder.Render(Array.Empty<PdfReadingOrder.TextLine>(), figures)
-            .ShouldBe("<figure>\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n</figure>");
+            .ShouldBe("<figure id=\"fig-1\">\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n</figure>");
     }
 
     [Fact]

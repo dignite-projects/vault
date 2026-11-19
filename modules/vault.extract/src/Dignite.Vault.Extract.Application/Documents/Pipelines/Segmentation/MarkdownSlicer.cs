@@ -82,21 +82,15 @@ public static class MarkdownSlicer
                 continue; // defensively skip an empty slice (e.g. adjacent markers)
             }
 
-            // #371: the span's figure-ness is a structural property of the line the LLM opened it at — a <figure> line
-            // means the span IS a figure; a prose first line means a text span (even if it embeds an inline figure).
-            // Read from the Markdown, not from the marker: the LLM saw "&lt;figure>" and may return it encoded.
+            // #371: the span's figure-ness is a structural property of the line the LLM opened it at — a figure's
+            // opening line means the span IS a figure; a prose first line means a text span (even if it embeds an
+            // inline figure). Read from the Markdown, not from the marker: the LLM saw "&lt;figure" and may return it
+            // encoded, and a tag in a code block is not a figure.
             slices.Add(new MarkdownSlice(
-                text, boundaries[i].IsSubDocument, slices.Count, FigureMarkup.IsOpenLine(LineAt(markdown, positions[i])), start, end));
+                text, boundaries[i].IsSubDocument, slices.Count, FigureMarkup.OpensFigureAt(markdown, positions[i]), start, end));
         }
 
         return slices.Count > 0;
-    }
-
-    /// <summary>The line of <paramref name="markdown"/> that starts at <paramref name="start"/>.</summary>
-    private static string LineAt(string markdown, int start)
-    {
-        var end = markdown.IndexOf('\n', start);
-        return end < 0 ? markdown[start..] : markdown[start..end];
     }
 
     private static int FindMarker(string markdown, string? marker, int cursor)

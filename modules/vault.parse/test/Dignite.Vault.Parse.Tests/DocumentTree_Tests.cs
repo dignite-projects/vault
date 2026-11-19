@@ -92,7 +92,7 @@ public class DocumentTree_Tests
     [Fact]
     public void A_figure_becomes_an_image_whose_caption_is_its_alternative_text()
     {
-        const string markdown = "前文\n\n<figure>\n<figcaption>表1 売上</figcaption>\n\n| a | b |\n| --- | --- |\n\n</figure>\n\n後文";
+        const string markdown = "前文\n\n<figure id=\"fig-1\">\n<figcaption>表1 売上</figcaption>\n\n| a | b |\n| --- | --- |\n\n</figure>\n\n後文";
 
         var document = MarkdownDocumentReader.Read(markdown, "doc");
         var elements = document.Sections.Single().Elements;
@@ -101,6 +101,25 @@ public class DocumentTree_Tests
         image.Text.ShouldBe("| a | b |\n| --- | --- |");
         image.AlternativeText.ShouldBe("表1 売上");
         ExtractionDocumentMarkdown.Render(document).ShouldBe(markdown);
+    }
+
+    [Fact]
+    public void Figures_are_numbered_in_reading_order_whatever_they_were_numbered_before()
+    {
+        // Azure's figures carry no id, a re-read Markdown may carry stale ones: the renderer numbers them afresh.
+        const string markdown = "<figure>\n\na\n\n</figure>\n\n本文\n\n<figure id=\"fig-7\">\n\nb\n\n</figure>";
+
+        Render(markdown).ShouldBe("<figure id=\"fig-1\">\n\na\n\n</figure>\n\n本文\n\n<figure id=\"fig-2\">\n\nb\n\n</figure>");
+    }
+
+    [Fact]
+    public void A_figure_in_a_code_block_is_code()
+    {
+        // An HTML sample: the tags are code, so no figure is made of them and they are written as they are.
+        const string markdown = "```html\n<figure>\n  <img src=\"a.png\">\n</figure>\n```";
+
+        Elements(markdown).Single().ShouldBeOfType<ExtractionDocumentTextElement>().Role.ShouldBe(ParseElementRoles.Code);
+        Render(markdown).ShouldBe(markdown);
     }
 
     [Fact]

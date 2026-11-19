@@ -26,7 +26,7 @@ public class IndexChunkerTables_Tests
     {
         // A figure as Parse writes it (Azure Document Intelligence's form): the blank lines leave the transcription
         // Markdown, so its table is a table; the tags are not text.
-        const string markdown = "# 報告\n\n本文。\n\n<figure>\n<figcaption>図1 領収書</figcaption>\n\n| 品目 | 金額 |\n| --- | --- |\n| 監視 | 60,000 |\n\n</figure>\n\n後文。";
+        const string markdown = "# 報告\n\n本文。\n\n<figure id=\"fig-1\">\n<figcaption>図1 領収書</figcaption>\n\n| 品目 | 金額 |\n| --- | --- |\n| 監視 | 60,000 |\n\n</figure>\n\n後文。";
 
         var chunks = await new IndexChunker().ChunkAsync(markdown, "doc", ResolvedIndexProfile.BuiltIn);
 
