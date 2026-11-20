@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Index.Indexing;
 
 namespace Dignite.Vault.Index.Search;
 
@@ -78,6 +79,15 @@ public class IndexSearchHitDto
 
     /// <summary>The last page the text was read from; equal to <see cref="FirstPage"/> on one page.</summary>
     public int? LastPage { get; set; }
+
+    /// <summary>
+    /// Where on those pages the text was read, in reading order, as boxes in fractions of the page; <c>null</c> when
+    /// unknown (no pages, or a parse that reported no regions, such as a page read by a vision model).
+    /// </summary>
+    public List<ChunkRegionDto>? Regions { get; set; }
+
+    /// <summary>Whether the chunk holds a table or a figure; <c>null</c> when unknown.</summary>
+    public ChunkContent? Content { get; set; }
 
     /// <summary>The chunk's text, cut at <see cref="IndexSearchConsts.MaxHitTextLength"/> characters.</summary>
     public string Text { get; set; } = default!;
@@ -235,6 +245,15 @@ public class IndexReadResultDto
 
     /// <summary>The last page the text (for a node, any of its chunks) was read from; equal to <see cref="FirstPage"/> on one page.</summary>
     public int? LastPage { get; set; }
+
+    /// <summary>
+    /// Where on those pages the chunk's text was read, in reading order, as boxes in fractions of the page; <c>null</c>
+    /// for a node and when unknown (no pages, or a parse that reported no regions).
+    /// </summary>
+    public List<ChunkRegionDto>? Regions { get; set; }
+
+    /// <summary>Whether the chunk holds a table or a figure; <c>null</c> for a node and when unknown.</summary>
+    public ChunkContent? Content { get; set; }
 
     /// <summary>The text Index stored, cut at <see cref="IndexSearchConsts.MaxReadTextLength"/> characters.</summary>
     public string Text { get; set; } = default!;

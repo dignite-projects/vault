@@ -102,6 +102,8 @@ public class IndexSearchTestAppService : VaultIndexAppService, IIndexSearchTestA
                 HeadingPath = chunk.HeadingPath,
                 FirstPage = chunk.FirstPage,
                 LastPage = chunk.LastPage,
+                Regions = ChunkRegionMapping.ToDtos(chunk.Regions),
+                Content = chunk.Content,
                 Text = text,
                 TextTruncated = text.Length < chunk.Text.Length
             });

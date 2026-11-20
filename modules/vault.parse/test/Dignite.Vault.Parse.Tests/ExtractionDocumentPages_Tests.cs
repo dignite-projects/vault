@@ -82,6 +82,96 @@ public class ExtractionDocumentPages_Tests
         pages[3].Select(Text).ShouldBe(["契約書"]);
     }
 
+    [Fact]
+    public void A_region_is_placed_as_fractions_of_its_page_from_the_top_left_corner()
+    {
+        // A4 in PDF points from the bottom-left corner, as the PDF engine writes it; a text 100 pt from the left edge and
+        // 200 pt below the top edge, 300 by 40 pt.
+        var page = new ExtractionDocumentSourcePage("p1", 1, new ExtractionDocumentPageDimensions(600, 800),
+            ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
+        var map = ExtractionDocumentMarkdown.Map(OneElement(page, Rectangle(100, 560, 400, 600)));
+
+        var region = ExtractionDocumentPages.Regions(map).ShouldHaveSingleItem();
+
+        map.Markdown.Substring(region.Offset, region.Length).ShouldBe("請求書");
+        region.PageNumber.ShouldBe(1);
+        region.Left.ShouldBe(100d / 600, 0.0001);
+        region.Top.ShouldBe(200d / 800, 0.0001);
+        region.Width.ShouldBe(300d / 600, 0.0001);
+        region.Height.ShouldBe(40d / 800, 0.0001);
+    }
+
+    [Fact]
+    public void A_top_left_frame_and_normalized_coordinates_place_the_same_box()
+    {
+        var pixels = new ExtractionDocumentSourcePage("p1", 1, new ExtractionDocumentPageDimensions(1000, 2000),
+            ExtractionDocumentCoordinateUnit.Pixel, ExtractionDocumentCoordinateOrigin.TopLeft);
+        var normalized = new ExtractionDocumentSourcePage("p1", 1, null,
+            ExtractionDocumentCoordinateUnit.Normalized, ExtractionDocumentCoordinateOrigin.TopLeft);
+
+        var fromPixels = ExtractionDocumentPages.Regions(ExtractionDocumentMarkdown.Map(OneElement(pixels, Rectangle(100, 500, 600, 700))));
+        var fromFractions = ExtractionDocumentPages.Regions(ExtractionDocumentMarkdown.Map(OneElement(normalized, Rectangle(0.1, 0.25, 0.6, 0.35))));
+
+        fromPixels.ShouldHaveSingleItem().ShouldBe(fromFractions.ShouldHaveSingleItem());
+        fromPixels[0].Top.ShouldBe(0.25, 0.0001);
+        fromPixels[0].Height.ShouldBe(0.1, 0.0001);
+    }
+
+    [Fact]
+    public void A_region_that_cannot_be_placed_is_left_out()
+    {
+        // An OCR page names only the page; an engine without a page size gives coordinates in nothing known.
+        var pageOnly = new ExtractionDocumentSourcePage("p1", 1, new ExtractionDocumentPageDimensions(600, 800),
+            ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
+        var noSize = new ExtractionDocumentSourcePage("p1", 1, null,
+            ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
+
+        ExtractionDocumentPages.Regions(ExtractionDocumentMarkdown.Map(OneElement(pageOnly, null))).ShouldBeEmpty();
+        ExtractionDocumentPages.Regions(ExtractionDocumentMarkdown.Map(OneElement(noSize, Rectangle(100, 560, 400, 600)))).ShouldBeEmpty();
+        ExtractionDocumentPages.Regions(ExtractionDocumentMarkdown.Map(ThreePages())).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_table_is_placed_through_its_cells()
+    {
+        var page = new ExtractionDocumentSourcePage("p1", 1, new ExtractionDocumentPageDimensions(600, 800),
+            ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
+        var table = new ExtractionDocumentTableElement(null, 1, 2);
+        table.Sources.Add(new ExtractionDocumentSourceReference(page, Rectangle(0, 0, 600, 800)));
+        table.Cells[0, 0] = new ExtractionDocumentTableCell(new ExtractionDocumentTextElement(new TextContent("品名")), 1, 1, null);
+        table.Cells[0, 0]!.Sources.Add(new ExtractionDocumentSourceReference(page, Rectangle(0, 700, 300, 800)));
+        table.Cells[0, 1] = new ExtractionDocumentTableCell(new ExtractionDocumentTextElement(new TextContent("金額")), 1, 1, null);
+        table.Cells[0, 1]!.Sources.Add(new ExtractionDocumentSourceReference(page, Rectangle(300, 700, 600, 800)));
+        var document = new ExtractionDocument("doc");
+        document.SourcePages.Add(page);
+        var section = new ExtractionDocumentSection();
+        section.Elements.Add(table);
+        document.Sections.Add(section);
+        var map = ExtractionDocumentMarkdown.Map(document);
+
+        var regions = ExtractionDocumentPages.Regions(map);
+
+        regions.Select(region => map.Markdown.Substring(region.Offset, region.Length)).ShouldBe(["品名", "金額"]);
+        regions.Select(region => region.Left).ShouldBe([0, 0.5]);
+    }
+
+    private static ExtractionDocument OneElement(ExtractionDocumentSourcePage page, ExtractionDocumentPoint[]? polygon)
+    {
+        var document = new ExtractionDocument("doc");
+        document.SourcePages.Add(page);
+        var element = new ExtractionDocumentTextElement(new TextContent("請求書"));
+        element.Sources.Add(polygon is null ? new ExtractionDocumentSourceReference(page) : new ExtractionDocumentSourceReference(page, polygon));
+        var section = new ExtractionDocumentSection();
+        section.Elements.Add(element);
+        document.Sections.Add(section);
+        return document;
+    }
+
+    private static ExtractionDocumentPoint[] Rectangle(double left, double low, double right, double high) =>
+    [
+        new(left, low), new(right, low), new(right, high), new(left, high)
+    ];
+
     /// <summary>An invoice on page 1, a delivery note on page 2, a contract on page 3: one section per page.</summary>
     private static ExtractionDocument ThreePages()
     {

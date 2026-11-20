@@ -86,6 +86,8 @@ public class IndexChunkAppService : VaultIndexAppService, IIndexChunkAppService
                 HeadingPath = c.HeadingPath,
                 FirstPage = c.FirstPage,
                 LastPage = c.LastPage,
+                Regions = ChunkRegionMapping.ToDtos(c.Regions),
+                Content = c.Content,
                 Text = c.Text,
                 IsDisabled = c.IsDisabled,
                 Keywords = c.Keywords,

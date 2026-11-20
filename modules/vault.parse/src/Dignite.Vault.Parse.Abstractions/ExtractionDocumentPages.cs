@@ -131,6 +131,79 @@ public static class ExtractionDocumentPages
     }
 
     /// <summary>
+    /// Where on its page each element of the rendered Markdown was read, as a box in fractions of the page: one entry per
+    /// element and page (<see cref="ExtractionDocumentMarkdown.Map"/>; a table cell, not its whole table), in Markdown
+    /// order. Only a region that can be placed counts: a polygon, on a page with a number, a known coordinate origin and
+    /// a size (or normalized coordinates). An OCR page that names only the page, or an engine that reports no page size,
+    /// yields none; the page is still in <see cref="Spans"/>.
+    /// <para>
+    /// The box is the polygon's bounding box with its origin at the page's top-left corner, each coordinate a fraction of
+    /// the page's width or height: the shape of Amazon Textract's <c>BoundingBox</c> and Google Document AI's normalized
+    /// vertices. It needs no unit, so a consumer draws it on the page at whatever size it renders it.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<ExtractionDocumentPageRegion> Regions(ExtractionDocumentMarkdownMap map)
+    {
+        var result = new List<ExtractionDocumentPageRegion>();
+        foreach (var span in Leaves(map))
+        {
+            foreach (var source in span.Sources)
+            {
+                if (Box(source) is { } box && box with { Offset = span.Offset, Length = span.Length } is var region
+                    && !result.Contains(region))
+                {
+                    result.Add(region);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static ExtractionDocumentPageRegion? Box(ExtractionDocumentSourceReference source)
+    {
+        var page = source.Page;
+        if (page.PageNumber is not { } number || page.CoordinateOrigin is not { } origin
+            || source.Polygon is not { Count: > 0 } polygon)
+        {
+            return null;
+        }
+
+        // Normalized coordinates are fractions already; any other unit needs the page's size in that unit.
+        var (width, height) = page.CoordinateUnit == ExtractionDocumentCoordinateUnit.Normalized
+            ? (1d, 1d)
+            : page.Dimensions is { Width: > 0, Height: > 0 } size ? (size.Width, size.Height) : (0d, 0d);
+        if (width <= 0)
+        {
+            return null;
+        }
+
+        var left = Fraction(polygon.Min(point => point.X), width);
+        var right = Fraction(polygon.Max(point => point.X), width);
+        var low = Fraction(polygon.Min(point => point.Y), height);
+        var high = Fraction(polygon.Max(point => point.Y), height);
+        double top, bottom;
+        switch (origin)
+        {
+            case ExtractionDocumentCoordinateOrigin.TopLeft:
+                (top, bottom) = (low, high);
+                break;
+            case ExtractionDocumentCoordinateOrigin.BottomLeft:
+                (top, bottom) = (1 - high, 1 - low);
+                break;
+            default:
+                return null;
+        }
+
+        return right > left && bottom > top
+            ? new ExtractionDocumentPageRegion(0, 0, number, left, top, right - left, bottom - top)
+            : null;
+    }
+
+    /// <summary>A coordinate as a fraction of the page's extent, kept on the page, to four places (a tenth of a point on A4).</summary>
+    private static double Fraction(double value, double extent) => Math.Round(Math.Clamp(value / extent, 0, 1), 4);
+
+    /// <summary>
     /// The spans that contain no other: a table's span contains its cells' spans. In offset order (longest first at a
     /// tie), a span that contains others is directly followed by one of them.
     /// </summary>
@@ -166,3 +239,17 @@ public static class ExtractionDocumentPages
         return true;
     }
 }
+
+/// <summary>
+/// Where the Markdown range <c>[Offset, Offset + Length)</c> was read on page <see cref="PageNumber"/>: a box whose
+/// origin is the page's top-left corner, each value a fraction of the page's width (<see cref="Left"/>,
+/// <see cref="Width"/>) or height (<see cref="Top"/>, <see cref="Height"/>).
+/// </summary>
+public sealed record ExtractionDocumentPageRegion(
+    int Offset,
+    int Length,
+    int PageNumber,
+    double Left,
+    double Top,
+    double Width,
+    double Height);

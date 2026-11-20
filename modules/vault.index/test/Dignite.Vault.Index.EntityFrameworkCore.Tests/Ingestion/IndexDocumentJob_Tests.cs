@@ -227,6 +227,43 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task Chunks_are_outlined_on_their_pages_and_say_what_they_hold()
+    {
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        (await ChunksAsync()).ShouldAllBe(c => c.Regions == null && c.Content == ChunkContent.Text);
+        var calls = _model.Calls;
+
+        // A re-parse that rendered the same Markdown, now with the regions of two paragraphs: placed without re-chunking.
+        var breakAt = Contract.IndexOf("## 第2条", StringComparison.Ordinal);
+        var first = Contract.IndexOf("甲は乙に対し", StringComparison.Ordinal);
+        var second = Contract.IndexOf("乙は毎月", StringComparison.Ordinal);
+        var dto = Dto(Contract, TypeA);
+        dto.Pages =
+        [
+            new() { PageNumber = 1, Spans = [new() { Offset = 0, Length = breakAt }] },
+            new() { PageNumber = 2, Spans = [new() { Offset = breakAt, Length = Contract.Length - breakAt }] }
+        ];
+        dto.Regions =
+        [
+            new() { Offset = first, Length = 10, PageNumber = 1, Left = 0.1, Top = 0.4, Width = 0.8, Height = 0.03 },
+            new() { Offset = second, Length = 10, PageNumber = 2, Left = 0.1, Top = 0.1, Width = 0.7, Height = 0.03 }
+        ];
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        _model.Calls.ShouldBe(calls);
+        var chunks = await ChunksAsync();
+        chunks.Single(c => c.Text.Contains("住居として賃貸する")).Regions.ShouldBe([new ChunkRegion(1, 0.1, 0.4, 0.8, 0.03)]);
+        chunks.Single(c => c.Text.Contains("賃料を支払う")).Regions.ShouldBe([new ChunkRegion(2, 0.1, 0.1, 0.7, 0.03)]);
+
+        // Without a layout this time (Extract fails open), the chunks keep what they had.
+        _extract.FindReadyAsync(DocumentId).Returns(Dto(Contract, TypeA));
+        await RunAsync(IndexDocumentJobKind.Sync, T3);
+        (await ChunksAsync()).Single(c => c.Text.Contains("賃料を支払う")).Regions.ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task Changed_text_replaces_the_chunks_and_vectors()
     {
         ExtractReturns(Contract, TypeA);

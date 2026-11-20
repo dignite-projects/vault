@@ -54,6 +54,7 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
         }
 
         var (_, fieldsByType) = await _referenceMaps.ResolveAsync(new[] { document });
+        var layout = await GetLayoutAsync(document);
 
         return new DocumentIntegrationDto
         {
@@ -66,15 +67,17 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
             Language = document.Language,
             Markdown = document.Markdown ?? string.Empty,
             ExtractedFields = _referenceMaps.AssembleExtractedFields(document, fieldsByType),
-            Pages = await GetPagesAsync(document)
+            Pages = layout?.Pages,
+            Regions = layout?.Regions
         };
     }
 
     /// <summary>
-    /// The Markdown's ranges per page, from the layout the parse kept, while the Markdown is still the one it rendered.
-    /// Fails open: a layout that cannot be read leaves the pages out and the document usable.
+    /// The Markdown's ranges per page and the page regions of its elements, from the layout the parse kept, while the
+    /// Markdown is still the one it rendered. Fails open: a layout that cannot be read leaves both out and the document
+    /// usable.
     /// </summary>
-    protected virtual async Task<List<DocumentPageSpansDto>?> GetPagesAsync(Document document)
+    protected virtual async Task<DocumentIntegrationLayout?> GetLayoutAsync(Document document)
     {
         try
         {
@@ -98,7 +101,24 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
                     Spans = page.Value.Select(span => new DocumentTextSpanDto { Offset = span.Offset, Length = span.Length }).ToList()
                 })
                 .ToList();
-            return pages.Count == 0 ? null : pages;
+            if (pages.Count == 0)
+            {
+                return null;
+            }
+
+            var regions = ExtractionDocumentPages.Regions(map)
+                .Select(region => new DocumentPageRegionDto
+                {
+                    Offset = region.Offset,
+                    Length = region.Length,
+                    PageNumber = region.PageNumber,
+                    Left = region.Left,
+                    Top = region.Top,
+                    Width = region.Width,
+                    Height = region.Height
+                })
+                .ToList();
+            return new DocumentIntegrationLayout(pages, regions.Count == 0 ? null : regions);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -113,3 +133,6 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
         return new ListResultDto<Guid>(ids);
     }
 }
+
+/// <summary>What a document's current layout places: its Markdown's ranges per page and its elements' page regions.</summary>
+public record DocumentIntegrationLayout(List<DocumentPageSpansDto> Pages, List<DocumentPageRegionDto>? Regions);

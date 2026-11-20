@@ -5,7 +5,12 @@ using Dignite.Vault.Index.Generations;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Profiles;
 using Dignite.Vault.Index.Runs;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Volo.Abp;
 using Volo.Abp.EntityFrameworkCore.Modeling;
 
@@ -17,6 +22,18 @@ namespace Dignite.Vault.Index.EntityFrameworkCore;
 /// </summary>
 public static class VaultIndexDbContextModelCreatingExtensions
 {
+    private static readonly ValueConverter<IReadOnlyList<ChunkRegion>?, string> RegionsConverter =
+        new(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Deserialize<List<ChunkRegion>>(v, (JsonSerializerOptions?)null));
+
+    // A chunk's regions are replaced, never changed in place; records compare by value.
+    private static readonly ValueComparer<IReadOnlyList<ChunkRegion>?> RegionsComparer =
+        new(
+            (a, b) => a == null ? b == null : b != null && a.SequenceEqual(b),
+            v => v == null ? 0 : v.Aggregate(0, (hash, region) => hash * 31 + region.GetHashCode()),
+            v => v == null ? null : v.ToList());
+
     public static void ConfigureVaultIndex(this ModelBuilder builder)
     {
         Check.NotNull(builder, nameof(builder));
@@ -67,6 +84,9 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.ContentHash).IsRequired().HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
             b.Property(x => x.Keywords).HasMaxLength(IndexingConsts.MaxKeywordsLength);
             b.Property(x => x.Questions).HasMaxLength(IndexingConsts.MaxQuestionsLength);
+
+            // Read with the chunk, never queried: a JSON array in one column.
+            b.Property(x => x.Regions).HasConversion(RegionsConverter, RegionsComparer);
 
             // DocumentId is unique across tenants, so the ordinal constraint needs no TenantId. Leaving it out also
             // keeps the nullable column off a unique index, where SQL Server would get EF's IS NOT NULL filter and

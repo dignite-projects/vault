@@ -41,7 +41,24 @@ public static class IndexChunkLocator
             return chunks.Select(_ => ((int?)null, (int?)null)).ToList();
         }
 
-        return Locate(markdown, chunks)
+        return Pages(Locate(markdown, chunks), pages);
+    }
+
+    /// <summary>
+    /// The pages each located range (<see cref="Locate"/>) was read from, as first and last page; both <c>null</c> for a
+    /// range that is <c>null</c> or that no page's text overlaps, and for every range when <paramref name="pages"/> is
+    /// empty.
+    /// </summary>
+    public static IReadOnlyList<(int? First, int? Last)> Pages(
+        IReadOnlyList<(int Offset, int Length)?> ranges,
+        IReadOnlyList<DocumentPageSpansDto>? pages)
+    {
+        if (pages is not { Count: > 0 })
+        {
+            return ranges.Select(_ => ((int?)null, (int?)null)).ToList();
+        }
+
+        return ranges
             .Select(range =>
             {
                 if (range is not { } r)
