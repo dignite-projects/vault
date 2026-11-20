@@ -75,6 +75,13 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     public virtual string? PageCutsHash { get; protected set; }
 
     /// <summary>
+    /// The document's field values as the current vectors carry them in front of each chunk (<c>name: value</c> lines),
+    /// and as the reranker reads them; <c>null</c> when it has none. Kept, so that changed values re-embed the same
+    /// chunks, and a new embedding model embeds them without asking Extract.
+    /// </summary>
+    public virtual string? FieldContext { get; protected set; }
+
+    /// <summary>
     /// The effective chunking settings the current chunks were built with (<c>ResolvedIndexProfile.Stamp</c>). Not a
     /// profile id or version: switching a type from its own profile to the layer default changes nothing if the
     /// settings are the same, and must not re-chunk.
@@ -186,11 +193,13 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
         string? language,
         DateTime now,
         bool clearLifecycleMarks,
-        string? pageCutsHash = null)
+        string? pageCutsHash = null,
+        string? fieldContext = null)
     {
         ContentHash = Check.NotNullOrWhiteSpace(contentHash, nameof(contentHash));
         ProfileStamp = Check.NotNullOrWhiteSpace(profileStamp, nameof(profileStamp));
         PageCutsHash = pageCutsHash;
+        FieldContext = Check.Length(fieldContext, nameof(fieldContext), IndexingConsts.MaxFieldContextLength);
         GenerationId = generationId;
         ChunkCount = Check.Range(chunkCount, nameof(chunkCount), 0, int.MaxValue);
         DocumentTypeId = documentTypeId;

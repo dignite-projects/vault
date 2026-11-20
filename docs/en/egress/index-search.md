@@ -40,7 +40,7 @@ Index holds only what Extract released (`DocumentReadyEto`). A chunk an operator
 - Conditions met by more than 10,000 documents are refused with `VaultIndex:FieldFilterTooBroad`: add a condition.
 - A field whose **Searchable** flag is off has no index entries, so a condition on it matches nothing.
 
-Two legs run over the caller's scope and are fused by **reciprocal rank fusion** (k = 60): a **keyword** leg (SQL Server full-text search with the Japanese word breaker) and a **vector** leg (exact cosine distance with the host's embedding model). Fusion reads ranks, not scores, so each hit reports where each leg ranked it. When the host configures a [rerank model](../configuration/ai-provider.md#rerank-model-index), a cross-encoder then reorders the leading 30 fused candidates, reading the query with each chunk and its document title:
+Two legs run over the caller's scope and are fused by **reciprocal rank fusion** (k = 60): a **keyword** leg (SQL Server full-text search with the Japanese word breaker) and a **vector** leg (exact cosine distance with the host's embedding model). Fusion reads ranks, not scores, so each hit reports where each leg ranked it. When the host configures a [rerank model](../configuration/ai-provider.md#rerank-model-index), a cross-encoder then reorders the leading 30 fused candidates, reading the query with each chunk, its document title and the document's field values (see [Field values](#field-values)):
 
 ```json
 {
@@ -129,6 +129,12 @@ Every chunk records the pages its text was read from, so a hit or a read can be 
 ### Content
 
 `content` says what a chunk holds besides running text, as flags: `0` text only, `1` a table, `2` a figure (a transcribed image), `3` both. It is read from the part of the document's Markdown the chunk came from, since the chunker rewrites tables and figures: a GFM table or an HTML `<table>` counts as a table, a `<figure>` block (Azure Document Intelligence's figure markup, which Extract writes for an image) as a figure. It does not depend on a layout, and is `null` only for a chunk whose text was not found.
+
+## Field values
+
+A chunk carries its document's field values (Extract's `extractedFields`), so a question that names a document only by one of them finds the passage that answers it: "the deposit of 山田太郎's flat" finds the deposit clause of his lease, which names the tenant nowhere, and not the same clause of another lease. The values go in front of the chunk, after the document title, as `name: value` lines, in what is embedded and in what the reranker reads; text, numbers, dates and lists of them, each up to 100 characters, 600 characters in all. Tables and object fields are left out. They are not in the keyword leg, and search returns the chunk text without them.
+
+A document whose field values change (an operator's edit, a new extraction) has its chunks embedded again with the new values on the next sync; the chunks themselves stay. See [Field context](../deployment/index-status.md#field-context-2026-11-20) for what it changed on the evaluation set.
 
 ## MCP Specifics
 

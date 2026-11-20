@@ -195,7 +195,11 @@ public class IndexSearchPipeline : ITransientDependency
         var head = candidates.Take(rerankCount).ToList();
         var texts = head
             .Where(c => chunks.ContainsKey(c.ChunkId))
-            .ToDictionary(c => c.ChunkId, c => ChunkContext.Compose(documents.GetValueOrDefault(chunks[c.ChunkId].DocumentId)?.Title, chunks[c.ChunkId].Text));
+            .ToDictionary(c => c.ChunkId, c =>
+            {
+                var document = documents.GetValueOrDefault(chunks[c.ChunkId].DocumentId);
+                return ChunkContext.Compose(document?.Title, document?.FieldContext, chunks[c.ChunkId].Text);
+            });
         var reranked = reranker is null ? null : await _ranker.RerankAsync(query, head, texts, reranker, cancellationToken);
         var rerankTime = reranked is null ? TimeSpan.Zero : watch.Elapsed;
 

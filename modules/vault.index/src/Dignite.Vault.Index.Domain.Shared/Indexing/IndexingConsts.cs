@@ -13,6 +13,9 @@ public static class IndexingConsts
 
     public const int MaxHeadingPathLength = 1024;
 
+    /// <summary>The most characters of field lines a document puts in front of its chunks (<c>IndexedDocument.FieldContext</c>).</summary>
+    public const int MaxFieldContextLength = 600;
+
     /// <summary>
     /// The most page regions a chunk keeps. Past it the chunk keeps one box per page, around everything it was read
     /// from there.

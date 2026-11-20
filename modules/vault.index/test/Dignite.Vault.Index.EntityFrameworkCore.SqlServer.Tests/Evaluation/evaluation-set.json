@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\". Version 3 (2026-11-13) adds two documents whose article headings carry no caption (\"第5条\" only), as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters. They are what outline navigation with section summaries is measured on. Version 4 (2026-11-13) adds crossQuestions: questions only several documents answer (a listing with a condition, a comparison, a total, a timeline, a link between documents, a whole type), each with the facts its answer must contain, any one spelling of each fact sufficing. Every company named in the corpus is fictional; the company asking is 株式会社ディグナイト.",
+  "version": 6,
+  "description": "Vault Index evaluation set, version 2 (2026-11-12): 21 synthetic Japanese business documents in Corpus/, cases generated from their reviewed-field stand-ins (fieldTemplates x fields) and hand-written questions in Japanese, Chinese and English. A case passes at document level when a hit is from the expected document, and at passage level when that hit's heading path also contains the expected heading. Version 2 adds three documents whose tables carry the answers: a price list with a Markdown table, and a sales report and an expense claim with HTML tables as Azure Document Intelligence writes them (merged cells, captions). Their table questions have source \"table\". Version 3 (2026-11-13) adds two documents whose article headings carry no caption (\"第5条\" only), as older contracts and rules are written: a master outsourcing agreement and a safety rule with chapters. They are what outline navigation with section summaries is measured on. Version 4 (2026-11-13) adds crossQuestions: questions only several documents answer (a listing with a condition, a comparison, a total, a timeline, a link between documents, a whole type), each with the facts its answer must contain, any one spelling of each fact sufficing. Every company named in the corpus is fictional; the company asking is 株式会社ディグナイト. Version 6 (2026-11-20) adds questions with source \"entity\": each names its document only by a field value that is neither in the title nor in the section that answers it (a tenant, a vendor, a meeting date), such as asking about the deposit of 山田太郎's lease. Four leases with the same clauses make them hard: only the document's identity tells them apart. They measure whether a chunk's embedding should carry its document's field values.",
   "documents": [
     { "id": "lease-shibakoen", "type": "lease", "title": "建物賃貸借契約書(芝公園レジデンス 702)", "fields": { "物件": "芝公園レジデンス", "当事者": "山田太郎", "金額": "185,000 円" } },
     { "id": "lease-umeda", "type": "lease", "title": "事務所賃貸借契約書(梅田センタービル)", "fields": { "物件": "梅田センタービル", "当事者": "株式会社青空商事", "金額": "420,000 円" } },
@@ -120,7 +120,26 @@
     { "query": "安全衛生委員会はどのくらいの頻度で開かれるか", "document": "safety-rules", "heading": "第4条", "language": "ja" },
     { "query": "仕事中にけがをしたら誰に報告する", "document": "safety-rules", "heading": "第7条", "language": "ja" },
     { "query": "长时间加班的员工可以申请什么", "document": "safety-rules", "heading": "第9条", "language": "zh" },
-    { "query": "Where may employees smoke?", "document": "safety-rules", "heading": "第11条", "language": "en" }
+    { "query": "Where may employees smoke?", "document": "safety-rules", "heading": "第11条", "language": "en" },
+    { "query": "山田太郎さんが借りている部屋の敷金はいくらですか", "document": "lease-shibakoen", "heading": "第3条", "language": "ja", "source": "entity" },
+    { "query": "山田太郎さんとの賃貸借契約は何か月前までに申し出ないと自動更新されるか", "document": "lease-shibakoen", "heading": "第4条", "language": "ja", "source": "entity" },
+    { "query": "青空商事に貸している事務所を途中で解約するには何か月前に予告が必要か", "document": "lease-umeda", "heading": "第5条", "language": "ja", "source": "entity" },
+    { "query": "青空商事が内装工事をするときに必要な手続き", "document": "lease-umeda", "heading": "第6条", "language": "ja", "source": "entity" },
+    { "query": "北光物流が借りている倉庫の除雪は誰がやるのか", "document": "lease-sapporo", "heading": "第5条", "language": "ja", "source": "entity" },
+    { "query": "北光物流との賃貸借契約は自動更新されますか", "document": "lease-sapporo", "heading": "第3条", "language": "ja", "source": "entity" },
+    { "query": "佐藤花子さんの部屋でペットを飼ってもよいか", "document": "lease-fukuoka", "heading": "第4条", "language": "ja", "source": "entity" },
+    { "query": "佐藤花子さんの住宅の契約を更新するときにかかる費用", "document": "lease-fukuoka", "heading": "第3条", "language": "ja", "source": "entity" },
+    { "query": "販売管理システムの保守で重大障害の一次回答は何時間以内か", "document": "outsourcing-system", "heading": "第3条", "language": "ja", "source": "entity" },
+    { "query": "サンプル商事との保守委託契約で業務を下請けに出せるか", "document": "outsourcing-system", "heading": "第4条", "language": "ja", "source": "entity" },
+    { "query": "クリーンワークスの作業は何時から何時まで行われるか", "document": "outsourcing-cleaning", "heading": "第2条", "language": "ja", "source": "entity" },
+    { "query": "クリーンワークスが入館カードをなくしたらどうするか", "document": "outsourcing-cleaning", "heading": "第5条", "language": "ja", "source": "entity" },
+    { "query": "みどり印刷への支払期限はいつか", "document": "invoice-0987", "heading": "お振込先", "language": "ja", "source": "entity" },
+    { "query": "東都電力の請求の口座振替日", "document": "invoice-0451", "heading": "お支払方法", "language": "ja", "source": "entity" },
+    { "query": "ノーススター・クラウドへの支払い方法", "document": "invoice-cloud", "heading": "お支払", "language": "ja", "source": "entity" },
+    { "query": "システム開発業務の委託で成果物の著作権はいつ甲に移るか", "document": "outsourcing-basic-terms", "heading": "第8条", "language": "ja", "source": "entity" },
+    { "query": "日本ムーブの見積りでサーバーラックの移設はいくらか", "document": "quote-office-move", "heading": "見積内容", "language": "ja", "source": "entity" },
+    { "query": "11月1日の会議で本社はいつ虎ノ門に移ることになったか", "document": "minutes-1101", "heading": "議題1", "language": "ja", "source": "entity" },
+    { "query": "11月5日の委員会で社用パソコンの USB メモリはどう決まったか", "document": "minutes-1105", "heading": "議題3", "language": "ja", "source": "entity" }
   ],
   "crossQuestions": [
     { "query": "賃貸借契約のうち、犬や猫などのペットの飼育を禁止しているのはどれですか", "language": "ja", "facts": [["薬院"]], "documents": ["lease-fukuoka", "lease-shibakoen", "lease-umeda", "lease-sapporo"] },

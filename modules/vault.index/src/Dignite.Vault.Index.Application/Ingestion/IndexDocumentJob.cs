@@ -248,7 +248,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             row.DocumentTypeId,
             row.OwnerId)
         {
-            PageCutsHash = row.PageCutsHash
+            PageCutsHash = row.PageCutsHash,
+            FieldContext = row.FieldContext
         };
     }
 
@@ -287,19 +288,22 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var modelId = _embedder.GetModelId();
         var current = await _generationManager.FindTargetAsync(modelId);
 
+        // The field values go in front of every chunk's embedding text: changed values embed the same chunks again.
+        var fields = IndexFieldContext.Describe(document.ExtractedFields);
         var sameText = !force && claim.ContentHash == contentHash && claim.ProfileStamp == profile.Stamp
                        && (pageCuts is null || pageCuts == claim.PageCutsHash);
-        if (sameText && current is not null && claim.GenerationId == current.Id)
+        if (sameText && current is not null && claim.GenerationId == current.Id && claim.FieldContext == fields)
         {
             return new SyncPlan(contentHash, profile.Stamp, current.Id, null, null, null)
             {
                 ModelId = modelId,
                 Compilation = profile.Compilation,
-                PageCutsHash = keptPageCuts
+                PageCutsHash = keptPageCuts,
+                FieldContext = fields
             };
         }
 
-        if (sameText && await EmbedExistingAsync(document.Id, document.Title) is { } existing)
+        if (sameText && await EmbedExistingAsync(document.Id, document.Title, fields) is { } existing)
         {
             var reembedTarget = await GetOrCreateTargetAsync(modelId, existing.Dimensions);
             return new SyncPlan(contentHash, profile.Stamp, reembedTarget.Id, null, existing.Embedding.Vectors, existing.Embedding.InputTokenCount)
@@ -308,7 +312,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                 Compilation = profile.Compilation,
                 EmbeddedChunkIds = existing.ChunkIds,
                 TargetIsBuilding = reembedTarget.Status == IndexGenerationStatus.Building,
-                PageCutsHash = keptPageCuts
+                PageCutsHash = keptPageCuts,
+                FieldContext = fields
             };
         }
 
@@ -327,11 +332,11 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             throw new BusinessException(VaultIndexErrorCodes.EmptyDocument);
         }
 
-        // The document title in front of every chunk (which already starts with its heading path) gives the vector
-        // the context a bare passage lacks, and the questions an enricher found pull it toward how people ask. The
-        // stored chunk text stays as the chunker cut it.
+        // The document title and field values in front of every chunk (which already starts with its heading path) give
+        // the vector the context a bare passage lacks, and the questions an enricher found pull it toward how people
+        // ask. The stored chunk text stays as the chunker cut it.
         var inputs = drafts
-            .Select(d => ChunkContext.ComposeForEmbedding(document.Title, d.Text, d.Questions))
+            .Select(d => ChunkContext.ComposeForEmbedding(document.Title, fields, d.Text, d.Questions))
             .ToList();
         var embedding = await _embedder.EmbedAsync(inputs);
         var generation = await GetOrCreateTargetAsync(modelId, CheckDimensions(embedding.Vectors));
@@ -354,6 +359,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             ModelId = modelId,
             TargetIsBuilding = building,
             PageCutsHash = pageCuts,
+            FieldContext = fields,
             ServingGenerationId = servingEmbedding is null ? null : serving!.Id,
             ServingVectors = servingEmbedding?.Vectors,
             Compilation = profile.Compilation,
@@ -406,7 +412,8 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var chunkCount = plan.Drafts?.Count ?? row.ChunkCount;
         row.CompleteIndexing(
             plan.ContentHash, plan.ProfileStamp, plan.GenerationId, chunkCount, document.DocumentTypeId, document.OwnerId,
-            document.Title, document.Language, now, clearLifecycleMarks: !lifecycleChanged, pageCutsHash: plan.PageCutsHash);
+            document.Title, document.Language, now, clearLifecycleMarks: !lifecycleChanged, pageCutsHash: plan.PageCutsHash,
+            fieldContext: plan.FieldContext);
         if (lifecycleChanged || stale)
         {
             row.RequestRerun(null);
@@ -594,6 +601,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var modelId = _embedder.GetModelId();
         Guid runId;
         string? title;
+        string? fields;
         using (var uow = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true))
         {
             var row = await _documentRepository.FindAsync(args.DocumentId);
@@ -617,13 +625,14 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             await _runRepository.InsertAsync(run);
             runId = run.Id;
             title = row.Title;
+            fields = row.FieldContext;
             await uow.CompleteAsync();
         }
 
         try
         {
             // The title Index kept, which a sync's pulled title equals unless it was cut at IndexingConsts.MaxTitleLength.
-            var existing = await EmbedExistingAsync(args.DocumentId, title);
+            var existing = await EmbedExistingAsync(args.DocumentId, title, fields);
             if (existing is null)
             {
                 await FinishRunAsync(runId, run => run.Skip(_clock.Now, "The document has no chunks."));
@@ -700,7 +709,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     }
 
     /// <summary>The document's current chunks embedded by the configured model, in chunk order; <c>null</c> when it has none.</summary>
-    protected virtual async Task<ExistingChunksEmbedding?> EmbedExistingAsync(Guid documentId, string? title)
+    protected virtual async Task<ExistingChunksEmbedding?> EmbedExistingAsync(Guid documentId, string? title, string? fields)
     {
         var chunks = (await _chunkRepository.GetListAsync(c => c.DocumentId == documentId)).OrderBy(c => c.Ordinal).ToList();
         if (chunks.Count == 0)
@@ -708,7 +717,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             return null;
         }
 
-        var embedding = await _embedder.EmbedAsync(chunks.Select(c => ChunkContext.ComposeForEmbedding(title, c.Text, c.Questions)).ToList());
+        var embedding = await _embedder.EmbedAsync(chunks.Select(c => ChunkContext.ComposeForEmbedding(title, fields, c.Text, c.Questions)).ToList());
         return new ExistingChunksEmbedding(chunks.Select(c => c.Id).ToList(), embedding, CheckDimensions(embedding.Vectors));
     }
 
@@ -919,6 +928,9 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     {
         /// <summary>Where the current chunks were cut by page, when they were.</summary>
         public string? PageCutsHash { get; init; }
+
+        /// <summary>The field lines the current vectors carry.</summary>
+        public string? FieldContext { get; init; }
     }
 
     /// <summary>A document's existing chunks embedded by the configured model: their ids in chunk order, and the vectors.</summary>
@@ -949,6 +961,9 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
 
         /// <summary>Where the chunks are cut by page (<see cref="IndexedDocument.PageCutsHash"/>), kept when they stay.</summary>
         public string? PageCutsHash { get; init; }
+
+        /// <summary>The field lines in front of each chunk's embedding text (<see cref="IndexedDocument.FieldContext"/>).</summary>
+        public string? FieldContext { get; init; }
 
         /// <summary>The configured model the plan was computed with; <see cref="GenerationId"/> is its generation.</summary>
         public string ModelId { get; init; } = default!;

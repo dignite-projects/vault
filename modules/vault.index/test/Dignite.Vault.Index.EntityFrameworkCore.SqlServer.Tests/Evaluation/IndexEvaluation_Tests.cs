@@ -179,7 +179,7 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         var chunks = (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(c => c.Id);
         var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
         var titles = set.Documents.ToDictionary(d => d.DocumentId, d => d.Title);
-        var texts = chunks.Values.ToDictionary(c => c.Id, c => ChunkContext.Compose(titles.GetValueOrDefault(c.DocumentId), c.Text));
+        var texts = chunks.Values.ToDictionary(c => c.Id, c => ChunkContext.Compose(titles.GetValueOrDefault(c.DocumentId), null, c.Text));
         var reranker = GetRequiredService<IndexRanker>().Reranker;
         var cases = set.Cases();
         var results = new List<CaseResult>();
@@ -565,6 +565,90 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         var report = EvaluationReport.ToMarkdown("Vault Index chunk enrichment", results, notes, "no enrichment · service");
         _output.WriteLine(report);
         var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_ENRICHMENT_REPORT") ?? Path.Combine(Directory.GetCurrentDirectory(), "index-enrichment.md");
+        await File.WriteAllTextAsync(path, report);
+    }
+
+    /// <summary>
+    /// Whether a chunk should carry its document's field values: indexes the corpus once without fields and once with
+    /// them handed out as Extract's extracted fields, which Index puts in front of every chunk's embedding text and the
+    /// reranker's. On the second index it also measures, without changing Index, the keyword leg with the values (written
+    /// into each chunk's <c>Keywords</c>, a column the full-text index already covers). The cases with source
+    /// <c>entity</c> name their document only by a field value. The report goes to
+    /// <c>VAULT_INDEX_EVAL_FIELD_CONTEXT_REPORT</c> or <c>index-field-context.md</c>.
+    /// </summary>
+    [EvaluationFact]
+    public async Task Compare_field_context()
+    {
+        var set = EvaluationSet.Load(Path.Combine(AppContext.BaseDirectory, "Evaluation"));
+        var cases = set.Cases();
+        var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
+        var titles = set.Documents.ToDictionary(d => d.DocumentId, d => d.Title);
+        var fieldLines = set.Documents.ToDictionary(
+            d => d.DocumentId,
+            d => d.Fields.Count == 0 ? null : string.Join("\n", d.Fields.OrderBy(f => f.Key, StringComparer.Ordinal).Select(f => f.Key + ": " + f.Value)));
+        var reranker = GetRequiredService<IndexRanker>().Reranker;
+        var results = new List<CaseResult>();
+        var notes = new List<string>
+        {
+            $"Evaluation set version {set.Version}: {set.Documents.Count} documents ({set.Documents.Count(d => d.Fields.Count > 0)} with fields), {cases.Count} cases ({cases.Count(c => c.Source == "entity")} entity questions)",
+            $"Embedding model {EvaluationModel.ModelId}; heading chunking at 400 tokens; `service` is IIndexSearchAppService as configured; with fields its reranker reads title, fields and chunk",
+            reranker is null ? "No rerank model: the rerank rows are absent" : $"Rerank model {reranker.ModelId}, top {RerankDepth} of each ranking"
+        };
+
+        async Task RankAllAsync(string variant, IReadOnlyDictionary<Guid, string> texts)
+        {
+            var chunks = (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(c => c.Id);
+            foreach (var evaluationCase in cases)
+            {
+                var (caseResults, _) = await RankAsync(evaluationCase, chunks, texts, documentIds, reranker);
+                results.AddRange(caseResults
+                    .Where(r => r.Mode is "vector" or "keyword" or "fused 1:1" or "rerank fused 1:1" or "service")
+                    .Select(r => r with { Mode = variant + " · " + r.Mode }));
+            }
+        }
+
+        async Task<Dictionary<Guid, string>> TextsAsync(bool withFields)
+            => (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(
+                c => c.Id,
+                c => ChunkContext.Compose(titles.GetValueOrDefault(c.DocumentId), withFields ? fieldLines.GetValueOrDefault(c.DocumentId) : null, c.Text));
+
+        // Without fields: the baseline.
+        await ClearAsync();
+        Arrange(set);
+        await IndexCorpusAsync(set);
+        await WaitForFullTextAsync();
+        await RankAllAsync("title", await TextsAsync(false));
+
+        // Fields handed out by Extract: Index puts them in front of each chunk's embedding text and the reranker's.
+        await ClearAsync();
+        Arrange(set, withFields: true);
+        await IndexCorpusAsync(set);
+        await WaitForFullTextAsync();
+        await RankAllAsync("fields", await TextsAsync(true));
+
+        // The same index with the values in the keyword leg too, which Index does not do.
+        await using (var connection = new SqlConnection(SqlServerTestDatabase.Evaluation.ConnectionString))
+        {
+            await connection.OpenAsync();
+            foreach (var document in set.Documents.Where(d => d.Fields.Count > 0))
+            {
+                await using var command = new SqlCommand("UPDATE VaultIndexChunks SET Keywords = @keywords WHERE DocumentId = @id", connection);
+                command.Parameters.AddWithValue("@keywords", string.Join(" ", document.Fields.Values));
+                command.Parameters.AddWithValue("@id", document.DocumentId);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        await WaitForFullTextAsync();
+        await RankAllAsync("fields+keyword", await TextsAsync(true));
+
+        notes.Add($"Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+        var report = EvaluationReport.ToMarkdown(
+            "Vault Index field context", results, notes, reranker is null ? "title · fused 1:1" : "title · rerank fused 1:1");
+        _output.WriteLine(report);
+        var path = Environment.GetEnvironmentVariable("VAULT_INDEX_EVAL_FIELD_CONTEXT_REPORT")
+                   ?? Path.Combine(Directory.GetCurrentDirectory(), "index-field-context.md");
         await File.WriteAllTextAsync(path, report);
     }
 
@@ -1169,7 +1253,11 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         return new CaseResult(evaluationCase, mode, documentRank, evaluationCase.Heading is null ? null : passageRank);
     }
 
-    private void Arrange(EvaluationSet set)
+    /// <summary>
+    /// Answers Extract's calls from the corpus. <paramref name="withFields"/> hands each document's reviewed-field
+    /// stand-ins out as its extracted fields, as Extract does for a document whose type extracts fields.
+    /// </summary>
+    private void Arrange(EvaluationSet set, bool withFields = false)
     {
         var integration = GetRequiredService<IDocumentIntegrationService>();
         foreach (var document in set.Documents)
@@ -1180,7 +1268,10 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
                 DocumentTypeId = document.TypeId,
                 Title = document.Title,
                 Language = "ja",
-                Markdown = document.Markdown
+                Markdown = document.Markdown,
+                ExtractedFields = withFields && document.Fields.Count > 0
+                    ? document.Fields.ToDictionary(f => f.Key, f => System.Text.Json.JsonSerializer.SerializeToElement(f.Value))
+                    : null
             });
         }
 

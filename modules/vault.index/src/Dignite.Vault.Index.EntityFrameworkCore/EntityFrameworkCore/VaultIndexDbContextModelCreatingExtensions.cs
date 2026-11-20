@@ -61,6 +61,7 @@ public static class VaultIndexDbContextModelCreatingExtensions
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ContentHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
             b.Property(x => x.PageCutsHash).HasMaxLength(IndexingConsts.ContentHashLength).IsFixedLength();
+            b.Property(x => x.FieldContext).HasMaxLength(IndexingConsts.MaxFieldContextLength);
             b.Property(x => x.ProfileStamp).HasMaxLength(IndexingConsts.MaxProfileStampLength);
             b.Property(x => x.Title).HasMaxLength(IndexingConsts.MaxTitleLength);
             b.Property(x => x.Language).HasMaxLength(IndexingConsts.MaxLanguageLength);
