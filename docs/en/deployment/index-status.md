@@ -337,3 +337,20 @@ The recommendation is in [AI Provider](../configuration/ai-provider.md#embedding
 | Questions a table answers, fused legs | 0.833 | 0.833 | 0.792 |
 
 The values carry the gain; display names would add about half a case of 103, within run-to-run variance, so Index keeps the names it receives. Not measured: Select fields, which contribute their option's label (since 2026-11-20; the stored value before, a code if the type defines codes), and short CKEditor bodies, which go in as stored (Markdown, or HTML with its tags when the field's content format is HTML); the set has neither.
+
+### Field values or field filters (2026-11-20, local host)
+
+Two checks on a development host (AppHost SQL Server container, embedding `Qwen/Qwen3-Embedding-4B`, no rerank model), against the `sample-document` type: 13 Ready documents, one with the Select field `status` set to `in_review` (option label "In Review"), one with `approved`, the rest without a value.
+
+**A shared value in the field context does not tell documents apart.** An operator's edit set `status` on a service contract; the Ready event it fired synced the document by itself, and its field context became `status: In Review` (the label, not the stored `in_review`) beside its other values, the Table field left out. Every chunk's embedding text grew by those lines (about 37 tokens a chunk). The same contract also exists as a copy of another type, with no field values. Asked for "In Review の業務委託契約の秘密保持義務" and two rewordings, the vector leg still ranked the copy's confidentiality clause above the one carrying the status. A status, a category or a yes/no is shared by many documents and says little about which one is meant; the field context helps values that single a document out, such as a party's name (the entity questions above).
+
+**A field filter does.** Searching "金額" in the type:
+
+| Search | Documents in the hits |
+| --- | --- |
+| `documentTypeCode=sample-document` | 7 different documents (invoices, expense sheets, sales data, receipts) |
+| + `fieldFilters[0].name=status&fieldFilters[0].value=in_review` | the contract only |
+| + `…value=approved` | the one approved document only |
+| + `…value=draft` | none (no document is a draft) |
+
+The filtered hits were exactly the documents the database holds with that value. A filter without `documentTypeCode` is refused with HTTP 400. So a condition on a categorical field belongs in `fieldFilters`, which Extract evaluates exactly within the caller's read scope; the field context is for the free-text and identifying values a question names in passing.

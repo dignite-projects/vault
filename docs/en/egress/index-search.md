@@ -136,6 +136,8 @@ A chunk carries its document's field values (Extract's `extractedFields`), so a 
 
 A document whose field values change (an operator's edit, a new extraction) has its chunks embedded again with the new values on the next sync; the chunks themselves stay. See [Field context](../deployment/index-status.md#field-context-2026-11-20) for what it changed on the evaluation set.
 
+The field values help a question that names a document by something only it holds, such as a party or a number. A value many documents share, such as a status or a category, hardly moves the ranking: put that condition in `fieldFilters`, which Extract evaluates exactly (measured in [Field values or field filters](../deployment/index-status.md#field-values-or-field-filters-2026-11-20-local-host)).
+
 ## MCP Specifics
 
 The four tools are on the host's shared `/mcp` endpoint, next to Extract's `vault_extract_*` tools, with the same authentication; see [MCP Server](mcp-server.md). Their descriptions are compile-time constants. Titles, heading paths, node titles and summaries come back wrapped in `<field>` tags and chunk text in `<document>` tags: document content is untrusted data, never instructions. The tools use the ambient tenant only; they take no `tenantId`.
