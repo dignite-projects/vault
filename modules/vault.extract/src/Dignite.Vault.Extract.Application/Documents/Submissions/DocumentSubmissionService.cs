@@ -175,6 +175,21 @@ public class DocumentSubmissionService : ITransientDependency
             throw new BusinessException(VaultExtractErrorCodes.Document.SubmittedMarkdownEmpty);
         }
 
+        // The stored text's hash, so a line-ending or blank-line difference in a retry is the same text. Without an
+        // original, it is the only thing a retry can be recognised by (an original is checked by its own hash above).
+        var textHash = ContentHasher.Sha256Hex(Encoding.UTF8.GetBytes(markdown));
+        if (original == null)
+        {
+            var submitted = await _documentRepository.FindBySubmittedTextHashAsync(textHash, _currentUser.Id);
+            if (submitted != null)
+            {
+                throw new BusinessException(submitted.IsDeleted
+                        ? VaultExtractErrorCodes.Document.SubmittedTextInRecycleBin
+                        : VaultExtractErrorCodes.Document.SubmittedTextDuplicate)
+                    .WithData("ExistingDocumentId", submitted.Id);
+            }
+        }
+
         // The original is stored as an upload stores its file, under a blob name of Extract's own container: the staged
         // copy is Blob Management's and goes once the document holds it.
         FileOrigin? fileOrigin = null;
@@ -190,6 +205,7 @@ public class DocumentSubmissionService : ITransientDependency
         }
 
         var document = new Document(documentId, _currentTenant.Id, fileOrigin, cabinetId: input.CabinetId);
+        document.SetSubmittedTextHash(textHash);
         if (type != null)
         {
             _pipelineRunManager.DeclareDocumentType(document, type.Id);

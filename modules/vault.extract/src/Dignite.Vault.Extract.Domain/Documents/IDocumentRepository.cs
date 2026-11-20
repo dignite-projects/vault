@@ -39,6 +39,17 @@ public interface IDocumentRepository : IRepository<Document, Guid>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The caller's document created from the same submitted text (<see cref="Document.SubmittedTextHash"/>): the
+    /// submission's counterpart of <see cref="FindByContentHashAsync"/>, with the same rules - scoped to the creator (a
+    /// null value matches only a null <c>CreatorId</c>) and through soft delete, so a text in the recycle bin answers
+    /// <c>Document.InRecycleBin</c> rather than being taken as new.
+    /// </summary>
+    Task<Document?> FindBySubmittedTextHashAsync(
+        string textHash,
+        Guid? creatorId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Clears <see cref="Document.CabinetId"/> for every document in the ambient tenant layer that references
     /// <paramref name="cabinetId"/> (#530). Traverses <c>ISoftDelete</c> so recycle-bin documents are unfiled too,
     /// while retaining the ambient <c>IMultiTenant</c> boundary. Implemented as one set-based update: cabinet

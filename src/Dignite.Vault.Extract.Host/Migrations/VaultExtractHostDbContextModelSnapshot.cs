@@ -17,7 +17,7 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119090127_Added_BlobManagement";
+    public override string LastMigrationId => "20261120003146_Added_SubmittedTextHash";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -621,6 +621,10 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                 b.Property<int>("ReviewReasons")
                     .HasColumnType("int");
 
+                b.Property<string>("SubmittedTextHash")
+                    .HasMaxLength(64)
+                    .HasColumnType("nvarchar(64)");
+
                 b.Property<Guid?>("TenantId")
                     .HasColumnType("uniqueidentifier")
                     .HasColumnName("TenantId");
@@ -642,6 +646,8 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("OriginDocumentId");
 
                 b.HasIndex("ReviewDisposition");
+
+                b.HasIndex("SubmittedTextHash");
 
                 b.HasIndex("TenantId", "DocumentTypeId");
 

@@ -501,6 +501,8 @@
     "Extract:DocumentSubmittedMarkdownTwice": "Markdown 只能以內嵌或上傳檔案其中一種方式提交。",
     "Extract:DocumentSubmittedMarkdownNotUtf8": "上傳的 Markdown 檔案不是 UTF-8 文字。",
     "Extract:DocumentSubmittedFileNotFound": "在你待提交的上傳檔案中找不到檔案 {FileId}。請用新連結重新上傳。",
+    "Extract:DocumentSubmittedTextDuplicate": "你已經提交過這段正文：文件 {ExistingDocumentId}。",
+    "Extract:DocumentSubmittedTextInRecycleBin": "你已經提交過這段正文，它的文件 {ExistingDocumentId} 在資源回收筒中。請改為還原該文件。",
     "Extract:UnknownExtractedField": "欄位 '{FieldName}' 未在文件類型 '{DocumentTypeCode}' 下定義。",
     "Extract:InvalidExtractedFieldValue": "文件類型 '{DocumentTypeCode}' 下欄位 '{FieldName}' 的值必須是有效的 {DataType}。",
     "Extract:FieldTypeDoesNotSupportRange": "欄位 '{FieldName}' 類型為 {DataType}，僅支援等值比對，不支援區間（min/max）查詢。",

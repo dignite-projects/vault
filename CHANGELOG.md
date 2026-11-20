@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from abp-modules' GitHub Packages feed (`GITHUB_PACKAGES_TOKEN` to restore). See
   [Submitting Processed Content](docs/en/documents/submitting-content.md).
 
+- **A submission without its original file is checked for duplicates by its text.** The hash of the stored text is
+  kept on the document (`SubmittedTextHash`, a new column with an index), and the caller's own earlier submission of the
+  same text is refused with `Extract:DocumentSubmittedTextDuplicate` (`…InRecycleBin` when it is in the recycle bin) and
+  the existing document's id, as an upload is refused for a file the caller uploaded before. A submission that brings
+  its original is checked by the file's hash, as before.
+
 - **Markdown files are read with their pages.** `.md` / `text/markdown` goes to a Markdown engine beside the Parse
   router instead of the MarkItDown catch-all; page metadata written the way Azure Document Intelligence writes it
   (`<!-- PageBreak -->`, `PageHeader`, `PageFooter`, `PageNumber`) becomes pages and page furniture. The Parse

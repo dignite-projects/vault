@@ -48,6 +48,11 @@ public static class VaultExtractErrorCodes
         public const string SubmittedMarkdownTwice = "Extract:DocumentSubmittedMarkdownTwice";
         public const string SubmittedMarkdownNotUtf8 = "Extract:DocumentSubmittedMarkdownNotUtf8";
         public const string SubmittedFileNotFound = "Extract:DocumentSubmittedFileNotFound";
+        // A submission with no original file whose text the caller has submitted before (Document.SubmittedTextHash):
+        // a live document, or one in the recycle bin. The text counterparts of Duplicate / InRecycleBin, whose messages
+        // name a file.
+        public const string SubmittedTextDuplicate = "Extract:DocumentSubmittedTextDuplicate";
+        public const string SubmittedTextInRecycleBin = "Extract:DocumentSubmittedTextInRecycleBin";
         // #485 (B1): re-added after #481 removed it assuming FileOrigin can never be null. Same string as before
         // #481 (nothing consumed it in the interim, so this is not a wire break) — a legacy pre-#481 derived row
         // can still carry a null FileOrigin during the documented binaries-first deploy window.

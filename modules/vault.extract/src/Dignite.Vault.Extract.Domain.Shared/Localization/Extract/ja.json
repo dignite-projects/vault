@@ -501,6 +501,8 @@
     "Extract:DocumentSubmittedMarkdownTwice": "Markdown はインラインかアップロードしたファイルのどちらか一方で送信してください。",
     "Extract:DocumentSubmittedMarkdownNotUtf8": "アップロードされた Markdown ファイルが UTF-8 テキストではありません。",
     "Extract:DocumentSubmittedFileNotFound": "アップロードされたファイル {FileId} が、あなたの送信待ちのアップロードに見つかりません。新しいリンクで再度アップロードしてください。",
+    "Extract:DocumentSubmittedTextDuplicate": "このテキストは送信済みです：ドキュメント {ExistingDocumentId}。",
+    "Extract:DocumentSubmittedTextInRecycleBin": "このテキストは送信済みで、そのドキュメント {ExistingDocumentId} はごみ箱にあります。代わりに復元してください。",
     "Extract:UnknownExtractedField": "フィールド '{FieldName}' はドキュメントタイプ '{DocumentTypeCode}' に定義されていません。",
     "Extract:InvalidExtractedFieldValue": "ドキュメントタイプ '{DocumentTypeCode}' のフィールド '{FieldName}' は有効な {DataType} の値である必要があります。",
     "Extract:FieldTypeDoesNotSupportRange": "フィールド '{FieldName}' は型 {DataType} で、等価一致のみ対応しており、範囲（最小/最大）クエリには対応していません。",

@@ -249,6 +249,50 @@ public class DocumentSubmission_Tests : VaultExtractTestBase<DocumentSubmissionT
     }
 
     [Fact]
+    public async Task The_same_text_submitted_again_is_refused_with_the_document_it_created()
+    {
+        await ArrangeTypeAsync();
+        var first = await _appService.SubmitAsync(new SubmitDocumentInput { Markdown = "# Invoice", DocumentTypeCode = TypeCode });
+
+        var ex = await Should.ThrowAsync<BusinessException>(
+            () => _appService.SubmitAsync(new SubmitDocumentInput { Markdown = "# Invoice", DocumentTypeCode = TypeCode }));
+
+        ex.Code.ShouldBe(VaultExtractErrorCodes.Document.SubmittedTextDuplicate);
+        ex.Data["ExistingDocumentId"].ShouldBe(first.Id);
+        await WithUnitOfWorkAsync(async () => (await _documentRepository.GetCountAsync()).ShouldBe(1));
+    }
+
+    [Fact]
+    public async Task A_text_whose_document_is_in_the_recycle_bin_is_refused_as_such()
+    {
+        await ArrangeTypeAsync();
+        var first = await _appService.SubmitAsync(new SubmitDocumentInput { Markdown = "# Invoice" });
+        await _appService.DeleteAsync(first.Id);
+
+        var ex = await Should.ThrowAsync<BusinessException>(
+            () => _appService.SubmitAsync(new SubmitDocumentInput { Markdown = "# Invoice" }));
+
+        ex.Code.ShouldBe(VaultExtractErrorCodes.Document.SubmittedTextInRecycleBin);
+        ex.Data["ExistingDocumentId"].ShouldBe(first.Id);
+    }
+
+    [Fact]
+    public async Task The_text_hash_is_the_stored_texts_and_its_lookup_is_scoped_to_the_creator()
+    {
+        await ArrangeTypeAsync();
+        var dto = await _appService.SubmitAsync(new SubmitDocumentInput { Markdown = "# Invoice" });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var document = await _documentRepository.GetAsync(dto.Id, includeDetails: false);
+            var hash = ContentHasher.Sha256Hex(System.Text.Encoding.UTF8.GetBytes(document.Markdown!));
+            document.SubmittedTextHash.ShouldBe(hash);
+            (await _documentRepository.FindBySubmittedTextHashAsync(hash, document.CreatorId))!.Id.ShouldBe(dto.Id);
+            (await _documentRepository.FindBySubmittedTextHashAsync(hash, Guid.NewGuid())).ShouldBeNull();
+        });
+    }
+
+    [Fact]
     public async Task Markdown_over_the_limit_is_refused_without_reading_it()
     {
         await ArrangeTypeAsync();
