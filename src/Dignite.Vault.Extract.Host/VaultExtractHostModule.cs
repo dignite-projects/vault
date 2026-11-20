@@ -302,7 +302,7 @@ public class VaultExtractHostModule : AbpModule
         ConfigureAutoApiControllers();
         ConfigureLocalization();
         ConfigureCors(context, configuration);
-        ConfigureDataProtection(context);
+        ConfigureDataProtection(context, configuration);
         ConfigureVirtualFiles(hostingEnvironment);
         ConfigureEfCore(context);
         ConfigureDistributedEventBus();
@@ -594,9 +594,20 @@ public class VaultExtractHostModule : AbpModule
         });
     }
 
-    private void ConfigureDataProtection(ServiceConfigurationContext context)
+    /// <summary>
+    /// One key ring for every host instance, in the Default database: the instances already share it (and lock jobs
+    /// through it), so the keys need nothing more. Kept per machine, a cookie, an antiforgery token or a submission
+    /// upload link issued by one instance would be refused by another, and every key would be lost with the container.
+    /// The keys are stored unencrypted; a deployment that wants them encrypted at rest adds ProtectKeysWith... here.
+    /// </summary>
+    private void ConfigureDataProtection(ServiceConfigurationContext context, IConfiguration configuration)
     {
-        context.Services.AddDataProtection().SetApplicationName("VaultExtract");
+        context.Services.AddDbContext<Data.DataProtectionKeysDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("Default")));
+
+        context.Services.AddDataProtection()
+            .SetApplicationName("VaultExtract")
+            .PersistKeysToDbContext<Data.DataProtectionKeysDbContext>();
     }
 
     private void ConfigureVirtualFiles(IWebHostEnvironment hostingEnvironment)

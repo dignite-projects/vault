@@ -118,6 +118,12 @@ ABP encrypts some stored values (for example tenant connection strings) with `St
 
 `appsettings.secrets.json`, `appsettings.Production.json` and `appsettings.Staging.json` are git-ignored; create them at deploy time and never commit them. `appsettings.Development.json` is committed and holds no secrets. The host excludes `appsettings.secrets.json` from `dotnet publish`, so a developer's local overrides never reach a deployed server.
 
+## Data Protection Keys
+
+ASP.NET Core Data Protection signs and encrypts the login cookies, the antiforgery tokens and the one-time links a [submission](../documents/submitting-content.md) uploads its files with. The host keeps its key ring in the `Default` database (table `AppDataProtectionKeys`, created by the migrations), so every host instance uses the same keys: a link one instance issued is accepted by another, and a restarted container keeps its users signed in. Nothing needs configuring.
+
+The keys are stored unencrypted, readable by anyone who can read that table. To encrypt them at rest, add a key protector (for example `ProtectKeysWithCertificate`) to `ConfigureDataProtection` in `VaultExtractHostModule`. Upgrading from a version that kept the keys on each machine signs everyone out once.
+
 ## Multi-Tenancy
 
 The shipped host runs with multi-tenancy enabled (`VaultExtractHostModule.IsMultiTenant = true`). The Host and each tenant are separate layers: each defines its own document types and fields and sees only its own documents (see [Document Types and Fields](../documents/document-types.md)). `--migrate-database` migrates and seeds the Host database, then seeds every tenant (migrating a tenant's own database first when it has a separate connection string).

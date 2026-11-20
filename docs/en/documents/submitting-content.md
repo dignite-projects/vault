@@ -36,7 +36,7 @@ The Markdown and the original file do not have to travel through the request, or
 
 A link takes one file, for the user it was issued to; a Markdown link takes text only, an original link the types an upload accepts, decided from the bytes rather than from what the client declares. The files wait in Blob Management's `extract-submissions` container: only the user who uploaded them can submit them, a submission deletes them once it has taken them, and a file never submitted is deleted after a day. For a folder, take one document at a time, two links and a submission each.
 
-The host provides this through [Dignite Blob Management](https://github.com/dignite-projects/abp-modules): it installs the module, its HTTP API (which serves the upload endpoint) and its tables, and declares the `extract-submissions` container. Upload tickets are signed with ASP.NET Core Data Protection, so a host running more than one instance shares its key ring.
+The host provides this through [Dignite Blob Management](https://github.com/dignite-projects/abp-modules): it installs the module, its HTTP API (which serves the upload endpoint) and its tables, and declares the `extract-submissions` container. Upload tickets are signed with ASP.NET Core Data Protection, whose keys the host keeps in its database, so a link issued by one instance is accepted by another ([Data Protection Keys](../deployment/deployment.md#data-protection-keys)).
 
 ## Writing the Markdown
 

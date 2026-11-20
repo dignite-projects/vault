@@ -76,5 +76,8 @@ public class VaultExtractHostDbContext
         // Dignite Blob Management tables (BlobFileDescriptors, BlobDirectoryDescriptors): the staged submission
         // uploads. As above, this context only builds the migration; the module uses its own DbContext.
         builder.ConfigureBlobManagement();
+
+        // The Data Protection key ring (DataProtectionKeysDbContext reads and writes it at run time).
+        DataProtectionKeysDbContext.ConfigureDataProtectionKeys(builder);
     }
 }
