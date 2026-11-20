@@ -2,10 +2,12 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Dignite.Vault.Extract.Documents.Fields;
 using Dignite.Vault.Extract.Documents.Layout;
 using Dignite.Vault.Parse;
 using Microsoft.Extensions.Logging;
 using Volo.Abp.Application.Dtos;
+using Volo.Abp;
 using Volo.Abp.Application.Services;
 
 namespace Dignite.Vault.Extract.Documents.Integration;
@@ -30,15 +32,19 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
     private readonly IDocumentRepository _documentRepository;
     private readonly DocumentReferenceMaps _referenceMaps;
     private readonly DocumentLayoutStore _layoutStore;
+    private readonly IFieldRepository _fieldRepository;
 
     public DocumentIntegrationService(
         IDocumentRepository documentRepository,
         DocumentReferenceMaps referenceMaps,
-        DocumentLayoutStore layoutStore)
+        DocumentLayoutStore layoutStore,
+        IFieldRepository fieldRepository)
     {
         _documentRepository = documentRepository;
         _referenceMaps = referenceMaps;
         _layoutStore = layoutStore;
+        _fieldRepository = fieldRepository;
+        ObjectMapperContext = typeof(VaultExtractApplicationModule);
     }
 
     public virtual async Task<DocumentIntegrationDto?> FindReadyAsync(Guid id)
@@ -131,6 +137,23 @@ public class DocumentIntegrationService : ApplicationService, IDocumentIntegrati
     {
         var ids = await _documentRepository.GetReadyIdsAsync(input.AfterId, input.MaxResultCount);
         return new ListResultDto<Guid>(ids);
+    }
+
+    public virtual async Task<ListResultDto<FieldDefinitionDto>> GetFieldDefinitionsAsync(Guid documentTypeId)
+    {
+        // Archived fields too, the same set FindReadyAsync resolves ExtractedFields against (DocumentReferenceMaps);
+        // the ambient tenant filter keeps the read to one layer.
+        List<Field> fields;
+        using (DataFilter.Disable<ISoftDelete>())
+        {
+            fields = await _fieldRepository.GetListAsync(f => f.DocumentTypeId == documentTypeId);
+        }
+
+        var ordered = fields
+            .OrderBy(f => f.DisplayOrder)
+            .ThenBy(f => f.Name, StringComparer.Ordinal)
+            .ToList();
+        return new ListResultDto<FieldDefinitionDto>(ObjectMapper.Map<List<Field>, List<FieldDefinitionDto>>(ordered));
     }
 }
 

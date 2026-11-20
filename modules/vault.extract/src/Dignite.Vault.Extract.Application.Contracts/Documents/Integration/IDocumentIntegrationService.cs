@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Dignite.Vault.Extract.Documents.Fields;
 using Volo.Abp;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
@@ -45,4 +46,18 @@ public interface IDocumentIntegrationService : IApplicationService
     /// (null for the first page) and stop at an empty page. Ordered by id, live documents only.
     /// </summary>
     Task<ListResultDto<Guid>> GetReadyIdsAsync(GetReadyDocumentIdsInput input);
+
+    /// <summary>
+    /// The field definitions of a document type in the ambient tenant's layer, as they are stored: name, display
+    /// name, field type (<see cref="FieldDefinitionDto.FieldTypeName"/>) and its configuration (Select options, DateTime
+    /// input mode, CKEditor content format, Table columns), display order and flags. For a consumer that turns
+    /// <see cref="DocumentIntegrationDto.ExtractedFields"/> into what it needs itself: Extract renders nothing for it.
+    /// <para>
+    /// Archived fields are included, because a document keeps their values and <see cref="FindReadyAsync"/> hands
+    /// those out. A name is unique within a type, archived fields included, so the list can be keyed by
+    /// <see cref="FieldDefinitionDto.Name"/>, the key of <see cref="DocumentIntegrationDto.ExtractedFields"/>. Ordered by
+    /// display order, then name. Empty for an unknown type and for a type of another layer.
+    /// </para>
+    /// </summary>
+    Task<ListResultDto<FieldDefinitionDto>> GetFieldDefinitionsAsync(Guid documentTypeId);
 }

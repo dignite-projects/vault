@@ -214,6 +214,45 @@ public class DocumentIntegrationService_Tests : VaultExtractTestBase<DocumentInt
         unplaced.Regions.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task GetFieldDefinitionsAsync_gives_a_types_definitions_of_the_ambient_layer_archived_ones_included()
+    {
+        await SeedAsync();
+        var selectConfiguration = new Dignite.Abp.FlexFields.FieldConfigurationDictionary { ["Select.Multiple"] = true };
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await _fieldRepository.InsertAsync(new Field(
+                DocumentTestData.DeterministicGuid("integration:field:status"), null, TypeId,
+                name: "status", displayName: "Status", fieldTypeName: "Select",
+                configuration: selectConfiguration, displayOrder: 2), autoSave: true);
+            var archived = await _fieldRepository.InsertAsync(new Field(
+                DocumentTestData.DeterministicGuid("integration:field:note"), null, TypeId,
+                name: "note", displayName: "Note", fieldTypeName: "CKEditor", displayOrder: 1), autoSave: true);
+            await _fieldRepository.DeleteAsync(archived, autoSave: true);
+
+            // The same type id in another layer is another type's field: never in the Host list.
+            await _fieldRepository.InsertAsync(new Field(
+                DocumentTestData.DeterministicGuid("integration:field:tenant"), OtherTenantId, TypeId,
+                name: "tenant_only", displayName: "Tenant only", fieldTypeName: "Text"), autoSave: true);
+        });
+
+        var host = (await _integrationService.GetFieldDefinitionsAsync(TypeId)).Items;
+
+        host.Select(f => f.Name).ShouldBe(["invoice_no", "note", "status"]);
+        host.Single(f => f.Name == "note").FieldTypeName.ShouldBe("CKEditor");
+        var status = host.Single(f => f.Name == "status");
+        status.DisplayName.ShouldBe("Status");
+        status.FieldTypeName.ShouldBe("Select");
+        status.Configuration.ContainsKey("Select.Multiple").ShouldBeTrue();
+
+        using (_currentTenant.Change(OtherTenantId))
+        {
+            (await _integrationService.GetFieldDefinitionsAsync(TypeId)).Items.Select(f => f.Name).ShouldBe(["tenant_only"]);
+        }
+
+        (await _integrationService.GetFieldDefinitionsAsync(Guid.NewGuid())).Items.ShouldBeEmpty();
+    }
+
     private async Task<SeededIds> SeedAsync()
     {
         var seeded = new SeededIds(
