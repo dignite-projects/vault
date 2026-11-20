@@ -44,8 +44,9 @@ The Markdown is read the way Vault reads any [Markdown file](../text-extraction/
 
 - Transcribe the whole document, verbatim, in reading order. Do not summarize, translate or correct.
 - Headings as `#` to `######`, lists as lists, tables as pipe tables, or as HTML `<table>` with `rowspan` / `colspan` when cells are merged.
+- A spreadsheet: each sheet's name as a heading, then its table. A slide deck: each slide in order, its title as a top-level heading, with a page break between slides.
 - Text read from a picture, a stamp or a chart goes in a `<figure>` block, the way Azure Document Intelligence writes one.
-- **Pages**: write `<!-- PageBreak -->` on a line of its own between two pages. The pages then reach the document's layout: the [layout endpoint](../egress/rest-api.md#the-layout) and Vault Index's page-aware chunks and search hits see them. `<!-- PageHeader="…" -->`, `<!-- PageFooter="…" -->` and `<!-- PageNumber="…" -->` lines are read as page furniture and kept out of the text. Without page breaks the document has no pages.
+- **Pages**: write `<!-- PageBreak -->` on a line of its own between two pages. The pages then reach the document's layout: the [layout endpoint](../egress/rest-api.md#the-layout) and Vault Index's page-aware chunks and search hits see them. `<!-- PageHeader="…" -->`, `<!-- PageFooter="…" -->` and `<!-- PageNumber="…" -->` lines are read as page furniture and kept out of the text. Without page breaks the document has no pages. A table that runs onto the next page stays one table, with the page break after it: split in two, its second half loses its header, and every cell below the break is read under no column.
 
 A client's output can be scored on the Parse evaluation corpus before it is relied on: see [Scoring a Client's Markdown](../text-extraction/parse-evaluation.md#scoring-a-clients-markdown).
 
