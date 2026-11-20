@@ -18,11 +18,17 @@ namespace Dignite.Vault.Index.Ingestion;
 public static class IndexChunkRegions
 {
     /// <summary>
-    /// How far apart two boxes may be and still be joined, as a fraction of the page: about one and a half lines of
-    /// body text on A4, so the space between two paragraphs or table rows is crossed and the gutter between two columns
-    /// (or a gap of several lines) is not.
+    /// How far below the previous box the next one may start and still continue it, as a fraction of the page height:
+    /// about two lines of body text on A4, so the space between two paragraphs or table rows is crossed and a gap of
+    /// several lines is not.
     /// </summary>
-    public const double JoinGap = 0.02;
+    public const double LineGap = 0.03;
+
+    /// <summary>
+    /// How far beside the previous box on the same line the next one may start, as a fraction of the page width: the
+    /// padding between two table cells is crossed, the gutter between two columns of text (usually wider) is not.
+    /// </summary>
+    public const double CellGap = 0.02;
 
     /// <summary>The regions of <c>[offset, offset + length)</c> in Markdown order, joined; <c>null</c> when none overlaps it.</summary>
     public static IReadOnlyList<ChunkRegion>? Of((int Offset, int Length)? range, IReadOnlyList<DocumentPageRegionDto>? regions)
@@ -74,8 +80,8 @@ public static class IndexChunkRegions
 
         var vertical = Overlap(previous.Top, previous.Height, next.Top, next.Height);
         var horizontal = Overlap(previous.Left, previous.Width, next.Left, next.Width);
-        var sameLine = vertical >= 0.5 * Math.Min(previous.Height, next.Height) && -horizontal <= JoinGap;
-        var sameColumn = horizontal >= 0.5 * Math.Min(previous.Width, next.Width) && -vertical <= JoinGap;
+        var sameLine = vertical >= 0.5 * Math.Min(previous.Height, next.Height) && -horizontal <= CellGap;
+        var sameColumn = horizontal >= 0.5 * Math.Min(previous.Width, next.Width) && -vertical <= LineGap;
         return sameLine || sameColumn;
     }
 
@@ -89,6 +95,6 @@ public static class IndexChunkRegions
         var top = Math.Min(a.Top, b.Top);
         var right = Math.Max(a.Left + a.Width, b.Left + b.Width);
         var bottom = Math.Max(a.Top + a.Height, b.Top + b.Height);
-        return new ChunkRegion(a.Page, left, top, Math.Round(right - left, 4), Math.Round(bottom - top, 4));
+        return new ChunkRegion(a.Page, Math.Round(left, 4), Math.Round(top, 4), Math.Round(right - left, 4), Math.Round(bottom - top, 4));
     }
 }

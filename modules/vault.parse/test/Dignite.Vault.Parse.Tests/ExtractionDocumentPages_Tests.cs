@@ -102,6 +102,23 @@ public class ExtractionDocumentPages_Tests
     }
 
     [Fact]
+    public void A_region_is_handed_out_to_four_places_after_the_frame_is_flipped()
+    {
+        // 1 - 0.92875 is 0.07125000000000004 in binary floating point; the box must not carry that noise.
+        var page = new ExtractionDocumentSourcePage("p1", 1, new ExtractionDocumentPageDimensions(600, 800),
+            ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
+
+        var region = ExtractionDocumentPages.Regions(ExtractionDocumentMarkdown.Map(OneElement(page, Rectangle(71.1, 735, 526.3, 743.1))))
+            .ShouldHaveSingleItem();
+
+        foreach (var value in new[] { region.Left, region.Top, region.Width, region.Height })
+        {
+            value.ShouldBe(System.Math.Round(value, 4));
+            value.ToString(System.Globalization.CultureInfo.InvariantCulture).Length.ShouldBeLessThanOrEqualTo(6);
+        }
+    }
+
+    [Fact]
     public void A_top_left_frame_and_normalized_coordinates_place_the_same_box()
     {
         var pixels = new ExtractionDocumentSourcePage("p1", 1, new ExtractionDocumentPageDimensions(1000, 2000),

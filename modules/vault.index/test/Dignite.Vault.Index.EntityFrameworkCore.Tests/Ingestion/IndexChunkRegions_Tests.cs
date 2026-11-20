@@ -53,9 +53,9 @@ public class IndexChunkRegions_Tests
     {
         var regions = new List<DocumentPageRegionDto>
         {
-            // The left column: two paragraphs a line apart.
+            // The left column: two paragraphs a blank line apart (2.5% of the page, as in the contract sample).
             Region(0, 10, 1, 0.08, 0.10, 0.40, 0.10),
-            Region(12, 10, 1, 0.08, 0.215, 0.40, 0.10),
+            Region(12, 10, 1, 0.08, 0.225, 0.40, 0.10),
             // The right column, from the top again, past the gutter.
             Region(24, 10, 1, 0.52, 0.10, 0.40, 0.10),
             // The next page.
@@ -64,7 +64,7 @@ public class IndexChunkRegions_Tests
 
         IndexChunkRegions.Of((0, 46), regions).ShouldBe(
         [
-            new ChunkRegion(1, 0.08, 0.10, 0.40, 0.215),
+            new ChunkRegion(1, 0.08, 0.10, 0.40, 0.225),
             new ChunkRegion(1, 0.52, 0.10, 0.40, 0.10),
             new ChunkRegion(2, 0.08, 0.10, 0.40, 0.10)
         ]);

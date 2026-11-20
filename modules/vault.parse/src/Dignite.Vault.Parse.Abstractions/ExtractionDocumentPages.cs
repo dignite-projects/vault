@@ -196,12 +196,15 @@ public static class ExtractionDocumentPages
         }
 
         return right > left && bottom > top
-            ? new ExtractionDocumentPageRegion(0, 0, number, left, top, right - left, bottom - top)
+            ? new ExtractionDocumentPageRegion(0, 0, number, Round(left), Round(top), Round(right - left), Round(bottom - top))
             : null;
     }
 
-    /// <summary>A coordinate as a fraction of the page's extent, kept on the page, to four places (a tenth of a point on A4).</summary>
-    private static double Fraction(double value, double extent) => Math.Round(Math.Clamp(value / extent, 0, 1), 4);
+    /// <summary>A coordinate as a fraction of the page's extent, kept on the page.</summary>
+    private static double Fraction(double value, double extent) => Math.Clamp(value / extent, 0, 1);
+
+    /// <summary>Four places: a tenth of a point on A4, and no binary noise in what is handed out.</summary>
+    private static double Round(double value) => Math.Round(value, 4);
 
     /// <summary>
     /// The spans that contain no other: a table's span contains its cells' spans. In offset order (longest first at a
