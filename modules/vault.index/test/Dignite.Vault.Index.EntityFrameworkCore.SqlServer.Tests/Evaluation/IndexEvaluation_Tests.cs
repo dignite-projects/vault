@@ -569,12 +569,12 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
     }
 
     /// <summary>
-    /// Whether a chunk should carry its document's field values: indexes the corpus once without fields and once with
-    /// them handed out as Extract's extracted fields, which Index puts in front of every chunk's embedding text and the
-    /// reranker's. On the second index it also measures, without changing Index, the keyword leg with the values (written
-    /// into each chunk's <c>Keywords</c>, a column the full-text index already covers). The cases with source
-    /// <c>entity</c> name their document only by a field value. The report goes to
-    /// <c>VAULT_INDEX_EVAL_FIELD_CONTEXT_REPORT</c> or <c>index-field-context.md</c>.
+    /// Whether a chunk should carry its document's field values, and under which names: indexes the corpus without
+    /// fields, with them under the identifiers Extract gives fields (what Index receives), and with them under
+    /// display-like Japanese names. Index puts them in front of every chunk's embedding text and the reranker's. The
+    /// cases with source <c>entity</c> name their document only by a field value. The report goes to
+    /// <c>VAULT_INDEX_EVAL_FIELD_CONTEXT_REPORT</c> or <c>index-field-context.md</c>. (The 2026-11-20 run that also put
+    /// the values in the keyword leg found no gain there: <c>field-context-2026-11-20.md</c>.)
     /// </summary>
     [EvaluationFact]
     public async Task Compare_field_context()
@@ -583,9 +583,11 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
         var cases = set.Cases();
         var documentIds = set.Documents.ToDictionary(d => d.DocumentId, d => d.Id);
         var titles = set.Documents.ToDictionary(d => d.DocumentId, d => d.Title);
-        var fieldLines = set.Documents.ToDictionary(
+        Dictionary<Guid, string?> FieldLines(bool japaneseNames) => set.Documents.ToDictionary(
             d => d.DocumentId,
-            d => d.Fields.Count == 0 ? null : string.Join("\n", d.Fields.OrderBy(f => f.Key, StringComparer.Ordinal).Select(f => f.Key + ": " + f.Value)));
+            d => IndexFieldContext.Describe(d.Fields.ToDictionary(
+                f => japaneseNames ? f.Key : set.FieldNames[f.Key],
+                f => System.Text.Json.JsonSerializer.SerializeToElement(f.Value))));
         var reranker = GetRequiredService<IndexRanker>().Reranker;
         var results = new List<CaseResult>();
         var notes = new List<string>
@@ -607,41 +609,31 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
             }
         }
 
-        async Task<Dictionary<Guid, string>> TextsAsync(bool withFields)
+        async Task<Dictionary<Guid, string>> TextsAsync(Dictionary<Guid, string?>? fieldLines)
             => (await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetListAsync())).ToDictionary(
                 c => c.Id,
-                c => ChunkContext.Compose(titles.GetValueOrDefault(c.DocumentId), withFields ? fieldLines.GetValueOrDefault(c.DocumentId) : null, c.Text));
+                c => ChunkContext.Compose(titles.GetValueOrDefault(c.DocumentId), fieldLines?.GetValueOrDefault(c.DocumentId), c.Text));
 
         // Without fields: the baseline.
         await ClearAsync();
         Arrange(set);
         await IndexCorpusAsync(set);
         await WaitForFullTextAsync();
-        await RankAllAsync("title", await TextsAsync(false));
+        await RankAllAsync("title", await TextsAsync(null));
 
-        // Fields handed out by Extract: Index puts them in front of each chunk's embedding text and the reranker's.
+        // Fields as Extract hands them out, under identifiers: what a deployment gets.
         await ClearAsync();
         Arrange(set, withFields: true);
         await IndexCorpusAsync(set);
         await WaitForFullTextAsync();
-        await RankAllAsync("fields", await TextsAsync(true));
+        await RankAllAsync("fields·identifiers", await TextsAsync(FieldLines(false)));
 
-        // The same index with the values in the keyword leg too, which Index does not do.
-        await using (var connection = new SqlConnection(SqlServerTestDatabase.Evaluation.ConnectionString))
-        {
-            await connection.OpenAsync();
-            foreach (var document in set.Documents.Where(d => d.Fields.Count > 0))
-            {
-                await using var command = new SqlCommand("UPDATE VaultIndexChunks SET Keywords = @keywords WHERE DocumentId = @id", connection);
-                command.Parameters.AddWithValue("@keywords", string.Join(" ", document.Fields.Values));
-                command.Parameters.AddWithValue("@id", document.DocumentId);
-                await command.ExecuteNonQueryAsync();
-            }
-        }
-
-        await Task.Delay(TimeSpan.FromSeconds(3));
+        // The same values under Japanese names, as display names would read.
+        await ClearAsync();
+        Arrange(set, withFields: true, japaneseNames: true);
+        await IndexCorpusAsync(set);
         await WaitForFullTextAsync();
-        await RankAllAsync("fields+keyword", await TextsAsync(true));
+        await RankAllAsync("fields·Japanese names", await TextsAsync(FieldLines(true)));
 
         notes.Add($"Run {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
         var report = EvaluationReport.ToMarkdown(
@@ -1255,9 +1247,11 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
 
     /// <summary>
     /// Answers Extract's calls from the corpus. <paramref name="withFields"/> hands each document's reviewed-field
-    /// stand-ins out as its extracted fields, as Extract does for a document whose type extracts fields.
+    /// stand-ins out as its extracted fields, as Extract does for a document whose type extracts fields: under the
+    /// identifier Extract would name them (<see cref="EvaluationSet.FieldNames"/>), or under the set's Japanese names
+    /// with <paramref name="japaneseNames"/>.
     /// </summary>
-    private void Arrange(EvaluationSet set, bool withFields = false)
+    private void Arrange(EvaluationSet set, bool withFields = false, bool japaneseNames = false)
     {
         var integration = GetRequiredService<IDocumentIntegrationService>();
         foreach (var document in set.Documents)
@@ -1270,7 +1264,9 @@ public class IndexEvaluation_Tests : VaultIndexTestBase<VaultIndexEvaluationTest
                 Language = "ja",
                 Markdown = document.Markdown,
                 ExtractedFields = withFields && document.Fields.Count > 0
-                    ? document.Fields.ToDictionary(f => f.Key, f => System.Text.Json.JsonSerializer.SerializeToElement(f.Value))
+                    ? document.Fields.ToDictionary(
+                        f => japaneseNames ? f.Key : set.FieldNames[f.Key],
+                        f => System.Text.Json.JsonSerializer.SerializeToElement(f.Value))
                     : null
             });
         }

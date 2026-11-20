@@ -26,6 +26,7 @@
     { "id": "outsourcing-basic-terms", "type": "service-contract", "title": "業務委託基本契約書(ミナト精機)", "fields": { "業務": "システム開発業務", "当事者": "株式会社ミナト精機", "金額": "個別契約で定める額" } },
     { "id": "safety-rules", "type": "regulation", "title": "安全衛生管理規程", "fields": { "名称": "安全衛生管理規程" } }
   ],
+  "fieldNames": { "物件": "property", "当事者": "party", "金額": "amount", "業務": "service", "番号": "number", "名称": "name", "会議": "meeting", "日付": "date" },
   "fieldTemplates": {
     "lease": [ "{物件}の賃貸借契約書", "{当事者}との賃貸借契約", "月額賃料 {金額} の契約" ],
     "service-contract": [ "{業務}の委託契約", "{当事者}との業務委託契約", "委託料 {金額}" ],
