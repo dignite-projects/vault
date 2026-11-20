@@ -165,6 +165,8 @@
 
     <ItemGroup Label="Infrastructure">
         <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="11.0.0" />
+        <!-- The host keeps the Data Protection key ring in its database, shared by every instance. -->
+        <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="11.0.0" />
         <PackageVersion Include="Microsoft.EntityFrameworkCore.Proxies" Version="11.0.0" />
         <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="11.0.0" />
         <!-- EF Core 11's Tools package no longer brings Design; dotnet ef needs it in the startup project. -->

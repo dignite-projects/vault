@@ -283,7 +283,7 @@ Claude Code reads remote HTTP MCP servers directly and uses Guided OAuth, with a
 - **One use case behind every adapter.** The search tool calls the same application service as the REST document list (`IDocumentAppService.GetListAsync`), so permission checks, input validation, field resolution and tenant isolation run in one place. The tool only handles transport concerns: strict `cabinetId` parsing, tolerant `lifecycleStatus` parsing, clamping the row count and wrapping titles with `PromptBoundary`.
 - **Strict cabinet id.** An invalid cabinet UUID raises an MCP error instead of silently dropping the filter, which could otherwise widen a cabinet-scoped request to every cabinet.
 - **Untrusted content.** Document bodies and configuration text (type and cabinet names) are wrapped and labeled as data. Dignite Vault never treats embedded text as instructions, and clients should not either.
-- **Single instance.** The Streamable HTTP transport keeps session state in process. Several host instances behind a load balancer need session affinity.
+- **Stateless transport.** The Streamable HTTP transport keeps no session, so several host instances behind a load balancer need no session affinity.
 - **Feature gate.** Every tool and resource calls an application service, so a tenant without the [`VaultExtract.Enable`](../configuration/options.md#features) feature is refused. `resources/list` treats a refused category as denied and still lists the others.
 
 ## Extending the MCP Surface
