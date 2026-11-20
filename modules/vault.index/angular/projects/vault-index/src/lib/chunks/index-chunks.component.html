@@ -27,9 +27,15 @@
           <div class="d-flex align-items-start gap-2">
             <span class="badge bg-secondary">#{{ chunk.ordinal }}</span>
             <div class="flex-grow-1" style="min-width: 0">
-              @if (chunk.headingPath || chunk.firstPage) {
+              @if (chunk.headingPath || chunk.firstPage || contentKeys(chunk.content).length > 0) {
                 <div class="small text-muted text-break">{{ chunk.headingPath }}@if (chunk.firstPage) {
                 <span class="ms-2">{{ chunk.firstPage === chunk.lastPage ? ('VaultIndex::Chunks:Page' | abpLocalization: chunk.firstPage + '') : ('VaultIndex::Chunks:Pages' | abpLocalization: chunk.firstPage + '' : chunk.lastPage + '') }}</span>
+              }@for (key of contentKeys(chunk.content); track key) {
+                <span class="badge border text-body-secondary ms-2">{{ key | abpLocalization }}</span>
+              }@if (sourceQuery(chunk); as query) {
+                <a class="ms-2" [routerLink]="sourceLink(documentId)" [queryParams]="query">
+                  <i class="fas fa-crosshairs me-1"></i>{{ 'VaultIndex::Chunks:ShowInFile' | abpLocalization }}
+                </a>
               }</div>
               }
               <div

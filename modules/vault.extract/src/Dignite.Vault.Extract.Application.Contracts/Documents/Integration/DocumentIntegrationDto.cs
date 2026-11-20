@@ -45,4 +45,12 @@ public class DocumentIntegrationDto : EntityDto<Guid>
     /// were kept) or the Markdown was corrected after the parse, which leaves the ranges describing other text.
     /// </summary>
     public List<DocumentPageSpansDto>? Pages { get; set; }
+
+    /// <summary>
+    /// Where on its page each element of <see cref="Markdown"/> was read, in Markdown order: what outlines a passage on
+    /// the page. Only elements whose engine reported a region with the page's frame are here (the PDF engine does; a
+    /// page read by a vision model names only the page). <c>null</c> when <see cref="Pages"/> is, or no element could
+    /// be placed.
+    /// </summary>
+    public List<DocumentPageRegionDto>? Regions { get; set; }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { layoutErrorCode, readLayout } from './layout-boxes';
+import { MAX_LINKED_REGIONS, layoutErrorCode, readLayout, readRegionsParam } from './layout-boxes';
 
 const square = (left: number, bottom: number, right: number, top: number) => [
   [left, top],
@@ -36,7 +36,7 @@ describe('readLayout', () => {
     });
 
     expect(layout.current).toBe(true);
-    expect(layout.pages).toEqual([{ number: 1, width: 595, height: 842 }]);
+    expect(layout.pages).toEqual([{ number: 1, width: 595, height: 842, drawable: true }]);
     expect(layout.boxes.map(box => [box.kind, box.text])).toEqual([
       ['heading', 'Title'],
       ['paragraph', 'Body'],
@@ -57,7 +57,7 @@ describe('readLayout', () => {
     });
 
     expect(layout.current).toBe(false);
-    expect(layout.pages).toEqual([{ number: 2 }]);
+    expect(layout.pages).toEqual([{ number: 2, drawable: false }]);
     expect(layout.boxes).toEqual([]);
   });
 
@@ -112,5 +112,27 @@ describe('layoutErrorCode', () => {
     expect(await layoutErrorCode('{"error":{"code":"X"}}')).toBe('X');
     expect(await layoutErrorCode(new Blob(['<html>Bad gateway</html>']))).toBeUndefined();
     expect(await layoutErrorCode(null)).toBeUndefined();
+  });
+});
+
+describe('readRegionsParam', () => {
+  it('reads boxes of page, left, top, width and height', () => {
+    expect(readRegionsParam('2,0.118,0.214,0.764,0.061;3,0,0,1,0.5')).toEqual([
+      { page: 2, left: 0.118, top: 0.214, width: 0.764, height: 0.061 },
+      { page: 3, left: 0, top: 0, width: 1, height: 0.5 },
+    ]);
+  });
+
+  it('skips a malformed box or one off the page', () => {
+    expect(readRegionsParam('2,0.1,0.2;x,0,0,1,1;0,0,0,1,1;1.5,0,0,1,1;1,0.6,0,0.5,0.1;1,0,0,0,0.1;1,0.1,0.1,0.2,0.2')).toEqual([
+      { page: 1, left: 0.1, top: 0.1, width: 0.2, height: 0.2 },
+    ]);
+    expect(readRegionsParam(null)).toEqual([]);
+    expect(readRegionsParam('')).toEqual([]);
+  });
+
+  it('reads at most the cap', () => {
+    const many = Array.from({ length: MAX_LINKED_REGIONS + 5 }, () => '1,0,0,0.1,0.1').join(';');
+    expect(readRegionsParam(many).length).toBe(MAX_LINKED_REGIONS);
   });
 });

@@ -153,17 +153,27 @@ public class DocumentIntegrationService_Tests : VaultExtractTestBase<DocumentInt
     }
 
     [Fact]
-    public async Task FindReadyAsync_gives_the_Markdown_ranges_read_from_each_page()
+    public async Task FindReadyAsync_gives_the_Markdown_ranges_read_from_each_page_and_the_regions_of_its_elements()
     {
         var seeded = await SeedAsync();
         var id = DocumentTestData.DeterministicGuid("integration:paged");
         var tree = new ExtractionDocument("paged");
         foreach (var (number, text) in new[] { (1, "請求書"), (2, "明細") })
         {
-            var page = new ExtractionDocumentSourcePage("p" + number, number);
+            // Page 1 as a vision model reads it (the page only); page 2 as the PDF engine does (a region in points).
+            var page = number == 1
+                ? new ExtractionDocumentSourcePage("p1", 1)
+                : new ExtractionDocumentSourcePage("p2", 2, new ExtractionDocumentPageDimensions(600, 800),
+                    ExtractionDocumentCoordinateUnit.Point, ExtractionDocumentCoordinateOrigin.BottomLeft);
             tree.SourcePages.Add(page);
             var element = new ExtractionDocumentTextElement(new TextContent(text));
-            element.Sources.Add(new ExtractionDocumentSourceReference(page));
+            element.Sources.Add(number == 1
+                ? new ExtractionDocumentSourceReference(page)
+                : new ExtractionDocumentSourceReference(page,
+                [
+                    new ExtractionDocumentPoint(60, 400), new ExtractionDocumentPoint(360, 400),
+                    new ExtractionDocumentPoint(360, 600), new ExtractionDocumentPoint(60, 600)
+                ]));
             var section = new ExtractionDocumentSection();
             section.Elements.Add(element);
             tree.Sections.Add(section);
@@ -195,7 +205,13 @@ public class DocumentIntegrationService_Tests : VaultExtractTestBase<DocumentInt
         dto!.Pages.ShouldNotBeNull();
         dto.Pages!.Select(p => p.PageNumber).ShouldBe([1, 2]);
         dto.Pages.Select(p => markdown.Substring(p.Spans.Single().Offset, p.Spans.Single().Length)).ShouldBe(["請求書", "明細"]);
-        (await _integrationService.FindReadyAsync(seeded.Ready))!.Pages.ShouldBeNull("no layout was kept");
+        var region = dto.Regions.ShouldHaveSingleItem();
+        markdown.Substring(region.Offset, region.Length).ShouldBe("明細");
+        region.PageNumber.ShouldBe(2);
+        (region.Left, region.Top, region.Width, region.Height).ShouldBe((0.1, 0.25, 0.5, 0.25));
+        var unplaced = await _integrationService.FindReadyAsync(seeded.Ready);
+        unplaced!.Pages.ShouldBeNull("no layout was kept");
+        unplaced.Regions.ShouldBeNull();
     }
 
     private async Task<SeededIds> SeedAsync()

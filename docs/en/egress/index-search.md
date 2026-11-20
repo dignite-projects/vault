@@ -53,6 +53,8 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
       "headingPath": "# 建物賃貸借契約書 ## 第2条(賃料)",
       "firstPage": 2,
       "lastPage": 2,
+      "regions": [{ "page": 2, "left": 0.118, "top": 0.214, "width": 0.764, "height": 0.061 }],
+      "content": 0,
       "text": "# 建物賃貸借契約書 ## 第2条(賃料)\n賃料は月額 185,000 円とし、…",
       "textTruncated": false,
       "textTotalLength": 92,
@@ -69,7 +71,7 @@ Two legs run over the caller's scope and are fused by **reciprocal rank fusion**
 
 - The vector leg always returns the nearest chunks, so a search returns hits even when nothing matches the words; `keywordRank` is `null` for a hit only the vector leg found.
 - A hit's `text` is cut at 2,000 characters (`textTruncated`, `textTotalLength`); read the pointer for the whole chunk.
-- `firstPage` and `lastPage` are the pages of the document's file the chunk's text was read from, for a citation such as "p. 2". See [Pages](#pages) for when they are `null`.
+- `firstPage` and `lastPage` are the pages of the document's file the chunk's text was read from, for a citation such as "p. 2". `regions` outlines the text on those pages, and `content` says whether the chunk holds a table or a figure. See [Pages](#pages) for when they are `null`.
 - `reranked` says whether the reranker ordered the hits: it is `false` without a rerank model, and when the rerank call failed and the fused order was kept. `score` only orders the hits of one search.
 - `rerankScore` is the reranker's relevance, a probability from 0 to 1 for the usual cross-encoders, comparable across searches with the same model. A best hit far below 0.1 usually means no document answers the question (on the evaluation set a median 0.98 for answerable questions, 0.006 for unanswerable ones); the MCP search tool tells agents so. With `Vault:IndexSearch:MinRerankScore` set, hits below it are dropped and such a search returns none. See [Reranking](../configuration/ai-provider.md#rerank-model-index).
 - `vectorSearchFailed` is `true` when the query could not be embedded this time: the embedding model failed, or took longer than `Vault:IndexSearch:QueryEmbeddingTimeout` (10 seconds). The hits then come from the keyword leg alone, so a passage that shares no words with the question is missing; the MCP search tool tells agents so. A search does not fail on the embedding model, as it does not fail on the reranker.
@@ -108,7 +110,7 @@ The catalog is built when it is read, from the same scope as search. A caller wh
 
 Accepts only the pointers search and outline return: `chunk:{id}` for one chunk, `node:{documentId}/{path}` for a section with its subsections. Anything else is refused with `VaultIndex:InvalidPointer`; a pointer outside the caller's scope is not found. The text is Index's stored copy, cut at 40,000 characters (`textTruncated`, `textTotalLength`). A chunk read also returns `previousPointer` and `nextPointer` to read on: the nearest chunks on each side the caller can read, so a disabled chunk is stepped over, and `null` only at the document's first or last.
 
-A pointer stays valid until the document is indexed again (its text or chunking changes), when search and outline return new ones. Pointers are not character ranges of the source Markdown; a read carries `firstPage` and `lastPage` like a hit (for a section, the pages of all its chunks).
+A pointer stays valid until the document is indexed again (its text or chunking changes), when search and outline return new ones. Pointers are not character ranges of the source Markdown; a read carries `firstPage` and `lastPage` like a hit (for a section, the pages of all its chunks), and a chunk read its `regions` and `content` (a section read leaves them `null`).
 
 ## Pages
 
@@ -117,6 +119,16 @@ Every chunk records the pages its text was read from, so a hit or a read can be 
 - The chunker re-renders the Markdown it splits: a chunk starts with its heading path, repeats a split table's header row, and writes HTML tables as Markdown tables. So the text is matched line by line, ignoring whitespace, Markdown and table markup, compatibility forms (full-width digits) and case, in document order. A table row the chunker filled with a merged cell's text, which the HTML of the parse holds only once, is matched by its own cells. On the evaluation corpus every chunk was found, with 96% (120-token chunks) to 99.7% (the default 400) of each chunk's text inside the range found; what falls outside is mostly the header row a split table repeats, which does not move a chunk onto the page before.
 - `firstPage` and `lastPage` are `null` when the document has no layout (a file without pages, or a parse from before layouts were kept), when its Markdown was corrected after the parse (the layout then describes other text), and for a chunk whose text was not found.
 - They follow the layout: a re-parse that renders the same Markdown updates them without re-chunking or re-embedding the document.
+
+### Regions
+
+`regions` outlines a chunk on its pages, in reading order: boxes whose origin is the page's top-left corner, each value a fraction of the page's width (`left`, `width`) or height (`top`, `height`), the shape of Amazon Textract's `BoundingBox`. Draw one at `left × renderedWidth`, `top × renderedHeight` on the page at whatever size it is shown. Extract hands Index the region of every element of the Markdown (`DocumentIntegrationDto.Regions`, a table cell rather than its table), and Index joins those under the chunk's range: the cells of a row and a column of rows become one box, a paragraph and the next one under it (up to 3% of the page height below) too, while two columns of text, or text several lines apart, stay separate boxes. A chunk keeps at most 32 boxes; past that, one per page around all of its text there.
+
+`regions` is `null` where the pages are, and also when the parse reported no region: the PDF engine reads each element's place on a text-layer page, while a page read by a vision model (a scan, or a PDF page without usable text) names only the page. Then `firstPage` and `lastPage` are still set.
+
+### Content
+
+`content` says what a chunk holds besides running text, as flags: `0` text only, `1` a table, `2` a figure (a transcribed image), `3` both. It is read from the part of the document's Markdown the chunk came from, since the chunker rewrites tables and figures: a GFM table or an HTML `<table>` counts as a table, a `<figure>` block (Azure Document Intelligence's figure markup, which Extract writes for an image) as a figure. It does not depend on a layout, and is `null` only for a chunk whose text was not found.
 
 ## MCP Specifics
 

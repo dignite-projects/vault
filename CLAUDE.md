@@ -37,7 +37,7 @@ Things that fail in CI or at runtime if ignored:
 
 - **Document types are two separate layers**: Host types (for Host documents) and tenant types (for that tenant's documents). Classification and field extraction match one layer by exact `Document.TenantId`; there is no union across layers. The same TypeCode in two layers is two rows, so downstream identifies a type by `(TenantId, DocumentTypeCode)`.
 - **Fields** are either system fields (typed columns on `Document`, produced by the pipeline) or type-bound fields, extracted by a schema that the Host or tenant configures. The module ships no document types and no field definitions.
-- **`Document.Markdown` is the only text field, and the only text payload on the egress.** The first parse writes it once; afterwards only an operator correction or a re-parse replaces it. Derived text is projected by the consumer and is not persisted.
+- **`Document.Markdown` is the only text field, and the egress's text of record.** The first parse writes it once; afterwards only an operator correction or a re-parse replaces it. Derived text is projected by the consumer and is not persisted. The parse's layout (the blob `layout/{id}`) also holds the text, per element with its page region, and goes stale when the Markdown is corrected; the egress hands out what places the Markdown on the pages (`Pages`, `Regions`), not a second text.
 - `Document` holds no business-specific fields. `Document.FlexFields` is a typed bag: every key is a `Field.Name` backed by a persisted field definition. After changing `Document.cs` or an egress DTO, run the `abp-document-boundary-check` skill.
 
 ## Egress

@@ -1,3 +1,5 @@
+import type { ChunkRegionDto } from '../search/models';
+import type { ChunkContent } from '../indexing/chunk-content.enum';
 import type { PagedResultDto } from '@abp/ng.core';
 import type { IndexedDocumentStatus } from '../indexing/indexed-document-status.enum';
 
@@ -14,6 +16,8 @@ export interface IndexChunkDto {
   headingPath?: string | null;
   firstPage?: number | null;
   lastPage?: number | null;
+  regions?: ChunkRegionDto[] | null;
+  content?: ChunkContent | null;
   text?: string;
   isDisabled?: boolean;
   keywords?: string | null;

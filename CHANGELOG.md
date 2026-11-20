@@ -64,6 +64,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreleased with no date, so Index locates the chunks itself; when that lands, the locating step goes. See
   [Index Search](docs/en/egress/index-search.md#pages).
 
+- **Show a passage in its file.** The Vault Index chunk view and retrieval test mark chunks that hold a table or a
+  figure and link each one to Extract's file preview, which opens a PDF on the layout view with the chunk's regions
+  outlined and scrolled to (or at its first page when there are no regions). The preview reads them from its link:
+  `/vault-extract/documents/{id}/file?regions=page,left,top,width,height;…` or `?page=N`. See
+  [The Chunk View](docs/en/deployment/index-status.md#the-chunk-view).
+
+- **Search hits outline their text on the page.** Every Index chunk now records where on its pages its text was read
+  (`regions`: boxes from the page's top-left corner in fractions of the page, Amazon Textract's `BoundingBox` shape)
+  and whether it holds a table or a figure (`content`, flags). Search hits, chunk reads, the chunk view and the
+  retrieval test return both. Extract's `DocumentIntegrationDto` gains `Regions`, the page region of each element of
+  the Markdown from the layout the parse kept; Index joins the regions under each chunk's range into a few boxes
+  (RAGFlow keeps one box per source item on a chunk, `position_int`; Vault's items can be single table cells). Only
+  pages the PDF engine read from the text layer have regions; a page read by a vision model has its page number only.
+  The `VaultIndex` migration `ChunkRegions` adds two nullable columns; existing chunks get their content on their next
+  sync and their regions on the next sync whose document has a current layout (a rebuild from the status page does
+  both). See [Index Search](docs/en/egress/index-search.md#regions).
+
 - **Index as an Agent Framework knowledge source.** `Dignite.Vault.Index.AgentFramework` provides
   `VaultIndexTextSearch`, the search behind Agent Framework's `TextSearchProvider` (before every run or as a
   `vault_search_passages` tool), with passages wrapped as untrusted document data, an optional rerank-score floor, and

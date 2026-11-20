@@ -40,6 +40,8 @@ Namespace `Dignite.Vault.Extract.Documents.Integration`. It is an ABP [integrati
 | `Language` | `string?` | ISO 639-1 / IETF tag; `null` when not detected |
 | `Markdown` | `string` | The whole text. Apply your own ceiling before sending it to an LLM |
 | `ExtractedFields` | `Dictionary<string, JsonElement>?` | Field values by name, in the same shape as the [REST API](rest-api.md)'s `extractedFields` |
+| `Pages` | `List<DocumentPageSpansDto>?` | The ranges of `Markdown` read from each page of the file (`PageNumber`, `Spans` of `Offset` and `Length`), the shape of Azure Document Intelligence's `pages[].spans`. `null` when the document has no current [layout](rest-api.md#the-layout): a file without pages, a parse from before layouts were kept, or Markdown corrected after the parse |
+| `Regions` | `List<DocumentPageRegionDto>?` | Where on its page each element of `Markdown` (paragraph, heading, list item, table cell, figure) was read: its range (`Offset`, `Length`), `PageNumber`, and a box from the page's top-left corner in fractions of the page (`Left`, `Top`, `Width`, `Height`), the shape of Amazon Textract's `BoundingBox`. Only elements whose engine reported a region with the page's frame are listed: the PDF engine does, a page read by a vision model names only its page. `null` when `Pages` is or no element could be placed |
 
 `null` from `FindReadyAsync` means there is nothing to apply now: the id is unknown, the document is in the recycle bin, or it was Ready when its event was published and has since gone back to review. Keep what you derived from its last Ready version; a deletion reaches you separately as `DocumentDeletedEto`.
 

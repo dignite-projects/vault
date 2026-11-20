@@ -1,3 +1,4 @@
+export * from './chunk-content.enum';
 export * from './chunking-strategy.enum';
 export * from './index-artifact-state.enum';
 export * from './index-compilation.enum';

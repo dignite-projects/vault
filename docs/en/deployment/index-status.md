@@ -56,6 +56,8 @@ A document's own state (indexed, failed) does not change while it is rebuilt: th
 
 **Chunks** on a document's row opens `/vault-index/documents/{documentId}/chunks`: the chunks the document was cut into, in order, each with its heading path, its text, its pointer, and its keywords and questions when it was enriched. Like the document list, it shows only documents within the operator's read scope, including those in the recycle bin or withheld.
 
+Each chunk also shows the pages it was read from, whether it holds a table or a figure, and **Show in file**: Extract's file preview of the document (`/vault-extract/documents/{id}/file`), opened on the layout view with the chunk's [regions](../egress/index-search.md#regions) outlined and scrolled to. Where the parse reported no regions (a page read by a vision model) it opens at the chunk's first page instead. The preview takes the regions from its link, `?regions=page,left,top,width,height;…` in fractions of the page, or `?page=N`, so any other page can link to a passage the same way; opening it needs Extract's right to read the document.
+
 **Disable** takes a chunk out of retrieval: search, outline and read no longer return it, for every caller. Use it for a chunk that is noise, such as a repeated disclaimer or a garbled table, and that keeps crowding out the passages people look for. The text itself cannot be edited here: correct the document's Markdown in Extract, so that the index can always be rebuilt from Extract.
 
 A disabled chunk stays disabled across a rebuild as long as its text is unchanged; the mark follows the text, not the chunk's id. When a correction or a new chunking changes the text, the new chunk starts enabled. **Enable** puts a chunk back.
@@ -68,6 +70,8 @@ A disabled chunk stays disabled across a rebuild as long as its text is unchange
 - its place after fusion, with the fused score;
 - its rank in the keyword leg with the full-text score, and in the vector leg with the cosine distance (smaller is nearer);
 - the rerank score, for the candidates the reranker read.
+
+Each candidate shows its pages, table and figure marks and **Show in file** like the chunk view.
 
 With `Vault:IndexSearch:MinRerankScore` set, the page shows the floor and still lists every candidate: the ones under it, which search drops, are marked and come last. When the query could not be embedded, the page says so and shows the keyword leg alone, as search would answer.
 

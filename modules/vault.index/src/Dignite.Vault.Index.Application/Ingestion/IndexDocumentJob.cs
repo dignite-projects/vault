@@ -427,7 +427,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                         d.Ordinal, d.HeadingPath, d.Text, hash, row.IsHidden, disabled.Contains(hash), d.Keywords, d.Questions);
                 })
                 .ToList();
-            PlaceOnPages(document, chunks);
+            Place(document, chunks, withPages: true);
             await _chunkRepository.InsertManyAsync(chunks);
 
             // The old chunks' vectors go from every generation; the new ones into each generation they were computed for.
@@ -456,16 +456,13 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             }
 
             // Same text, but the pages may be new: a re-parse that rendered the same Markdown, or chunks indexed before
-            // pages were placed. With no pages at all the text still matches its layout, so they could not be read this
-            // time (Extract fails open): the chunks keep the pages they have.
-            if (document.Pages is { Count: > 0 })
+            // pages, regions or content were placed. With no pages at all the text still matches its layout, so they
+            // could not be read this time (Extract fails open): the chunks keep the pages and regions they have.
+            existing ??= (await _chunkRepository.GetListAsync(c => c.DocumentId == document.Id)).OrderBy(c => c.Ordinal).ToList();
+            var moved = Place(document, existing, withPages: document.Pages is { Count: > 0 });
+            if (moved.Count > 0)
             {
-                existing ??= (await _chunkRepository.GetListAsync(c => c.DocumentId == document.Id)).OrderBy(c => c.Ordinal).ToList();
-                var moved = PlaceOnPages(document, existing);
-                if (moved.Count > 0)
-                {
-                    await _chunkRepository.UpdateManyAsync(moved);
-                }
+                await _chunkRepository.UpdateManyAsync(moved);
             }
         }
 
@@ -498,20 +495,35 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
     }
 
     /// <summary>
-    /// Sets each chunk's pages from the Markdown ranges Extract read from each page (<see cref="IndexChunkLocator"/>).
-    /// Returns the chunks whose pages changed.
+    /// Finds each chunk in the document's Markdown (<see cref="IndexChunkLocator"/>) and records what it holds
+    /// (<see cref="IndexChunkContent"/>) and, <paramref name="withPages"/>, the pages it was read from and its regions on
+    /// them (<see cref="IndexChunkRegions"/>). Returns the chunks that changed.
     /// </summary>
-    protected virtual List<Chunk> PlaceOnPages(DocumentIntegrationDto document, IReadOnlyList<Chunk> chunks)
+    protected virtual List<Chunk> Place(DocumentIntegrationDto document, IReadOnlyList<Chunk> chunks, bool withPages)
     {
-        var pages = IndexChunkLocator.Pages(document.Markdown, document.Pages, chunks.Select(c => (c.HeadingPath, c.Text)).ToList());
+        var ranges = IndexChunkLocator.Locate(document.Markdown, chunks.Select(c => (c.HeadingPath, c.Text)).ToList());
+        var pages = withPages ? IndexChunkLocator.Pages(ranges, document.Pages) : null;
+        var blocks = IndexChunkContent.Blocks(document.Markdown);
         var moved = new List<Chunk>();
         for (var i = 0; i < chunks.Count; i++)
         {
-            var (first, last) = pages[i];
-            if (chunks[i].FirstPage != first || chunks[i].LastPage != last)
+            var chunk = chunks[i];
+            var changed = chunk.SetContent(IndexChunkContent.Of(ranges[i], blocks));
+            if (pages is not null)
             {
-                chunks[i].SetPages(first, last);
-                moved.Add(chunks[i]);
+                var (first, last) = pages[i];
+                if (chunk.FirstPage != first || chunk.LastPage != last)
+                {
+                    chunk.SetPages(first, last);
+                    changed = true;
+                }
+
+                changed |= chunk.SetRegions(first is null ? null : IndexChunkRegions.Of(ranges[i], document.Regions));
+            }
+
+            if (changed)
+            {
+                moved.Add(chunk);
             }
         }
 

@@ -1,4 +1,13 @@
 import type { DocumentFieldFilter } from '../dignite/vault/extract/documents/models';
+import type { ChunkContent } from '../indexing/chunk-content.enum';
+
+export interface ChunkRegionDto {
+  page?: number;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+}
 
 export interface DocumentOutlineDto {
   documentId?: string;
@@ -43,6 +52,8 @@ export interface IndexReadResultDto {
   headingPath?: string | null;
   firstPage?: number | null;
   lastPage?: number | null;
+  regions?: ChunkRegionDto[] | null;
+  content?: ChunkContent | null;
   text?: string;
   textTruncated?: boolean;
   textTotalLength?: number;
@@ -59,6 +70,8 @@ export interface IndexSearchHitDto {
   headingPath?: string | null;
   firstPage?: number | null;
   lastPage?: number | null;
+  regions?: ChunkRegionDto[] | null;
+  content?: ChunkContent | null;
   text?: string;
   textTruncated?: boolean;
   textTotalLength?: number;
@@ -99,6 +112,8 @@ export interface IndexSearchTestCandidateDto {
   headingPath?: string | null;
   firstPage?: number | null;
   lastPage?: number | null;
+  regions?: ChunkRegionDto[] | null;
+  content?: ChunkContent | null;
   text?: string;
   textTruncated?: boolean;
 }

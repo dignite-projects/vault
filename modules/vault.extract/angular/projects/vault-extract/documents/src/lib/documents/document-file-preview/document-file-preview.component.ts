@@ -28,6 +28,7 @@ import {
   DocumentLayoutViewerComponent,
   LayoutViewerField,
 } from '../document-layout-viewer/document-layout-viewer.component';
+import { PageRegion, readRegionsParam } from '../document-layout-viewer/layout-boxes';
 
 /** A field value as one line of text beside the layout; a table or another structured value shows its label only. */
 function displayValue(value: unknown): string {
@@ -42,7 +43,8 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
-// File preview page (route documents/:id/file). Replaces the old detail-page openFile() blob new-tab
+// File preview page (route documents/:id/file). A link can name regions to outline on a PDF's pages (`?regions=`, see
+// readRegionsParam) or a page to open at (`?page=`); the page then starts on the layout view. Replaces the old detail-page openFile() blob new-tab
 // shortcut with a readable /vault-extract/documents/{id}/file URL that includes the document ID. The file content is
 // still fetched through DocumentService.getBlob with a Bearer token and embedded as a blob, so the token
 // never enters the URL. Blob lifecycle is centralized in DocumentFileBlobService (#277).
@@ -68,6 +70,9 @@ export class DocumentFilePreviewComponent implements OnInit {
   isLoading = signal(true);
   /** A PDF shows its parse's layout drawn over its pages instead of the browser's own viewer. */
   showLayout = signal(false);
+  /** Regions the link asked to outline, and the page it asked to open at. */
+  readonly highlight = signal<PageRegion[]>([]);
+  readonly startPage = signal<number | null>(null);
   hasError = signal(false);
 
   protected documentId!: string;
@@ -114,6 +119,13 @@ export class DocumentFilePreviewComponent implements OnInit {
 
   ngOnInit(): void {
     this.documentId = this.route.snapshot.paramMap.get('id')!;
+    const query = this.route.snapshot.queryParamMap;
+    const page = Number(query.get('page'));
+    this.highlight.set(readRegionsParam(query.get('regions')));
+    this.startPage.set(Number.isInteger(page) && page > 0 ? page : null);
+    if (this.highlight().length > 0 || this.startPage()) {
+      this.showLayout.set(true);
+    }
     this.load();
   }
 

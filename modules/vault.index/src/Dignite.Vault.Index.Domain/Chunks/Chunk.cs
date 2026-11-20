@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Dignite.Vault.Index.Indexing;
 using Dignite.Vault.Index.Search;
 using Volo.Abp;
@@ -69,6 +71,19 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
     /// <summary>The last page this chunk's text was read from; equal to <see cref="FirstPage"/> for a chunk on one page.</summary>
     public virtual int? LastPage { get; protected set; }
 
+    /// <summary>
+    /// Where on <see cref="FirstPage"/> to <see cref="LastPage"/> the chunk's text was read, in reading order, at most
+    /// <see cref="IndexingConsts.MaxChunkRegions"/>; <c>null</c> when it is not known: the pages are not, or the parse
+    /// reported no regions (a page read by a vision model names only the page).
+    /// </summary>
+    public virtual IReadOnlyList<ChunkRegion>? Regions { get; protected set; }
+
+    /// <summary>
+    /// Whether the chunk holds a table or a figure, from the part of the Markdown it came from; <c>null</c> when that
+    /// part could not be found (see <see cref="FirstPage"/>).
+    /// </summary>
+    public virtual ChunkContent? Content { get; protected set; }
+
     protected Chunk()
     {
     }
@@ -118,5 +133,53 @@ public class Chunk : BasicAggregateRoot<Guid>, IMultiTenant, IChunkScopeFields
 
         FirstPage = firstPage;
         LastPage = lastPage;
+
+        // A region off the new pages no longer belongs to the chunk.
+        if (Regions is not null && Regions.Any(region => firstPage is null || region.Page < firstPage || region.Page > lastPage))
+        {
+            Regions = null;
+        }
+    }
+
+    /// <summary>
+    /// Outlines the chunk on its pages; <c>null</c> or empty when unknown. Each region must be on the chunk's pages and on
+    /// the page (fractions from 0 to 1). Returns whether anything changed.
+    /// </summary>
+    public virtual bool SetRegions(IReadOnlyList<ChunkRegion>? regions)
+    {
+        regions = regions is { Count: > 0 } ? regions : null;
+        if (regions is not null)
+        {
+            Check.Range(regions.Count, nameof(regions), 1, IndexingConsts.MaxChunkRegions);
+            foreach (var region in regions)
+            {
+                if (FirstPage is null || region.Page < FirstPage || region.Page > LastPage
+                    || region.Left < 0 || region.Top < 0 || region.Width <= 0 || region.Height <= 0
+                    || region.Left + region.Width > 1.0001 || region.Top + region.Height > 1.0001)
+                {
+                    throw new ArgumentException($"Region {region} is not on pages {FirstPage}-{LastPage}.", nameof(regions));
+                }
+            }
+        }
+
+        if (regions is null ? Regions is null : Regions is not null && Regions.SequenceEqual(regions))
+        {
+            return false;
+        }
+
+        Regions = regions?.ToList();
+        return true;
+    }
+
+    /// <summary>Records what the chunk holds besides text; <c>null</c> when unknown. Returns whether it changed.</summary>
+    public virtual bool SetContent(ChunkContent? content)
+    {
+        if (Content == content)
+        {
+            return false;
+        }
+
+        Content = content;
+        return true;
     }
 }

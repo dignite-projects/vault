@@ -16,7 +16,7 @@ import { DocumentService } from '@dignite/ng.vault-extract';
 import { HttpErrorResponse } from '@angular/common/http';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { Subscription } from 'rxjs';
-import { LayoutBox, LayoutField, layoutErrorCode, readLayout } from './layout-boxes';
+import { LayoutBox, LayoutField, LayoutPage, PageRegion, layoutErrorCode, readLayout } from './layout-boxes';
 import { PageBuffer, samePages } from './page-buffer';
 
 /** A field listed beside the pages: its name in the layout, and the label and value the page shows for it. */
@@ -34,6 +34,15 @@ interface ViewerPage {
   boxes: ViewerBox[];
   /** The regions of every field on this page; a box's `text` is its field's name. */
   fieldBoxes: ViewerBox[];
+  /** The regions handed in by link (`highlight`) on this page, in screen pixels. */
+  linked: ScreenBox[];
+}
+
+interface ScreenBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 interface ViewerBox extends LayoutBox {
@@ -68,6 +77,9 @@ async function loadPdfJs() {
  *
  * Beside the pages it lists the extracted fields: pointing at one outlines where its value was found (the layout's
  * `fields`), clicking keeps it outlined and scrolls to it. A field without a known place is listed and says so.
+ *
+ * Regions handed in (`highlight`, such as the place of a Vault Index search hit) are outlined on their pages and
+ * scrolled to once the pages are laid out; without regions, `startPage` is scrolled to.
  */
 @Component({
   selector: 'lib-document-layout-viewer',
@@ -82,6 +94,10 @@ export class DocumentLayoutViewerComponent {
   readonly fileUrl = input.required<string>();
   /** The fields to list, in display order. Without them, the layout's own field names are listed. */
   readonly fields = input<LayoutViewerField[]>([]);
+  /** Regions to outline, in fractions of the page from its top-left corner. */
+  readonly highlight = input<PageRegion[]>([]);
+  /** The page to bring into view when there are no regions to outline. */
+  readonly startPage = input<number | null>(null);
 
   private readonly documentService = inject(DocumentService);
   private readonly destroyRef = inject(DestroyRef);
@@ -290,13 +306,46 @@ export class DocumentLayoutViewerComponent {
             const [x2, y2] = viewport.convertToViewportPoint(box.right, box.top);
             return { ...box, x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
           });
-      pages.push({ number, width: viewport.width, height: viewport.height, boxes: onScreen(layout.boxes), fieldBoxes: onScreen(fieldBoxes) });
+      const linked = this.highlight()
+        .filter(region => region.page === number)
+        .map(region => linkedOnScreen(region, layout.pages.find(p => p.number === number), viewport));
+      pages.push({
+        number,
+        width: viewport.width,
+        height: viewport.height,
+        boxes: onScreen(layout.boxes),
+        fieldBoxes: onScreen(fieldBoxes),
+        linked,
+      });
     }
 
     this.layoutFields.set(layout.fields);
     this.current.set(layout.current);
     this.pages.set(pages);
     this.state.set('ready');
+    this.scrollToStart(generation);
+  }
+
+  /** Brings the first linked region, or else the start page, into view once the pages are on screen. */
+  private scrollToStart(generation: number): void {
+    const page = this.startPage();
+    if (this.highlight().length === 0 && !page) {
+      return;
+    }
+
+    if (this.scrollTimer !== null) {
+      clearTimeout(this.scrollTimer);
+    }
+    this.scrollTimer = setTimeout(() => {
+      this.scrollTimer = null;
+      if (generation !== this.generation) {
+        return;
+      }
+
+      const host = this.host.nativeElement;
+      const target = host.querySelector('.layout-linked') ?? (page ? host.querySelector(`[data-page="${page}"]`) : null);
+      target?.scrollIntoView({ block: this.highlight().length > 0 ? 'center' : 'start' });
+    });
   }
 
   /**
@@ -329,4 +378,31 @@ export class DocumentLayoutViewerComponent {
       this.renders.delete(canvas);
     }
   }
+}
+
+/**
+ * A linked region on screen. On a page whose layout is in PDF points it is turned back into points and through the
+ * viewport, exactly as the layout's own boxes are, so a cropped or rotated page lines up; on any other page the
+ * fractions are taken of the rendered page.
+ */
+function linkedOnScreen(
+  region: PageRegion,
+  page: LayoutPage | undefined,
+  viewport: { width: number; height: number; convertToViewportPoint(x: number, y: number): number[] },
+): ScreenBox {
+  if (page?.drawable && page.width && page.height) {
+    const [x1, y1] = viewport.convertToViewportPoint(region.left * page.width, (1 - region.top) * page.height);
+    const [x2, y2] = viewport.convertToViewportPoint(
+      (region.left + region.width) * page.width,
+      (1 - region.top - region.height) * page.height,
+    );
+    return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+  }
+
+  return {
+    x: region.left * viewport.width,
+    y: region.top * viewport.height,
+    w: region.width * viewport.width,
+    h: region.height * viewport.height,
+  };
 }

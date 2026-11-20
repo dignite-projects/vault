@@ -18,7 +18,7 @@ partial class VaultIndexHostDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261118132424_IndexedDocumentPageCuts";
+    public override string LastMigrationId => "20261120015925_ChunkRegions";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -114,6 +114,9 @@ partial class VaultIndexHostDbContextModelSnapshot : ModelSnapshot
                     .ValueGeneratedOnAdd()
                     .HasColumnType("uniqueidentifier");
 
+                b.Property<int?>("Content")
+                    .HasColumnType("int");
+
                 b.Property<string>("ContentHash")
                     .IsRequired()
                     .HasMaxLength(64)
@@ -155,6 +158,9 @@ partial class VaultIndexHostDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("Questions")
                     .HasMaxLength(1100)
                     .HasColumnType("nvarchar(1100)");
+
+                b.Property<string>("Regions")
+                    .HasColumnType("nvarchar(max)");
 
                 b.Property<Guid?>("TenantId")
                     .HasColumnType("uniqueidentifier")

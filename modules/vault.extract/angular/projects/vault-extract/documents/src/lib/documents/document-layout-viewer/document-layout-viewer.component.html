@@ -63,7 +63,16 @@
                 ></div>
               }
             }
-            <!-- A field's outline is drawn on every page, so selecting a field can scroll to a page not drawn yet. -->
+            <!-- Linked regions and a field's outline are drawn on every page, so scrolling to one works before its page is drawn. -->
+            @for (box of page.linked; track $index) {
+              <div
+                class="layout-linked position-absolute"
+                [style.left.px]="box.x"
+                [style.top.px]="box.y"
+                [style.width.px]="box.w"
+                [style.height.px]="box.h"
+              ></div>
+            }
             @for (box of page.fieldBoxes; track $index) {
               @if (box.text === activeField()) {
                 <div

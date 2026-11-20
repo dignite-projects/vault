@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
 using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Index.Indexing;
 using Volo.Abp.Application.Services;
 
 namespace Dignite.Vault.Index.Search;
@@ -147,6 +148,15 @@ public class IndexSearchTestCandidateDto
 
     /// <summary>The last page the chunk was read from.</summary>
     public int? LastPage { get; set; }
+
+    /// <summary>
+    /// Where on those pages the text was read, in reading order, as boxes in fractions of the page; <c>null</c> when
+    /// unknown (no pages, or a parse that reported no regions, such as a page read by a vision model).
+    /// </summary>
+    public List<ChunkRegionDto>? Regions { get; set; }
+
+    /// <summary>Whether the chunk holds a table or a figure; <c>null</c> when unknown.</summary>
+    public ChunkContent? Content { get; set; }
 
     /// <summary>The start of the chunk text, cut at <see cref="IndexSearchConsts.MaxTestTextLength"/>.</summary>
     public string Text { get; set; } = default!;
