@@ -7,5 +7,7 @@ import * as Reprocessing from './reprocessing';
 export * from './document-lifecycle-status.enum';
 export * from './document-review-disposition.enum';
 export * from './document-review-reasons.enum';
+export * from './document-text-origin.enum';
 export * from './models';
+export * from './submission-file-kind.enum';
 export { Cabinets, DocumentTypes, Exports, Fields, Pipelines, Reprocessing };

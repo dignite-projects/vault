@@ -132,12 +132,14 @@ public partial class DocumentToDocumentListItemDtoMapper : MapperBase<Document, 
     [MapperIgnoreTarget(nameof(DocumentListItemDto.ExtractedFields))]
     [MapperIgnoreTarget(nameof(DocumentListItemDto.RequiresReview))]
     [MapperIgnoreTarget(nameof(DocumentListItemDto.Rights))]
+    [MapperIgnoreTarget(nameof(DocumentListItemDto.TextOrigin))]
     public override partial DocumentListItemDto Map(Document source);
 
     [MapperIgnoreTarget(nameof(DocumentListItemDto.DocumentTypeCode))]
     [MapperIgnoreTarget(nameof(DocumentListItemDto.ExtractedFields))]
     [MapperIgnoreTarget(nameof(DocumentListItemDto.RequiresReview))]
     [MapperIgnoreTarget(nameof(DocumentListItemDto.Rights))]
+    [MapperIgnoreTarget(nameof(DocumentListItemDto.TextOrigin))]
     public override partial void Map(Document source, DocumentListItemDto destination);
 }
 

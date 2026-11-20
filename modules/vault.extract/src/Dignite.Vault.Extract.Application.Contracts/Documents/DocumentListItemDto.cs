@@ -29,6 +29,9 @@ public class DocumentListItemDto : EntityDto<Guid>
     /// </summary>
     public bool IsContainer { get; set; }
 
+    /// <summary>Whether the text was parsed from the file or submitted by a caller; see <see cref="DocumentDto.TextOrigin"/>.</summary>
+    public DocumentTextOrigin TextOrigin { get; set; }
+
     public string? DocumentTypeCode { get; set; }
     public DocumentLifecycleStatus LifecycleStatus { get; set; }
     public DocumentReviewDisposition ReviewDisposition { get; set; }

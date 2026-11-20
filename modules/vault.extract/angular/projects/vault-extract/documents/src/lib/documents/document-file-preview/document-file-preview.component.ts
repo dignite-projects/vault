@@ -13,7 +13,13 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { LocalizationPipe } from '@abp/ng.core';
-import { DocumentDto, DocumentService, FieldDefinitionDto, FieldDefinitionService } from '@dignite/ng.vault-extract';
+import {
+  DocumentDto,
+  DocumentService,
+  DocumentTextOrigin,
+  FieldDefinitionDto,
+  FieldDefinitionService,
+} from '@dignite/ng.vault-extract';
 import { Subscription } from 'rxjs';
 import { DocumentFileBlobService } from '../../shared/document-file-blob.service';
 import { isImageContentType, isPdfContentType } from '../../shared/content-type';
@@ -76,6 +82,8 @@ export class DocumentFilePreviewComponent implements OnInit {
   // file; a figure sub-document its retained image), so the preview now works for sub-documents too. This
   // gate survives as null-safety for pre-migration legacy rows; the template shows a neutral notice then.
   readonly hasSourceFile = computed(() => !!this.document()?.fileOrigin);
+  /** A document submitted as text without its original file: it never had one, which the notice says. */
+  readonly isSubmittedText = computed(() => this.document()?.textOrigin === DocumentTextOrigin.Submitted);
 
   /**
    * The extracted fields the layout lists, labelled and ordered as the detail page shows them. Until the type's field

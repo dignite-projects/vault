@@ -48,6 +48,7 @@ curl -X POST https://your-host/api/vault-extract/documents/upload \
 | `extractedFields` | Field values keyed by field `name` (see below), or `null` |
 | `fieldSources` | Where each value was found: per field `name`, ranges of `markdown` (see below), or `null` |
 | `extractionIsComplete`, `extractionIncompleteReason` | Whether text extraction captured the whole document |
+| `textOrigin` | `Parsed` (0): Vault read the text from the file. `Submitted` (1): a caller converted the document itself and [submitted](../documents/submitting-content.md) the text, which nothing checked against a file. Also on list rows |
 | `fileOrigin` | Upload metadata: `originalFileName`, `contentType`, `fileSize`, `uploadedByUserName` (`null` for a sub-document) |
 | `cabinetId`, `originDocumentId`, `isContainer` | Filing and [sub-document](../documents/sub-documents.md) relations |
 | `creationTime` | Upload time |

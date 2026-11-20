@@ -42,6 +42,7 @@ import {
   DocumentReviewReasons,
   DocumentService,
   DocumentStatisticsService,
+  DocumentTextOrigin,
   ExportFormat,
   DocumentExportService,
   FieldDefinitionDto,
@@ -628,9 +629,11 @@ export class DocumentListComponent implements OnInit {
           const doc = data.record;
           const localization = data.getInjected(LocalizationService);
           const fileName = doc.title || doc.fileOrigin?.originalFileName || '-';
-          const iconClass = this.isImage(doc)
-            ? 'fas fa-file-image fa-lg text-primary'
-            : 'fas fa-file-pdf fa-lg text-danger';
+          const iconClass = !doc.fileOrigin
+            ? 'fas fa-file-lines fa-lg text-secondary'
+            : this.isImage(doc)
+              ? 'fas fa-file-image fa-lg text-primary'
+              : 'fas fa-file-pdf fa-lg text-danger';
           // #350: a container is a bundle of sub-documents and is not itself a business record. Flag it
           // with a badge so operators don't mistake it for a normal document. isContainer is a
           // system-controlled signal carried on the list DTO. #354: the row's "view sub-documents" action
@@ -644,8 +647,13 @@ export class DocumentListComponent implements OnInit {
           const subDocBadge = doc.originDocumentId
             ? ` <span class="badge bg-secondary">${escapeHtmlChars(localization.instant('VaultExtract::Document:SubDocument'))}</span>`
             : '';
+          // A text a client converted and submitted itself, rather than one Vault read from the file: worth telling
+          // apart, since nothing checked it against a file. The hint says so on hover.
+          const submittedBadge = doc.textOrigin === DocumentTextOrigin.Submitted
+            ? ` <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle" title="${escapeHtmlChars(localization.instant('VaultExtract::Document:TextOrigin:Submitted:Hint'))}">${escapeHtmlChars(localization.instant('VaultExtract::Document:TextOrigin:Submitted'))}</span>`
+            : '';
           return of(
-            `<span class="document-file-cell"><i class="${iconClass} me-2"></i><span class="fw-semibold text-truncate">${escapeHtmlChars(fileName)}</span>${bundleBadge}${subDocBadge}</span>`,
+            `<span class="document-file-cell"><i class="${iconClass} me-2"></i><span class="fw-semibold text-truncate">${escapeHtmlChars(fileName)}</span>${bundleBadge}${subDocBadge}${submittedBadge}</span>`,
           );
         },
       }),
