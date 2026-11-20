@@ -37,6 +37,8 @@ public static class EvaluationReport
         Table(builder, "Passage level, written questions in Japanese", modes, results, r => r.PassageRank, r => r.Case.Heading is not null && r.Case.Language == "ja");
         Table(builder, "Passage level, written questions in Chinese and English", modes, results, r => r.PassageRank, r => r.Case.Heading is not null && r.Case.Language is "zh" or "en");
         Table(builder, "Passage level, questions answered by a table", modes, results, r => r.PassageRank, r => r.Case.Heading is not null && r.Case.Source == "table");
+        Table(builder, "Document level, entity questions (named only by a field value)", modes, results, r => r.DocumentRank, r => r.Case.Source == "entity");
+        Table(builder, "Passage level, entity questions", modes, results, r => r.PassageRank, r => r.Case.Source == "entity");
 
         builder.AppendLine($"## Misses of `{primaryMode}` (answer not first)").AppendLine();
         builder.Append("| Query | Expected");

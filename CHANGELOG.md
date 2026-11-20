@@ -64,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreleased with no date, so Index locates the chunks itself; when that lands, the locating step goes. See
   [Index Search](docs/en/egress/index-search.md#pages).
 
+- **Index chunks carry their document's field values.** Index puts Extract's `extractedFields` (text, numbers, dates
+  and lists of them, as `name: value` lines, 600 characters at most) in front of every chunk in what is embedded and
+  what the reranker reads, so a question that names a document only by a field value, such as a tenant or a vendor,
+  finds the passage that answers it. On the evaluation set, search with rerank went from 0.957 to 0.973 passage MRR@10,
+  and the new entity questions from 0.947 to 1.000. Changed values re-embed the same chunks on the next sync. The
+  `VaultIndex` migration `IndexedDocumentFieldContext` adds a nullable column; existing documents get their values on
+  their next sync (a rebuild from the status page does it at once). See
+  [Index Search](docs/en/egress/index-search.md#field-values).
+
 - **Show a passage in its file.** The Vault Index chunk view and retrieval test mark chunks that hold a table or a
   figure and link each one to Extract's file preview, which opens a PDF on the layout view with the chunk's regions
   outlined and scrolled to (or at its first page when there are no regions). The preview reads them from its link:

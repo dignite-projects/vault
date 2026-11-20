@@ -98,6 +98,36 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task Field_values_ride_in_front_of_every_chunk_and_changed_values_embed_the_same_chunks_again()
+    {
+        var dto = Dto(Contract, TypeA);
+        dto.ExtractedFields = new() { ["tenant"] = System.Text.Json.JsonSerializer.SerializeToElement("山田太郎") };
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        _model.Inputs.ShouldAllBe(i => i.StartsWith("賃貸借契約書\ntenant: 山田太郎\n"));
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).FieldContext.ShouldBe("tenant: 山田太郎");
+        var chunkIds = (await ChunksAsync()).Select(c => c.Id).ToList();
+
+        // The same values again: nothing to do.
+        var calls = _model.Calls;
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+        _model.Calls.ShouldBe(calls);
+
+        // A corrected value: the same chunks, embedded again with it.
+        dto = Dto(Contract, TypeA);
+        dto.ExtractedFields = new() { ["tenant"] = System.Text.Json.JsonSerializer.SerializeToElement("山田花子") };
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T3);
+
+        _model.Calls.ShouldBe(calls + 1);
+        _model.Inputs.Last().ShouldStartWith("賃貸借契約書\ntenant: 山田花子\n");
+        (await ChunksAsync()).Select(c => c.Id).ShouldBe(chunkIds, ignoreOrder: true);
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).FieldContext.ShouldBe("tenant: 山田花子");
+        _vectors.Vectors.Keys.Select(k => k.ChunkId).ShouldBe(chunkIds, ignoreOrder: true);
+    }
+
+    [Fact]
     public async Task A_redelivered_event_is_dropped()
     {
         ExtractReturns(Contract, TypeA);

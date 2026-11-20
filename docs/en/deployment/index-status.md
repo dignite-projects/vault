@@ -128,6 +128,8 @@ Retrieval quality is measured with an evaluation set: a corpus of documents and 
 - **39 field cases**, generated from each document's field values through per-type templates, such as "INV-2026-1112" or "株式会社みどり印刷の請求書". They ask for a document by a value a reviewed field would hold.
 - **55 written questions**, each naming the document and the heading of the section that answers it: 44 in Japanese, 5 in Chinese and 6 in English.
 
+Later versions added documents and question kinds; `evaluation-set.json` describes each. Version 6 adds **entity questions** (source `entity`): each names its document only by a field value that is neither in the title nor in the section that answers it, such as a tenant, a vendor or a meeting date.
+
 The evaluation indexes the corpus through the real ingestion job and embedding model on a real SQL Server, then ranks every case several ways: each leg alone, fusion with keyword weights 1, 0.5 and 0.25, the same rankings reranked when a rerank model is configured, and `service`, the search service as the host would configure it. It reports **Hit@k**, the share of cases whose answer is in the top k, and **MRR@10**, the mean reciprocal rank of the first right answer in the top 10. **Document level** counts any chunk of the right document. **Passage level** also needs the right heading, and covers the written questions.
 
 Run it against a SQL Server 2025 with Full-Text Search, and any OpenAI-compatible embedding endpoint whose vectors match `VAULT_INDEX_EVAL_DIMENSIONS` (default 1024):
@@ -302,3 +304,24 @@ The outline and the catalog serve only version 2. `Compare_navigation` now also 
 - **On Japanese questions bge-m3 is as good as any.**
 
 The recommendation is in [AI Provider](../configuration/ai-provider.md#embedding-model-index).
+
+### Field context (2026-11-20)
+
+`Compare_field_context` indexes version 6 of the set (146 cases, 19 of them entity questions) once without field values and once with them, which Index puts in front of every chunk in what is embedded and what the reranker reads ([Field values](../egress/index-search.md#field-values)). On the second index it also writes the values into the keyword leg, which Index does not do. Embedding `BAAI/bge-m3`, rerank `BAAI/bge-reranker-v2-m3` (`field-context-2026-11-20.md` next to the set). MRR@10:
+
+| Ranking | Title only | With field values | Values in the keyword leg too |
+| --- | ---: | ---: | ---: |
+| Passage, search with rerank | 0.957 | 0.973 | 0.973 |
+| Passage, Japanese questions, search with rerank | 0.968 | 0.988 | 0.988 |
+| Passage, entity questions, search with rerank | 0.947 | 1.000 | 1.000 |
+| Document, search with rerank | 0.983 | 0.986 | 0.986 |
+| Passage, vector leg | 0.913 | 0.960 | 0.960 |
+| Passage, entity questions, vector leg | 0.867 | 1.000 | 1.000 |
+| Passage, fused legs | 0.833 | 0.863 | 0.867 |
+| Questions a table answers, fused legs | 0.833 | 0.792 | 0.792 |
+
+- **The values place a passage in its document.** Four leases with the same clauses were told apart by their tenant only once the tenant rode with every clause: entity questions went to 1.000 with and without the reranker.
+- **The reranker has to read them too.** With the values in the vectors alone, search with rerank stayed at 0.957: the reranker reorders the leading 30 by title and chunk, and gave back what the vectors gained.
+- **The keyword leg gains nothing**, so the values stay out of the full-text index.
+- **One loss, without a reranker:** questions a table answers dropped from 0.833 to 0.792 in the fused legs (one case of 12); with the reranker they stay at 0.875.
+- The entity questions were written for this measurement, knowing what it tests, and are few (19); read their 1.000 as "the effect exists", not as its size.

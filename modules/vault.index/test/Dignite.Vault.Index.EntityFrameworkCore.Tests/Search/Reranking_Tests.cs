@@ -73,6 +73,17 @@ public class Reranking_Tests : VaultIndexTestBase<VaultIndexRerankTestModule>
     }
 
     [Fact]
+    public async Task The_reranker_reads_the_documents_field_values_between_the_title_and_the_chunk()
+    {
+        await IndexAsync(fields: new() { ["tenant"] = System.Text.Json.JsonSerializer.SerializeToElement("山田太郎") });
+
+        await _search.SearchAsync(new IndexSearchInput { Query = "賃料" });
+
+        _reranker.LastDocuments.ShouldNotBeEmpty();
+        _reranker.LastDocuments.ShouldAllBe(d => d.StartsWith("賃貸借契約書（本店）\ntenant: 山田太郎\n"));
+    }
+
+    [Fact]
     public async Task A_score_floor_keeps_only_the_hits_the_reranker_scored_above_it()
     {
         await IndexAsync();
@@ -176,7 +187,7 @@ public class Reranking_Tests : VaultIndexTestBase<VaultIndexRerankTestModule>
         ReciprocalRankFusion.Fuse(keyword, vector, 60, keywordWeight: 0).Select(f => f.ChunkId).ShouldBe([b]);
     }
 
-    private async Task IndexAsync(string markdown = Lease, int? maxTokens = null)
+    private async Task IndexAsync(string markdown = Lease, int? maxTokens = null, Dictionary<string, System.Text.Json.JsonElement>? fields = null)
     {
         if (maxTokens is { } max)
         {
@@ -190,7 +201,8 @@ public class Reranking_Tests : VaultIndexTestBase<VaultIndexRerankTestModule>
             DocumentTypeId = LeaseType,
             Title = "賃貸借契約書（本店）",
             Language = "ja",
-            Markdown = markdown
+            Markdown = markdown,
+            ExtractedFields = fields
         });
         await GetRequiredService<IndexDocumentJob>().ExecuteAsync(new IndexDocumentJobArgs
         {
