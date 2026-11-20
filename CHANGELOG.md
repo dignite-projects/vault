@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreleased with no date, so Index locates the chunks itself; when that lands, the locating step goes. See
   [Index Search](docs/en/egress/index-search.md#pages).
 
+- **A Select field rides with its option's label.** Index reads the document type's field definitions
+  (`GetFieldDefinitionsAsync`) when it syncs a document with field values, and puts a Select field's option label in
+  front of the chunks instead of the stored option value: a question names "承認済み", not `st_02`. Existing documents
+  change on their next sync; a label renamed later does too. See
+  [Index Search](docs/en/egress/index-search.md#field-values).
+
 - **`IDocumentIntegrationService.GetFieldDefinitionsAsync(documentTypeId)`** returns a document type's field
   definitions, as stored, to an in-process consumer with no user: name, display name, field type and its
   configuration (Select options, DateTime input mode, CKEditor content format, Table columns), display order and

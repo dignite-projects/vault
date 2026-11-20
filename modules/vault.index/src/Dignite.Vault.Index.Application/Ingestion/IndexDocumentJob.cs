@@ -289,7 +289,7 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var current = await _generationManager.FindTargetAsync(modelId);
 
         // The field values go in front of every chunk's embedding text: changed values embed the same chunks again.
-        var fields = IndexFieldContext.Describe(document.ExtractedFields);
+        var fields = await DescribeFieldsAsync(document);
         var sameText = !force && claim.ContentHash == contentHash && claim.ProfileStamp == profile.Stamp
                        && (pageCuts is null || pageCuts == claim.PageCutsHash);
         if (sameText && current is not null && claim.GenerationId == current.Id && claim.FieldContext == fields)
@@ -369,6 +369,23 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
                 ? $"Enrichment failed for {failed.FailedChunkCount} of {drafts.Count} chunks; they are indexed without it."
                 : null
         };
+    }
+
+    /// <summary>
+    /// The document's field values as the lines in front of each chunk (<see cref="IndexFieldContext"/>), with the
+    /// type's field definitions when it has values: a Select contributes its option's label.
+    /// </summary>
+    protected virtual async Task<string?> DescribeFieldsAsync(DocumentIntegrationDto document)
+    {
+        if (document.ExtractedFields is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var definitions = (await _integrationService.GetFieldDefinitionsAsync(document.DocumentTypeId))?.Items;
+        return IndexFieldContext.Describe(
+            document.ExtractedFields,
+            definitions?.ToDictionary(d => d.Name, StringComparer.Ordinal));
     }
 
     /// <summary>

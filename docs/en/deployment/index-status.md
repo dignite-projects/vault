@@ -336,4 +336,4 @@ The recommendation is in [AI Provider](../configuration/ai-provider.md#embedding
 | Passage, vector leg | 0.913 | 0.950 | 0.960 |
 | Questions a table answers, fused legs | 0.833 | 0.833 | 0.792 |
 
-The values carry the gain; display names would add about half a case of 103, within run-to-run variance, so Index keeps the names it receives. Not measured: Select fields, which contribute their option value (a code, if the type defines codes), and short CKEditor bodies, which go in as stored (Markdown, or HTML with its tags when the field's content format is HTML); the set has neither.
+The values carry the gain; display names would add about half a case of 103, within run-to-run variance, so Index keeps the names it receives. Not measured: Select fields, which contribute their option's label (since 2026-11-20; the stored value before, a code if the type defines codes), and short CKEditor bodies, which go in as stored (Markdown, or HTML with its tags when the field's content format is HTML); the set has neither.

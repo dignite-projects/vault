@@ -128,6 +128,31 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task A_select_field_rides_with_its_options_label()
+    {
+        var dto = Dto(Contract, TypeA);
+        dto.ExtractedFields = new() { ["status"] = System.Text.Json.JsonSerializer.SerializeToElement("st_02") };
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        _extract.GetFieldDefinitionsAsync(TypeA).Returns(new Volo.Abp.Application.Dtos.ListResultDto<Dignite.Vault.Extract.Documents.Fields.FieldDefinitionDto>(
+        [
+            new()
+            {
+                Name = "status",
+                FieldTypeName = Dignite.Abp.FlexFields.Select.SelectFieldType.ControlName,
+                Configuration = new Dignite.Abp.FlexFields.Select.SelectConfiguration
+                {
+                    Options = [new Dignite.Abp.FlexFields.Select.SelectListItem("承認済み", "st_02", false)]
+                }.ConfigurationDictionary
+            }
+        ]));
+
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).FieldContext.ShouldBe("status: 承認済み");
+        _model.Inputs.ShouldAllBe(i => i.StartsWith("賃貸借契約書\nstatus: 承認済み\n"));
+    }
+
+    [Fact]
     public async Task A_redelivered_event_is_dropped()
     {
         ExtractReturns(Contract, TypeA);
