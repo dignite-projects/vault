@@ -325,3 +325,15 @@ The recommendation is in [AI Provider](../configuration/ai-provider.md#embedding
 - **The keyword leg gains nothing**, so the values stay out of the full-text index.
 - **One loss, without a reranker:** questions a table answers dropped from 0.833 to 0.792 in the fused legs (one case of 12); with the reranker they stay at 0.875.
 - The entity questions were written for this measurement, knowing what it tests, and are few (19); read their 1.000 as "the effect exists", not as its size.
+
+**Field names.** That run named the fields in Japanese (`当事者: 山田太郎`), as the set does. Extract's field names are identifiers (`party: 山田太郎`), and the integration DTO carries no display name, so a second run handed the same values out under identifiers (`fieldNames` in the set; `field-context-names-2026-11-20.md`). MRR@10:
+
+| Ranking | Title only | Identifiers (what Index receives) | Japanese names |
+| --- | ---: | ---: | ---: |
+| Passage, search with rerank | 0.957 | 0.968 | 0.973 |
+| Passage, Japanese questions, search with rerank | 0.968 | 0.982 | 0.988 |
+| Passage, entity questions, search with rerank | 0.947 | 1.000 | 1.000 |
+| Passage, vector leg | 0.913 | 0.950 | 0.960 |
+| Questions a table answers, fused legs | 0.833 | 0.833 | 0.792 |
+
+The values carry the gain; display names would add about half a case of 103, within run-to-run variance, so Index keeps the names it receives. Not measured: Select fields, which contribute their option value (a code, if the type defines codes), and short CKEditor bodies, which keep their HTML tags; the set has neither.

@@ -8,9 +8,12 @@ namespace Dignite.Vault.Index.Ingestion;
 
 /// <summary>
 /// A document's field values as the lines put in front of each chunk's embedding text (<c>name: value</c>), the way
-/// LlamaIndex embeds a node with its document's metadata. Only values a person would search by: text, numbers, dates and
-/// lists of them; a table or an object field is left out. Capped, so a document with many fields cannot push its chunk
-/// text past the embedding model's input.
+/// LlamaIndex embeds a node with its document's metadata. Read from the JSON kind of each value, as Extract's field
+/// types render it: Text, DateTime (in its input mode's format) and CKEditor are strings, Number a number, Boolean true
+/// or false, Select its option value (an array of them when multiple), Tags an array of strings, Table an array of row
+/// objects. Strings, numbers, booleans and arrays of strings or numbers are kept, an array joined with commas; a Table
+/// is left out, and so is a value longer than <see cref="MaxValueLength"/>, usually a CKEditor body. Capped at
+/// <see cref="MaxLength"/>, so a document with many fields cannot push its chunk text past the embedding model's input.
 /// </summary>
 public static class IndexFieldContext
 {

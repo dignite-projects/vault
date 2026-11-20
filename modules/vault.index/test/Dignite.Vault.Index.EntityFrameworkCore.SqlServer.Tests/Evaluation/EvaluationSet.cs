@@ -24,6 +24,12 @@ public sealed class EvaluationSet
 
     public Dictionary<string, List<string>> FieldTemplates { get; init; } = new();
 
+    /// <summary>
+    /// The field name Extract would give each field stand-in: an identifier (<c>FieldDefinitionConsts.NamePattern</c>
+    /// allows only ASCII letters, digits, <c>_</c> and <c>-</c>), where the set names the stand-ins in Japanese.
+    /// </summary>
+    public Dictionary<string, string> FieldNames { get; init; } = new();
+
     public List<EvaluationQuestion> Questions { get; init; } = new();
 
     /// <summary>Questions only several documents answer, for the agent comparison (version 4).</summary>
