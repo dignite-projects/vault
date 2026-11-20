@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from abp-modules' GitHub Packages feed (`GITHUB_PACKAGES_TOKEN` to restore). See
   [Submitting Processed Content](docs/en/documents/submitting-content.md).
 
+- **The operator UI marks submitted documents.** The list and the detail page badge a document whose text a client
+  submitted (`DocumentListItemDto` gains `TextOrigin` too), the file preview says such a document has no original file,
+  and re-parse is no longer offered on one that has none (the server refused it). The Angular proxies are regenerated
+  (`DocumentTextOrigin`, `SubmissionFileKind`, and the submit and upload-link methods).
+
 - **A submission without its original file is checked for duplicates by its text.** The hash of the stored text is
   kept on the document (`SubmittedTextHash`, a new column with an index), and the caller's own earlier submission of the
   same text is refused with `Extract:DocumentSubmittedTextDuplicate` (`…InRecycleBin` when it is in the recycle bin) and

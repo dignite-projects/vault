@@ -9,6 +9,8 @@ import {
   documentReviewReasonsOptions,
 } from './proxy/documents/document-review-reasons.enum';
 import { DocumentLifecycleStatus } from './proxy/documents/document-lifecycle-status.enum';
+import { DocumentTextOrigin, documentTextOriginOptions } from './proxy/documents/document-text-origin.enum';
+import { SubmissionFileKind, submissionFileKindOptions } from './proxy/documents/submission-file-kind.enum';
 import {
   DuplicateDetectionScope,
   duplicateDetectionScopeOptions,
@@ -49,6 +51,18 @@ describe('proxy enum contract (smoke)', () => {
     expect(DocumentReviewReasons.FieldExtractionIncomplete).toBe(16);
     expect(DocumentReviewReasons.FieldValidationWarning).toBe(32);
     expect(documentReviewReasonsOptions).toHaveLength(7);
+  });
+
+  it('DocumentTextOrigin matches backend values', () => {
+    expect(DocumentTextOrigin.Parsed).toBe(0);
+    expect(DocumentTextOrigin.Submitted).toBe(1);
+    expect(documentTextOriginOptions).toHaveLength(2);
+  });
+
+  it('SubmissionFileKind matches backend values', () => {
+    expect(SubmissionFileKind.Markdown).toBe(0);
+    expect(SubmissionFileKind.Original).toBe(1);
+    expect(submissionFileKindOptions).toHaveLength(2);
   });
 
   it('DocumentLifecycleStatus matches backend values', () => {

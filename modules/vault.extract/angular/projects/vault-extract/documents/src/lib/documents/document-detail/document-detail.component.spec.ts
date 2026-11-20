@@ -17,6 +17,7 @@ import {
   EXTRACT_PERMISSIONS,
   FieldDefinitionDto,
   FieldDefinitionService,
+  DocumentTextOrigin,
 } from '@dignite/ng.vault-extract';
 import { DocumentDetailComponent } from './document-detail.component';
 
@@ -82,7 +83,10 @@ const READ_ONLY: DocumentRightsDto = {
   canRetry: false,
 };
 
-/** A loaded, already-extracted document — the state in which the edit affordances are offered. */
+/**
+ * A loaded, already-extracted document with its original file - the state in which the edit affordances are offered.
+ * Override fileOrigin with null for one submitted as text alone.
+ */
 function documentOf(
   rights: DocumentRightsDto,
   documentTypeCode: string | null = 'contract',
@@ -92,6 +96,7 @@ function documentOf(
     id: 'doc-1',
     documentTypeCode,
     markdown: '# body',
+    fileOrigin: { originalFileName: 'contract.pdf', contentType: 'application/pdf' },
     reviewReasons: DocumentReviewReasons.UnresolvedClassification,
     rights,
     ...extra,
@@ -500,6 +505,21 @@ describe('DocumentDetailComponent — re-parse and the type editor (#660)', () =
     component.document.set(documentOf(FULL, 'contract', TYPED));
 
     expect(component.canReparse()).toBe(true);
+  });
+
+  it('withholds re-parse from a document submitted as text alone, which has no file to read', () => {
+    const { component, fixture } = setup(ENTRY_AND_CONFIRM);
+    component.isLoading.set(false);
+    component.document.set(documentOf(FULL, 'contract', {
+      ...TYPED,
+      fileOrigin: null as unknown as DocumentDto['fileOrigin'],
+      textOrigin: DocumentTextOrigin.Submitted,
+    }));
+    fixture.detectChanges();
+
+    expect(component.canReparse()).toBe(false);
+    expect(component.isSubmittedText()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Document:TextOrigin:Submitted');
   });
 
   it('offers the type editor beside the type to a caller who may assign a type', () => {

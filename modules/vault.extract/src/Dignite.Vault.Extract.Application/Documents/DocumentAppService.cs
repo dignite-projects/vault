@@ -1742,6 +1742,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         {
             dtos[i].DocumentTypeCode = ResolveTypeCode(documents[i].DocumentTypeId, typeCodes);
             dtos[i].ExtractedFields = AssembleExtractedFields(documents[i], fieldsByType);
+            dtos[i].TextOrigin = documents[i].ExtractionMetadata?.TextOrigin ?? DocumentTextOrigin.Parsed;
             // #284: thin list: expose only RequiresReview for badges and do not assemble details. Details are for the detail page to avoid list N+1.
             dtos[i].RequiresReview = ReviewReasonPolicy.RequiresAttention(documents[i].ReviewReasons, documents[i].ReviewDisposition);
 

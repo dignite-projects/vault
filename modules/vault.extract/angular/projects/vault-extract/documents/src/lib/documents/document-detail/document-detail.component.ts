@@ -29,6 +29,7 @@ import {
   DocumentReviewDisposition,
   DocumentReviewReasons,
   DocumentService,
+  DocumentTextOrigin,
   DocumentTypeDto,
   FieldDefinitionDto,
   FieldDefinitionService,
@@ -407,6 +408,8 @@ export class DocumentDetailComponent implements OnInit {
     canAssignAnyDocumentType(this.canConfirmClassification, this.canUploadIntoAllTypes) &&
     !!this.document()?.markdown &&
     !this.isSubDocument() &&
+    // A re-parse reads the original file; one submitted as text alone has none, and the server refuses it.
+    this.hasSourceFile() &&
     !this.pipelineInProgress() &&
     !this.isLoading()
   );
@@ -467,6 +470,8 @@ export class DocumentDetailComponent implements OnInit {
   // too — deliberate provenance UX. This gate survives as null-safety only: the DTO field is nullable and
   // pre-migration legacy rows may lack a FileOrigin.
   hasSourceFile = computed(() => !!this.document()?.fileOrigin);
+  /** The text came from a client that converted the document itself (a submission), not from Vault's parse. */
+  isSubmittedText = computed(() => this.document()?.textOrigin === DocumentTextOrigin.Submitted);
 
   // Intermediate computed for Markdown source (#274 review): when document() changes but markdown does
   // not, such as field or cabinet changes, return the same string so downstream renderedMarkdown can

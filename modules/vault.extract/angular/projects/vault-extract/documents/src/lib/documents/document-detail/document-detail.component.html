@@ -16,6 +16,12 @@
         }
         {{ getDocumentStatusLabel(document()!) | abpLocalization }}
       </span>
+      @if (isSubmittedText()) {
+        <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle" title="{{ 'VaultExtract::Document:TextOrigin:Submitted:Hint' | abpLocalization }}">
+          <i class="fas fa-file-import me-1" aria-hidden="true"></i>
+          {{ 'VaultExtract::Document:TextOrigin:Submitted' | abpLocalization }}
+        </span>
+      }
     }
     <div class="ms-auto d-flex gap-2">
       <!-- #660 "重新解析 / Re-parse": re-extracts the text from the original file, then re-runs classification and

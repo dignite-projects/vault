@@ -1,7 +1,7 @@
 import { RestService, Rest } from '@abp/ng.core';
 import type { PagedResultDto } from '@abp/ng.core';
 import { Injectable, inject } from '@angular/core';
-import type { ConfirmClassificationInput, DocumentDto, DocumentListItemDto, GetDocumentListInput, ReclassifyDocumentInput, RejectReviewInput, ResolveFieldValidationWarningsInput, RetryPipelineInput, UpdateDocumentCabinetInput, UpdateExtractedFieldsInput, UpdateMarkdownInput, UploadDocumentInput } from '../../documents/models';
+import type { ConfirmClassificationInput, CreateSubmissionUploadInput, DocumentDto, DocumentListItemDto, GetDocumentListInput, ReclassifyDocumentInput, RejectReviewInput, ResolveFieldValidationWarningsInput, RetryPipelineInput, SubmissionUploadDto, SubmitDocumentInput, UpdateDocumentCabinetInput, UpdateExtractedFieldsInput, UpdateMarkdownInput, UploadDocumentInput } from '../../documents/models';
 
 @Injectable({
   providedIn: 'root',
@@ -38,6 +38,17 @@ export class DocumentService {
       method: 'POST',
       headers: { Accept: 'application/json' },
       url: `/api/vault-extract/documents/${id}/review/confirm-field-entry`,
+    },
+      { apiName: this.apiName,...config });
+  
+
+  
+  createSubmissionUpload = (input: CreateSubmissionUploadInput, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, SubmissionUploadDto>({
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      url: '/api/vault-extract/documents/submission-uploads',
+      body: input,
     },
       { apiName: this.apiName,...config });
   
@@ -168,6 +179,17 @@ export class DocumentService {
     this.restService.request<any, void>({
       method: 'POST',
       url: `/api/vault-extract/documents/${id}/retry-pipeline`,
+      body: input,
+    },
+      { apiName: this.apiName,...config });
+  
+
+  
+  submit = (input: SubmitDocumentInput, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, DocumentDto>({
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      url: '/api/vault-extract/documents/submit',
       body: input,
     },
       { apiName: this.apiName,...config });

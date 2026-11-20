@@ -1,11 +1,17 @@
+import type { SubmissionFileKind } from './submission-file-kind.enum';
 import type { EntityDto, PagedAndSortedResultRequestDto } from '@abp/ng.core';
 import type { DocumentLifecycleStatus } from './document-lifecycle-status.enum';
 import type { DocumentReviewDisposition } from './document-review-disposition.enum';
 import type { DocumentReviewReasons } from './document-review-reasons.enum';
+import type { DocumentTextOrigin } from './document-text-origin.enum';
 import type { IRemoteStreamContent } from '../volo/abp/content/models';
 
 export interface ConfirmClassificationInput {
   documentTypeId: string;
+}
+
+export interface CreateSubmissionUploadInput {
+  kind?: SubmissionFileKind;
 }
 
 export interface DocumentDto extends EntityDto<string> {
@@ -27,6 +33,7 @@ export interface DocumentDto extends EntityDto<string> {
   language?: string | null;
   extractionIsComplete?: boolean;
   extractionIncompleteReason?: string | null;
+  textOrigin?: DocumentTextOrigin;
   extractedFields?: Record<string, any> | null;
   fieldSources?: Record<string, DocumentTextSpanDto[]> | null;
   creationTime?: string;
@@ -46,6 +53,7 @@ export interface DocumentListItemDto extends EntityDto<string> {
   cabinetId?: string | null;
   originDocumentId?: string | null;
   isContainer?: boolean;
+  textOrigin?: DocumentTextOrigin;
   documentTypeCode?: string | null;
   lifecycleStatus?: DocumentLifecycleStatus;
   reviewDisposition?: DocumentReviewDisposition;
@@ -139,6 +147,25 @@ export interface ReviewReasonDetailDto {
   duplicateCandidates?: DuplicateCandidateDto[] | null;
   hiddenDuplicateCandidateCount?: number | null;
   fieldValidationWarnings?: FieldValidationWarningDto[] | null;
+}
+
+export interface SubmissionUploadDto {
+  fileId?: string;
+  uploadUrl?: string;
+  expirationTime?: string;
+  maxSize?: number;
+}
+
+export interface SubmitDocumentInput {
+  markdown?: string | null;
+  markdownFileId?: string | null;
+  originalFileId?: string | null;
+  title?: string | null;
+  language?: string | null;
+  documentTypeCode?: string | null;
+  fields?: Record<string, any> | null;
+  fieldSources?: Record<string, any> | null;
+  cabinetId?: string | null;
 }
 
 export interface UpdateDocumentCabinetInput {
