@@ -25,8 +25,9 @@ Namespace `Dignite.Vault.Extract.Documents.Integration`. It is an ABP [integrati
 | --- | --- |
 | `FindReadyAsync(Guid id)` | The document if it is Ready under the current tenant, otherwise `null` |
 | `GetReadyIdsAsync(GetReadyDocumentIdsInput input)` | One page of the ids of the current tenant's Ready documents |
+| `GetFieldDefinitionsAsync(Guid documentTypeId)` | The field definitions of a document type in the current tenant's layer, archived fields included |
 
-"Ready" means what [`DocumentReadyEto`](integration-events.md) announces: the document passed the [Ready gate](integration-events.md#the-ready-gate), has a confirmed type and is not a container. Nothing outside that set is returned, which is why the service needs no user and performs no authorization check. Both methods read under the ambient tenant, so switch to the event's `TenantId` first (`using (CurrentTenant.Change(eto.TenantId))`).
+"Ready" means what [`DocumentReadyEto`](integration-events.md) announces: the document passed the [Ready gate](integration-events.md#the-ready-gate), has a confirmed type and is not a container. Nothing outside that set is returned, which is why the service needs no user and performs no authorization check. Every method reads under the ambient tenant, so switch to the event's `TenantId` first (`using (CurrentTenant.Change(eto.TenantId))`).
 
 `FindReadyAsync` returns a `DocumentIntegrationDto`:
 
@@ -66,6 +67,15 @@ while (true)
     afterId = page.Items[^1];
 }
 ```
+
+### Field definitions
+
+`ExtractedFields` gives each value by field name in its type's JSON shape, nothing more. A consumer that turns the values into something of its own (text for a prompt, columns of a table, labels for a Select) reads the definitions with `GetFieldDefinitionsAsync(documentTypeId)`, as stored, as `FieldDefinitionDto`s: `Name` (the key in `ExtractedFields`), `DisplayName`, `FieldTypeName` and its `Configuration` (Select options, DateTime input mode, CKEditor content format, Table columns), `DisplayOrder` and the flags. Extract renders nothing for the consumer; what each field type writes into `ExtractedFields` is under [Reading a Document](rest-api.md#reading-a-document), the field types themselves in [Document Types and Fields](../documents/document-types.md#field-types).
+
+- **Archived fields are included.** A document keeps the values of a field archived after it was extracted, and `FindReadyAsync` still hands them out. A name is unique within a type, archived fields included, so the list can be keyed by `Name`.
+- **One layer.** The definitions are those of the current tenant's layer, which is the document's: switch to the event's `TenantId` as for the document. A Host type and a tenant type with the same code are two types with two lists.
+- Ordered by `DisplayOrder`, then `Name`. Empty for an unknown type.
+- Definitions change rarely, so a consumer that reads them for every document may cache them per type; an administrator's change does not re-fire the documents' events.
 
 The integration service is not behind the `VaultExtract.Enable` feature, because it is called with no user. It tells you nothing by itself: learn what to pull from the [integration events](integration-events.md), and treat a repeated `DocumentReadyEto` as "pull it again".
 

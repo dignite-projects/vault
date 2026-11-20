@@ -64,6 +64,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreleased with no date, so Index locates the chunks itself; when that lands, the locating step goes. See
   [Index Search](docs/en/egress/index-search.md#pages).
 
+- **`IDocumentIntegrationService.GetFieldDefinitionsAsync(documentTypeId)`** returns a document type's field
+  definitions, as stored, to an in-process consumer with no user: name, display name, field type and its
+  configuration (Select options, DateTime input mode, CKEditor content format, Table columns), display order and
+  flags, archived fields included, in the current tenant's layer. A consumer that projects `ExtractedFields` itself
+  no longer has to guess a field's type from the shape of its JSON. See
+  [In-Process Integration](docs/en/egress/in-process-integration.md#field-definitions).
+
 - **Index chunks carry their document's field values.** Index puts Extract's `extractedFields` (text, numbers, dates
   and lists of them, as `name: value` lines, 600 characters at most) in front of every chunk in what is embedded and
   what the reranker reads, so a question that names a document only by a field value, such as a tenant or a vendor,
