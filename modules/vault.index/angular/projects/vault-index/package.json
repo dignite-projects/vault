@@ -1,6 +1,6 @@
 {
   "name": "@dignite/ng.vault-index",
-  "version": "0.6.0",
+  "version": "0.7.0-preview.1",
   "description": "Angular UI library for Dignite Vault Index: the index status page.",
   "author": "Dignite",
   "license": "LGPL-3.0-only",
