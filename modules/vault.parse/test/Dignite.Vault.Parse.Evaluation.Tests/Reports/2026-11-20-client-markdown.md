@@ -31,8 +31,8 @@ the same rules, without having seen the digital twin), `contract-scan` scored 1.
   the page break after it. Run 1 had split `pricelist`'s table at the page break, losing the header under the second
   half: the same defect the PDF engine had until it joined continued tables.
 - Run 2 made only the first slide title a top-level heading. The rules then said "the document title as the top-level
-  heading", which a deck reads two ways; they now say each slide's title is a top-level heading. That change is not yet
-  re-measured.
+  heading", which a deck reads two ways; they now say each slide's title is a top-level heading. Re-measured on `deck`
+  alone with a fresh client and the new rules: every metric 1.000, each slide title a top-level heading.
 
 ## What it found
 
