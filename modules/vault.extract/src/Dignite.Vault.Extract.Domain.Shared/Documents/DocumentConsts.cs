@@ -25,6 +25,9 @@ public static class DocumentConsts
     /// </summary>
     public static int MaxSubmittedMarkdownLength { get; set; } = 1_000_000;
 
+    /// <summary>A SHA-256 in lower-case hex: the length of <c>Document.SubmittedTextHash</c>.</summary>
+    public const int MaxSubmittedTextHashLength = 64;
+
     /// <summary>
     /// Per-extension upload content-type allow-list, case-insensitive (#221 / #471). Fail-closed safety gate:
     /// an extension/content-type pair not present here -> loud <c>BusinessException</c>

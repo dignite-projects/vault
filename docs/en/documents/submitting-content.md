@@ -55,7 +55,7 @@ A client's output can be scored on the Parse evaluation corpus before it is reli
 - **No original file**, unless one was uploaded with it. Without one it cannot be downloaded or previewed, and [re-parsing](documents.md#correcting-a-document) is refused because there is nothing to re-parse. With one, a re-parse replaces the submitted text with the server's own.
 - **The text is the caller's.** The server checks its shape, not its fidelity to a file. `DocumentDto.textOrigin` is `Submitted` for such a document (`Parsed` otherwise), so a consumer can decide how far to trust it.
 - **Positions are page-level at best.** Field sources point into the text and, through the pages the Markdown marked, to a page; never to a region of a page image.
-- **Duplicate detection** works on field values as for any document (the type's unique-key fields). An original file is also checked against the caller's own uploads by its content hash, as on upload; without one, the same document submitted twice is caught only by its fields, and a client that retries after a timeout should first check whether its earlier call created the document.
+- **Duplicate detection** works on field values as for any document (the type's unique-key fields). A submission is also checked against the caller's own earlier ones, as an upload is against the caller's uploads: by its original file's hash when it brings one, otherwise by the hash of its text as stored, so a line-ending or blank-line difference does not make a retry new. A repeat is refused with `Extract:DocumentSubmittedTextDuplicate` (or `…InRecycleBin`) and the existing document's id, which a client that retried after a timeout can go on with.
 
 ## Permissions
 

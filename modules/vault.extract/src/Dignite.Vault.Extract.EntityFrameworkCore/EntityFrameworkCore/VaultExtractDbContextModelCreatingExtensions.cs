@@ -181,6 +181,10 @@ public static class VaultExtractDbContextModelCreatingExtensions
             // DuplicateAllowed (the operator's "not a duplicate" override) is a plain bool, auto-mapped by convention.
             b.Property(x => x.FieldFingerprint).HasMaxLength(DocumentConsts.MaxFieldFingerprintLength);
 
+            // A submission's duplicate lookup (FindBySubmittedTextHashAsync), the counterpart of FileOrigin.ContentHash's.
+            b.Property(x => x.SubmittedTextHash).HasMaxLength(DocumentConsts.MaxSubmittedTextHashLength);
+            b.HasIndex(x => x.SubmittedTextHash);
+
             // Collision lookup (FindDuplicateCandidateIdsAsync): other documents in the same layer + type with the
             // same fingerprint. (TenantId, DocumentTypeId, FieldFingerprint) matches the query WHERE (the IMultiTenant
             // filter supplies TenantId; the repository filters DocumentTypeId + FieldFingerprint). The leading

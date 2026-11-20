@@ -69,6 +69,23 @@ public class EfCoreDocumentRepository
         }
     }
 
+    public virtual async Task<Document?> FindBySubmittedTextHashAsync(
+        string textHash,
+        Guid? creatorId,
+        CancellationToken cancellationToken = default)
+    {
+        using (DataFilter.Disable<ISoftDelete>())
+        {
+            var dbSet = await GetDbSetAsync();
+            // The same owner equality as FindByContentHashAsync: a null creatorId matches only a null CreatorId.
+            var owner = creatorId;
+            return await dbSet
+                .FirstOrDefaultAsync(
+                    d => d.SubmittedTextHash == textHash && d.CreatorId == owner,
+                    GetCancellationToken(cancellationToken));
+        }
+    }
+
     public virtual async Task<int> UnassignCabinetDocumentsAsync(
         Guid cabinetId,
         CancellationToken cancellationToken = default)

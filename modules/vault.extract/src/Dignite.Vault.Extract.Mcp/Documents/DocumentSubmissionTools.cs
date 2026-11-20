@@ -47,15 +47,15 @@ public sealed class DocumentSubmissionTools
         "The original file is not stored: it cannot be downloaded or previewed in Vault, and the server cannot re-parse it if the conversion is wrong.",
         "The text is the AI client's transcription, which the server cannot check against the file; a long document may come back summarized or with parts missing.",
         "Fields are not located on the page image, only in the text; pages are known only if the Markdown marks them.",
-        "There is no file to compare, so a document submitted twice is caught as a duplicate only through its type's unique-key fields.",
+        "There is no file to compare: a second submission of the same text is refused, but the same document transcribed differently is caught only through its type's unique-key fields.",
     ];
 
     /// <summary>Shown by a client that can confirm itself; a compile-time constant, like every LLM-facing text.</summary>
     public const string ConfirmationMessage =
         "Submit this document to Dignite Vault as text only? The original file will not be stored, so it cannot be "
         + "downloaded or re-parsed later; the text is the AI's transcription, which Vault cannot check against the file; "
-        + "fields are located in the text, not on the page; and a second submission of the same document is caught only "
-        + "through its type's unique-key fields.";
+        + "fields are located in the text, not on the page; and the same document transcribed differently is caught as "
+        + "a duplicate only through its type's unique-key fields.";
 
     [McpServerTool(Name = "vault_extract_create_submission_upload", Title = "Create Submission Upload Link",
         ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]

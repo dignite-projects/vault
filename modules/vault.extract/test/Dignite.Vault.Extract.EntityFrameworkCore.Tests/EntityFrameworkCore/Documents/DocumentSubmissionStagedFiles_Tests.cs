@@ -190,6 +190,26 @@ public class DocumentSubmissionStagedFiles_Tests : VaultExtractTestBase<Document
         ex.Code.ShouldBe(VaultExtractErrorCodes.Document.SubmittedMarkdownNotUtf8);
     }
 
+    /// <summary>With an original, the original's own hash recognises a retry; the same text over another file is a document of its own.</summary>
+    [Fact]
+    public async Task With_an_original_the_same_text_is_not_a_duplicate()
+    {
+        await ArrangeTypeAsync();
+        await _appService.SubmitAsync(new SubmitDocumentInput
+        {
+            Markdown = "# Invoice",
+            OriginalFileId = Stage("a.pdf", "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.7 a"))
+        });
+
+        var second = await _appService.SubmitAsync(new SubmitDocumentInput
+        {
+            Markdown = "# Invoice",
+            OriginalFileId = Stage("b.pdf", "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.7 b"))
+        });
+
+        second.FileOrigin!.OriginalFileName.ShouldBe("b.pdf");
+    }
+
     [Fact]
     public async Task Markdown_given_twice_is_refused()
     {

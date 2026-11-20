@@ -124,6 +124,15 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
     public virtual string? FieldFingerprint { get; private set; }
 
     /// <summary>
+    /// For a document created from a submission: the SHA-256 (lower-case hex) of the text as stored, the way
+    /// <see cref="FileOrigin.ContentHash"/> is the hash of an uploaded file. A text submitted again by the same caller
+    /// is refused on it, so a client's retry does not create a second document. Written once, by
+    /// <see cref="SetSubmittedTextHash"/>, before the document is first saved; a later correction or re-parse leaves it,
+    /// since it records what was submitted. <c>null</c> for every other document.
+    /// </summary>
+    public virtual string? SubmittedTextHash { get; private set; }
+
+    /// <summary>
     /// Durable operator override (#411): the operator reviewed a <see cref="DocumentReviewReasons.DuplicateSuspected"/>
     /// flag and decided this document is <b>not</b> a duplicate (or is an acceptable re-upload). When true, the field
     /// extraction stage does <b>not</b> re-raise <c>DuplicateSuspected</c> on subsequent re-extractions (#289 bulk /
@@ -286,6 +295,17 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
             CreatorId = creatorId
         };
         return document;
+    }
+
+    /// <summary>Records <see cref="SubmittedTextHash"/>; once, and only on a document that has no text yet.</summary>
+    public virtual void SetSubmittedTextHash(string hash)
+    {
+        if (SubmittedTextHash != null || !string.IsNullOrEmpty(Markdown))
+        {
+            throw new InvalidOperationException("A document's submitted text hash is written once, when it is created.");
+        }
+
+        SubmittedTextHash = Check.NotNullOrWhiteSpace(hash, nameof(hash), DocumentConsts.MaxSubmittedTextHashLength);
     }
 
     // --- Write methods (called by DocumentPipelineRunManager when a pipeline completes) ---
