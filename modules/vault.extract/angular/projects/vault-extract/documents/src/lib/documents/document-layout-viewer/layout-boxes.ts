@@ -32,6 +32,50 @@ export interface LayoutPage {
   number: number;
   width?: number;
   height?: number;
+  /** Whether the page's regions are in PDF points from the bottom-left corner, the frame the viewer draws. */
+  drawable: boolean;
+}
+
+/**
+ * A region handed to the viewer from outside the layout, such as a Vault Index chunk's: a box whose origin is the page's
+ * top-left corner, each value a fraction of the page's width (`left`, `width`) or height (`top`, `height`).
+ */
+export interface PageRegion {
+  page: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** The most regions a link outlines; more are ignored. */
+export const MAX_LINKED_REGIONS = 64;
+
+/**
+ * Reads the `regions` query parameter of the file preview: boxes `page,left,top,width,height` joined by `;`, such as
+ * `2,0.118,0.214,0.764,0.061`. A malformed box, or one off the page, is skipped.
+ */
+export function readRegionsParam(value: string | null | undefined): PageRegion[] {
+  const regions: PageRegion[] = [];
+  for (const part of (value ?? '').split(';')) {
+    const numbers = part.split(',').map(Number);
+    if (numbers.length !== 5 || numbers.some(n => !Number.isFinite(n))) {
+      continue;
+    }
+
+    const [page, left, top, width, height] = numbers;
+    if (!Number.isInteger(page) || page < 1 || left < 0 || top < 0 || width <= 0 || height <= 0
+      || left + width > 1.0001 || top + height > 1.0001) {
+      continue;
+    }
+
+    regions.push({ page, left, top, width, height });
+    if (regions.length === MAX_LINKED_REGIONS) {
+      break;
+    }
+  }
+
+  return regions;
 }
 
 /** Where a field's value was found: the regions of the text extraction quoted it from (the layout's `fields`). */
@@ -92,8 +136,9 @@ export function readLayout(json: unknown): Layout {
       continue;
     }
 
-    pages.push({ number: page.number, width: page.width ?? undefined, height: page.height ?? undefined });
-    if (page.unit === 'Point' && page.origin === 'BottomLeft') {
+    const inPoints = page.unit === 'Point' && page.origin === 'BottomLeft';
+    pages.push({ number: page.number, width: page.width ?? undefined, height: page.height ?? undefined, drawable: inPoints });
+    if (inPoints) {
       drawable.set(page.id, page.number);
     }
   }

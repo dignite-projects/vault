@@ -70,6 +70,17 @@
   pointer-events: none;
 }
 
+// A region handed in by link (a search hit's place): a colour no element kind uses, drawn over the element boxes and
+// transparent to the pointer.
+.layout-linked {
+  --layout-linked-color: var(--bs-purple, #6f42c1);
+  border: 3px solid var(--layout-linked-color);
+  background: color-mix(in srgb, var(--layout-linked-color) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--layout-linked-color) 30%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 .layout-field-row-hover {
   background: color-mix(in srgb, var(--bs-info) 12%, transparent);
 }

@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreleased with no date, so Index locates the chunks itself; when that lands, the locating step goes. See
   [Index Search](docs/en/egress/index-search.md#pages).
 
+- **Show a passage in its file.** The Vault Index chunk view and retrieval test mark chunks that hold a table or a
+  figure and link each one to Extract's file preview, which opens a PDF on the layout view with the chunk's regions
+  outlined and scrolled to (or at its first page when there are no regions). The preview reads them from its link:
+  `/vault-extract/documents/{id}/file?regions=page,left,top,width,height;…` or `?page=N`. See
+  [The Chunk View](docs/en/deployment/index-status.md#the-chunk-view).
+
 - **Search hits outline their text on the page.** Every Index chunk now records where on its pages its text was read
   (`regions`: boxes from the page's top-left corner in fractions of the page, Amazon Textract's `BoundingBox` shape)
   and whether it holds a table or a figure (`content`, flags). Search hits, chunk reads, the chunk view and the

@@ -8,6 +8,7 @@ import { IndexChunkService } from '../proxy/http-api/chunks/index-chunk.service'
 import type { IndexChunkDto, IndexChunkListDto } from '../proxy/chunks/models';
 import { INDEX_PERMISSIONS } from '../tokens';
 import { documentStatusBadge } from '../status/index-status.view';
+import { contentKeys, sourceLink, sourceQuery } from './chunk-source';
 
 const PAGE_SIZE = 50;
 
@@ -26,10 +27,13 @@ export class IndexChunksComponent implements OnInit {
   private readonly service = inject(IndexChunkService);
   private readonly toaster = inject(ToasterService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly documentId = inject(ActivatedRoute).snapshot.paramMap.get('documentId')!;
+  protected readonly documentId = inject(ActivatedRoute).snapshot.paramMap.get('documentId')!;
 
   readonly canManage = inject(PermissionService).getGrantedPolicy(INDEX_PERMISSIONS.Status.ManageChunks);
   readonly documentStatusBadge = documentStatusBadge;
+  readonly contentKeys = contentKeys;
+  readonly sourceLink = sourceLink;
+  readonly sourceQuery = sourceQuery;
 
   list = signal<IndexChunkListDto | null>(null);
   skip = signal(0);

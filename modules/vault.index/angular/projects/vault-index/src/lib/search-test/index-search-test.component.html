@@ -254,9 +254,15 @@
                       <code class="ms-2">{{ c.documentTypeCode }}</code>
                     }
                   </div>
-                  @if (c.headingPath || c.firstPage) {
+                  @if (c.headingPath || c.firstPage || contentKeys(c.content).length > 0) {
                     <div class="text-muted">{{ c.headingPath }}@if (c.firstPage) {
                 <span class="ms-2">{{ c.firstPage === c.lastPage ? ('VaultIndex::Chunks:Page' | abpLocalization: c.firstPage + '') : ('VaultIndex::Chunks:Pages' | abpLocalization: c.firstPage + '' : c.lastPage + '') }}</span>
+              }@for (key of contentKeys(c.content); track key) {
+                <span class="badge border text-body-secondary ms-2">{{ key | abpLocalization }}</span>
+              }@if (sourceQuery(c); as query) {
+                <a class="ms-2" [routerLink]="sourceLink(c.documentId)" [queryParams]="query">
+                  <i class="fas fa-crosshairs me-1"></i>{{ 'VaultIndex::Chunks:ShowInFile' | abpLocalization }}
+                </a>
               }</div>
                   }
                   <div style="white-space: pre-wrap">{{ c.text }}@if (c.textTruncated) {…}</div>

@@ -15,6 +15,7 @@ import {
   invalidSettings,
   orderCandidates,
 } from './index-search-test.view';
+import { contentKeys, sourceLink, sourceQuery } from '../chunks/chunk-source';
 
 /**
  * The retrieval test: run a query as search runs it, with other ranking settings if wanted, and see every candidate
@@ -31,6 +32,9 @@ export class IndexSearchTestComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly orders: CandidateOrder[] = ['final', 'fused', 'keyword', 'vector'];
+  readonly contentKeys = contentKeys;
+  readonly sourceLink = sourceLink;
+  readonly sourceQuery = sourceQuery;
 
   form = signal<SearchTestForm>({
     query: '',
