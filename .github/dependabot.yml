@@ -45,15 +45,6 @@ updates:
       #    are worked through their issue rather than proposed automatically. Lift the entry when
       #    the issue closes; do not lift one member of a group on its own.
       #
-      # MCP egress (#611). ModelContextProtocol.AspNetCore backs the MCP server, one of the three
-      # live egress channels. A major changes protocol/transport behaviour that a green build and
-      # our inputSchema + authorization tests do not reach - no test here speaks to a real client
-      # handshake, and the deployed instance is reached by real MCP clients. 1.x patches still flow.
-      - dependency-name: "ModelContextProtocol"
-        versions: [">= 2.0.0"]
-      - dependency-name: "ModelContextProtocol.AspNetCore"
-        versions: [">= 2.0.0"]
-      #
       # Text extraction (#612). PdfPig / DocumentFormat.OpenXml / ClosedXML are pinned to the exact
       # versions ElBruno.MarkItDotNet 0.6.0 pulls transitively, so the host resolves a single copy of
       # each and the two extraction providers cannot conflict (see the comments beside those pins in
