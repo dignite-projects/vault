@@ -393,8 +393,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now returns the reranker's `IHttpClientBuilder`, so a host adds its own pipeline to it. See
   [Retries, timeouts and throttling](docs/en/configuration/ai-provider.md#retries-timeouts-and-throttling).
 - **BREAKING: every package targets .NET 11 and ABP 11.** All projects move to `net11.0`, ABP 11.0
-  (`11.0.0-rc.2` until 11.0 is released), EF Core 11, `Microsoft.Extensions.AI` 11.0 and
-  `Microsoft.Extensions.DataIngestion` 11.0 previews. A consumer host must target .NET 11 as well. EF Core 11 emits SQL
+  (11.0.0), EF Core 11, `Microsoft.Extensions.AI` 11.0.1 and
+  `Microsoft.Extensions.DataIngestion` 11.0.1 previews. A consumer host must target .NET 11 as well. EF Core 11 emits SQL
   for compatibility level 160, so `Default` needs SQL Server 2022 or later; `VaultIndex` still needs 2025. Neither
   database schema changes. A host that runs `dotnet ef` needs `Microsoft.EntityFrameworkCore.Design` in its startup
   project, which EF Core 11's Tools package no longer brings. The Angular packages stay on `@abp/ng.*` `~10.7.1` for

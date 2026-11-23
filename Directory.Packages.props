@@ -11,60 +11,60 @@
     </ItemGroup>
 
     <ItemGroup Label="ABP Framework">
-        <PackageVersion Include="Volo.Abp.Core" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Authorization" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Autofac" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Features" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Guids" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Validation" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.VirtualFileSystem" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.EventBus.Abstractions" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Gdpr.Abstractions" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Http.Client" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Mapperly" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Ddd.Domain.Shared" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Ddd.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Caching" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.SqlServer" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.BackgroundJobs" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.DistributedLocking" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.DistributedLocking.Abstractions" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.BackgroundJobs.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.BlobStoring" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.BlobStoring.FileSystem" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Auditing" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.AuditLogging.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.AspNetCore.Serilog" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Swashbuckle" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Account.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Account.HttpApi" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Account.Web.OpenIddict" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Identity.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Identity.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.Identity.HttpApi" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.OpenIddict.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.Identity" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.OpenIddict" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.HttpApi" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.PermissionManagement.Web" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.FeatureManagement.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.FeatureManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.FeatureManagement.HttpApi" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.SettingManagement.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.SettingManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.SettingManagement.HttpApi" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.TenantManagement.Application" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.TenantManagement.EntityFrameworkCore" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.TenantManagement.HttpApi" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.TestBase" Version="11.0.0-rc.2" />
-        <PackageVersion Include="Volo.Abp.AspNetCore.TestBase" Version="11.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.Core" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Authorization" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Autofac" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Features" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Guids" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Validation" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.VirtualFileSystem" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.EventBus.Abstractions" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Gdpr.Abstractions" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Http.Client" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Mapperly" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Ddd.Domain.Shared" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Ddd.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Caching" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.SqlServer" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.BackgroundJobs" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.DistributedLocking" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.DistributedLocking.Abstractions" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.BackgroundJobs.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.BlobStoring" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.BlobStoring.FileSystem" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Auditing" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.AuditLogging.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.Serilog" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Swashbuckle" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Account.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Account.HttpApi" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Account.Web.OpenIddict" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Identity.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Identity.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.Identity.HttpApi" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.OpenIddict.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.Identity" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Domain.OpenIddict" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.HttpApi" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.PermissionManagement.Web" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.FeatureManagement.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.FeatureManagement.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.FeatureManagement.HttpApi" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.SettingManagement.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.SettingManagement.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.SettingManagement.HttpApi" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.TenantManagement.Application" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.TenantManagement.EntityFrameworkCore" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.TenantManagement.HttpApi" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.TestBase" Version="11.0.0" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.TestBase" Version="11.0.0" />
     </ItemGroup>
 
     <!-- Dignite.Abp.FlexFields: the runtime-defined-field constraint kernel field architecture v3 is
@@ -86,7 +86,7 @@
     </ItemGroup>
 
     <ItemGroup Label="LeptonX">
-        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite" Version="6.0.0-rc.2" />
+        <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite" Version="6.0.0" />
     </ItemGroup>
 
     <ItemGroup Label="ABP Studio">
@@ -94,23 +94,23 @@
     </ItemGroup>
 
     <ItemGroup Label="AI">
-        <PackageVersion Include="Microsoft.Extensions.AI" Version="11.0.0" />
-        <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="11.0.0" />
-        <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.AI" Version="11.0.1" />
+        <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="11.0.1" />
+        <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.1" />
         <!-- Vault Index's knowledge source for Agent Framework agents (Dignite.Vault.Index.AgentFramework). 1.28.0 was
              built against Microsoft.Extensions.AI 10.11 and runs on the 11.0.0 above; Agent Framework's main moved to
              11.0.0 on 2026-11-16, so take the next release. -->
         <PackageVersion Include="Microsoft.Agents.AI" Version="1.28.0" />
         <!-- Vault Index ingestion. Pre-release until Microsoft ships a stable Microsoft.Extensions.DataIngestion. -->
-        <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="11.0.0-preview.1.26560.3" />
-        <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="11.0.0-preview.1.26560.3" />
+        <PackageVersion Include="Microsoft.Extensions.DataIngestion" Version="11.0.1-preview.1.26570.2" />
+        <PackageVersion Include="Microsoft.Extensions.DataIngestion.Markdig" Version="11.0.1-preview.1.26570.2" />
         <!-- Vault Parse's document tree: sections, roles, tables with spans, pages and regions. Experimental. -->
-        <PackageVersion Include="Microsoft.Extensions.Documents.Abstractions" Version="11.0.0-preview.1.26560.3" />
-        <PackageVersion Include="Microsoft.Extensions.DocumentExtraction.Abstractions" Version="11.0.0-preview.1.26560.3" />
+        <PackageVersion Include="Microsoft.Extensions.Documents.Abstractions" Version="11.0.1-preview.1.26570.2" />
+        <PackageVersion Include="Microsoft.Extensions.DocumentExtraction.Abstractions" Version="11.0.1-preview.1.26570.2" />
         <PackageVersion Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="1.0.1" />
         <!-- Evaluation suites (Vault Parse's corpus evaluation): custom evaluators and on-disk result storage. -->
-        <PackageVersion Include="Microsoft.Extensions.AI.Evaluation" Version="11.0.0" />
-        <PackageVersion Include="Microsoft.Extensions.AI.Evaluation.Reporting" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.AI.Evaluation" Version="11.0.1" />
+        <PackageVersion Include="Microsoft.Extensions.AI.Evaluation.Reporting" Version="11.0.1" />
     </ItemGroup>
 
     <ItemGroup Label="MCP">
@@ -175,7 +175,7 @@
         <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
         <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0" />
         <!-- The host's model clients (chat, embedding, rerank) run on its standard resilience pipeline. -->
-        <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="11.0.0" />
+        <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="11.0.1" />
         <!-- The host's distributed lock: SQL Server application locks, so host instances never run the same background job
              or outbox batch twice. -->
         <PackageVersion Include="DistributedLock.SqlServer" Version="1.0.7" />
