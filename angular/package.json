@@ -22,6 +22,6 @@
     "@dignite/ng.flex-fields": "10.7.6",
     "@dignite/ng.flex-fields-ckeditor": "10.7.6",
     "@dignite/ng.notification-center": "10.7.6",
-    "marked": "^18.0.0"
+    "marked": "^18.2.1"
   }
 }

@@ -15,9 +15,9 @@
     "@abp/ng.theme.shared": "~10.7.1",
     "@dignite/ng.flex-fields": "10.7.6",
     "@dignite/ng.flex-fields-ckeditor": "10.7.6",
-    "marked": "^18.0.0",
+    "marked": "^18.2.1",
     "pdfjs-dist": "^6.5.438",
-    "tslib": "^2.1.0"
+    "tslib": "^2.9.1"
   },
   "peerDependencies": {
     "@angular/common": "^22.0.0",
