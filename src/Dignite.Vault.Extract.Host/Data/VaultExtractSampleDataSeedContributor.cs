@@ -196,6 +196,9 @@ public class VaultExtractSampleDataSeedContributor : IDataSeedContributor, ITran
         }
     }
 
+    /// <summary>The id the sample document names its file by. No such file is stored.</summary>
+    private static readonly Guid SampleFileId = Guid.Parse("5a3c1e00-0000-4000-8000-000000000001");
+
     private async Task GetOrCreateSampleDocumentAsync(
         DocumentType documentType, IReadOnlyList<FieldSeedDefinition> definitions)
     {
@@ -205,11 +208,11 @@ public class VaultExtractSampleDataSeedContributor : IDataSeedContributor, ITran
             return;
         }
 
-        // Fictitious blob reference: this seed never writes a blob, so "download original" would 404 for
-        // this one document — an acceptable rough edge for a dev/demo fixture, not a functional path this
-        // seed needs to support.
+        // Fictitious file reference: this seed stores no file, so "download original" reports it missing for this
+        // one document — an acceptable rough edge for a dev/demo fixture, not a functional path this seed needs to
+        // support.
         var fileOrigin = new FileOrigin(
-            blobName: "seed/sample-document.pdf",
+            fileId: SampleFileId,
             uploadedByUserName: "Seed",
             contentType: "application/pdf",
             contentHash: new string('0', 64),

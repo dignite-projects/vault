@@ -74,6 +74,13 @@ public class FileOrigin : ValueObject
         BlobName = Check.NotNullOrWhiteSpace(blobName, nameof(blobName), FileOriginConsts.MaxBlobNameLength);
     }
 
+    /// <summary>
+    /// This file, now kept by Blob Management under <paramref name="fileId"/>: the same name, type, hash, size and
+    /// uploader, no longer named by <see cref="BlobName"/>.
+    /// </summary>
+    public FileOrigin KeptAs(Guid fileId)
+        => new(fileId, UploadedByUserName, ContentType, ContentHash, FileSize, OriginalFileName);
+
     private FileOrigin(
         string uploadedByUserName,
         string contentType,

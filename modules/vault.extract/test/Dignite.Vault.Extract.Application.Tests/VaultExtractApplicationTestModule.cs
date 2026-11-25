@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using System.Linq;
 using Dignite.Abp.FlexFields;
 using Dignite.Vault.Extract.Documents;
+using Dignite.Vault.Extract.Documents.LegacyFiles;
+using Volo.Abp.Data;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Volo.Abp.Modularity;
@@ -39,6 +41,10 @@ public class VaultExtractApplicationTestModule : AbpModule
         // interface keeps a rename resolvable here; that a rename actually rewrites the bags is asserted
         // against real EF in DocumentReferenceResolution_Tests, which is the only place it can be.
         context.Services.AddSingleton(Substitute.For<IFlexFieldValueMigrator<Document>>());
+
+        // The data seed runs when every test starts, and moving legacy files asks the document repository, which this
+        // stack has none of (or a substitute that answers null). It runs against SQLite in LegacyDocumentFileMove_Tests.
+        Configure<AbpDataSeedOptions>(options => options.Contributors.Remove<LegacyDocumentFileMoveDataSeedContributor>());
     }
 }
 
