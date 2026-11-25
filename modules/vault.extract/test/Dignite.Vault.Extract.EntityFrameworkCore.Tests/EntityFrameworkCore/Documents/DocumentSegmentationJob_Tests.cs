@@ -1,3 +1,4 @@
+using Dignite.Vault.Extract.BlobManagement;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -1063,7 +1064,7 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
 
         await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
 
-        string? secondBlob = null;
+        Guid? secondFile = null;
         await WithUnitOfWorkAsync(async () =>
         {
             var segments = (await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId))
@@ -1076,19 +1077,21 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
             first.FileOrigin!.OriginalFileName.ShouldBe("bundle (p1).pdf");
             second.FileOrigin!.OriginalFileName.ShouldBe("bundle (p2-3).pdf");
             second.FileOrigin.ContentType.ShouldBe("application/pdf");
-            second.FileOrigin.BlobName.ShouldStartWith(segments[1].Id.ToString("N") + "-");
-            second.FileOrigin.BlobName.ShouldEndWith(".pdf");
+            second.FileOrigin.BlobName.ShouldBeNull();
             second.FileOrigin.FileSize.ShouldBe(FakePageCopier.Cut(2, 3).Length);
-            secondBlob = second.FileOrigin.BlobName;
+            secondFile = second.FileOrigin.FileId;
         });
 
-        await GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>().Received(1).SaveAsync(
-            secondBlob!, Arg.Any<System.IO.Stream>(), true, Arg.Any<CancellationToken>());
+        // A file of its own, holding the cut pages, under the sub-document's file name.
+        var stored = GetRequiredService<InMemoryBlobManagementFileService>().Find(secondFile!.Value).ShouldNotBeNull();
+        stored.Bytes.ShouldBe(FakePageCopier.Cut(2, 3));
+        stored.File.Name.ShouldBe("bundle (p2-3).pdf");
+        stored.File.ContainerName.ShouldBe(DocumentFileConsts.ContainerName);
     }
 
     /// <summary>
     /// Two runs may spawn the same segment at once, and the one that does not claim it deletes its cut. Each attempt
-    /// cuts under a name of its own, so that delete can never reach the file the other run's child is committed with.
+    /// stores a file of its own, so that delete can never reach the file the other run's child is committed with.
     /// </summary>
     [Fact]
     public async Task A_spawn_that_fails_deletes_only_its_own_cut()
@@ -1097,7 +1100,7 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
         await StoreLayoutAsync(containerId, tree);
         StubSplit(("Invoice A", true), ("Invoice B", true));
-        var blobs = GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>();
+        var files = GetRequiredService<InMemoryBlobManagementFileService>();
         _eventBus
             .PublishAsync(Arg.Any<DocumentUploadedEto>())
             .ThrowsAsync(new InvalidOperationException("event bus down"));
@@ -1105,11 +1108,11 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         await Should.ThrowAsync<AggregateException>(
             () => _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId }));
 
-        var failedCuts = SavedCuts(blobs);
+        var failedCuts = files.CreatedIds.ToList();
         failedCuts.Count.ShouldBe(2);
         foreach (var cut in failedCuts)
         {
-            await blobs.Received(1).DeleteAsync(cut, Arg.Any<CancellationToken>());
+            files.Find(cut).ShouldBeNull();
         }
 
         _eventBus.PublishAsync(Arg.Any<DocumentUploadedEto>()).Returns(Task.CompletedTask);
@@ -1122,18 +1125,12 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
             foreach (var segment in segments)
             {
                 var child = await _documentRepository.GetAsync(segment.RoutedDocumentId!.Value);
-                failedCuts.ShouldNotContain(child.FileOrigin!.BlobName);
-                await blobs.DidNotReceive().DeleteAsync(child.FileOrigin.BlobName, Arg.Any<CancellationToken>());
+                var fileId = child.FileOrigin!.FileId.ShouldNotBeNull();
+                failedCuts.ShouldNotContain(fileId);
+                files.Find(fileId).ShouldNotBeNull();
             }
         });
     }
-
-    private static List<string> SavedCuts(IBlobContainer<VaultExtractDocumentContainer> blobs)
-        => blobs.ReceivedCalls()
-            .Where(call => call.GetMethodInfo().Name == nameof(IBlobContainer.SaveAsync))
-            .Select(call => (string)call.GetArguments()[0]!)
-            .Where(name => name.EndsWith(".pdf", StringComparison.Ordinal))
-            .ToList();
 
     /// <summary>
     /// The model's boundary sits under a stamp line at the top of the contract's first page, so that line lands in the
@@ -1243,7 +1240,7 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
         await GetRequiredService<DocumentLayoutStore>().SaveAsync(containerId, tree, ExtractionDocumentMarkdown.Render(tree));
         blobs.GetOrNullAsync(DocumentLayoutStore.BlobName(containerId), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<System.IO.Stream?>(new System.IO.MemoryStream(stored!)));
-        blobs.GetAsync($"blobs/{containerId:N}.pdf", Arg.Any<CancellationToken>())
+        blobs.GetOrNullAsync($"blobs/{containerId:N}.pdf", Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<System.IO.Stream>(new System.IO.MemoryStream(Encoding.UTF8.GetBytes("%PDF bundle"))));
     }
 

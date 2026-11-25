@@ -1,3 +1,6 @@
+using System.Linq;
+using Dignite.Abp.BlobManagement.Files;
+using Dignite.Vault.Extract.BlobManagement;
 using Dignite.Vault.Extract.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp;
@@ -30,6 +33,17 @@ public class VaultExtractTestBaseModule : AbpModule
         {
             options.ValueProviders.Add<TestFeatureValueProvider>();
         });
+    }
+
+    public override void PostConfigureServices(ServiceConfigurationContext context)
+    {
+        // Documents keep their files in Blob Management, which a host installs. A test module that installs the real
+        // module, or registers a substitute, keeps it; every other one gets the in-memory service.
+        if (context.Services.All(d => d.ServiceType != typeof(IBlobManagementFileService)))
+        {
+            context.Services.AddSingleton<InMemoryBlobManagementFileService>();
+            context.Services.AddSingleton<IBlobManagementFileService>(sp => sp.GetRequiredService<InMemoryBlobManagementFileService>());
+        }
     }
 
     public override void OnApplicationInitialization(ApplicationInitializationContext context)

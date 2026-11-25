@@ -41,8 +41,16 @@ public class DocumentSubmissionStagedFilesTestModule : AbpModule
         context.Services.AddSingleton(Substitute.For<IChatClient>());
         context.Services.AddSingleton(Substitute.For<IPromptProvider>());
         context.Services.AddKeyedSingleton(VaultExtractConsts.TitleGeneratorChatClientKey, Substitute.For<IChatClient>());
-        // Blob Management as Extract sees it: the interface only.
-        context.Services.AddSingleton(Substitute.For<IBlobManagementFileService>());
+        // Blob Management as Extract sees it: the interface only. It keeps what it is given under a new id.
+        var fileService = Substitute.For<IBlobManagementFileService>();
+        fileService.CreateAsync(Arg.Any<CreateBlobManagementFileInput>())
+            .Returns(call => new BlobManagementFileDto
+            {
+                Id = Guid.NewGuid(),
+                ContainerName = call.Arg<CreateBlobManagementFileInput>().ContainerName,
+                Name = call.Arg<CreateBlobManagementFileInput>().Name!
+            });
+        context.Services.AddSingleton(fileService);
         // A signed-in uploader, as a staged file records one.
         context.Services.AddSingleton(Substitute.For<ICurrentUser>());
     }
@@ -51,7 +59,7 @@ public class DocumentSubmissionStagedFilesTestModule : AbpModule
 /// <summary>
 /// A submission whose Markdown and original file were staged through Blob Management upload links: the file must be
 /// the caller's pending upload in the submission container, the original is held to what an upload is held to and
-/// stored in Extract's own container, and both staged files are deleted once taken.
+/// stored as a file of the document's own, and both staged files are deleted once taken.
 /// </summary>
 public class DocumentSubmissionStagedFiles_Tests : VaultExtractTestBase<DocumentSubmissionStagedFilesTestModule>
 {
@@ -117,13 +125,16 @@ public class DocumentSubmissionStagedFiles_Tests : VaultExtractTestBase<Document
         {
             var document = await _documentRepository.GetAsync(dto.Id, includeDetails: false);
             document.FileOrigin!.ContentHash.ShouldBe(ContentHasher.Sha256Hex(pdf));
-            document.FileOrigin.BlobName.ShouldEndWith(".pdf");
+            document.FileOrigin.FileId.ShouldNotBeNull();
+            document.FileOrigin.BlobName.ShouldBeNull();
             document.CreatorId.ShouldBe(UserId);
         });
 
-        // Stored in Extract's own container, under the document's blob name; the staged copies go.
-        await _documentContainer.Received(1).SaveAsync(
-            Arg.Is<string>(name => name.EndsWith(".pdf")), Arg.Any<Stream>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        // Stored as a file of its own in the documents' container, checked against its hash; the staged copies go.
+        await _fileService.Received(1).CreateAsync(Arg.Is<CreateBlobManagementFileInput>(input =>
+            input.ContainerName == DocumentFileConsts.ContainerName
+            && input.Name == "invoice.pdf"
+            && input.Sha256 == Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(pdf))));
         await _fileService.Received(1).DeleteAsync(markdownId);
         await _fileService.Received(1).DeleteAsync(originalId);
         await _eventBus.Received(1).PublishAsync(Arg.Is<DocumentUploadedEto>(e =>

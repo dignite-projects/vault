@@ -26,7 +26,8 @@ Recurring checks to run when deploying to a new environment, upgrading a critica
 
 ## Original File Storage
 
-- [ ] The BLOB storage for `extract-documents` is durable: in a container deployment, `App_Data/blobs` is a persistent volume, or another BLOB provider is configured ([Deployment](deployment.md#original-file-storage))
+- [ ] The BLOB storage for `extract-files` and `extract-documents` is durable: in a container deployment, `App_Data/blobs` is a persistent volume, or another BLOB provider is configured ([Deployment](deployment.md#original-file-storage))
+- [ ] Blob Management is installed and declares the managed container `extract-files`, and each tenant's `BlobManagement.StorageSize` leaves room for its documents ([Deployment](deployment.md#original-file-storage))
 - [ ] Upload a document, restart or recreate the host, then download its original file from the detail page: the download succeeds
 - [ ] Re-parse that document: it completes (re-parse reads the stored file)
 - [ ] Backups cover the database **and** the BLOB storage, taken together

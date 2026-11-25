@@ -125,6 +125,8 @@ public static class VaultExtractDbContextModelCreatingExtensions
             // null for the whole owned entity.
             b.OwnsOne(x => x.FileOrigin, fo =>
             {
+                // FileId names a file kept by Blob Management; BlobName, a file stored in Extract's own container before
+                // that. Exactly one of the two is set.
                 fo.Property(x => x.BlobName).HasMaxLength(FileOriginConsts.MaxBlobNameLength);
                 fo.Property(x => x.UploadedByUserName).HasMaxLength(FileOriginConsts.MaxUploadedByUserNameLength);
                 fo.Property(x => x.OriginalFileName).HasMaxLength(FileOriginConsts.MaxOriginalFileNameLength);

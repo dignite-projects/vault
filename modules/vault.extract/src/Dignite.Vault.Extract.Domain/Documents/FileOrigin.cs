@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Volo.Abp;
 using Volo.Abp.Domain.Values;
@@ -11,8 +12,18 @@ namespace Dignite.Vault.Extract.Documents;
 /// </summary>
 public class FileOrigin : ValueObject
 {
-    /// <summary>Key in BlobStore, immutable after write.</summary>
-    public string BlobName { get; private set; } = default!;
+    /// <summary>
+    /// The file's id in Blob Management, in the container <see cref="DocumentFileConsts.ContainerName"/>; <c>null</c> for
+    /// a file stored before documents moved there, which <see cref="BlobName"/> names instead. Exactly one of the two is
+    /// set.
+    /// </summary>
+    public Guid? FileId { get; private set; }
+
+    /// <summary>
+    /// The file's name in Extract's own container (<c>extract-documents</c>), for a file stored before documents moved to
+    /// Blob Management; <c>null</c> for one kept by <see cref="FileId"/>.
+    /// </summary>
+    public string? BlobName { get; private set; }
 
     /// <summary>
     /// Snapshot of the uploader's display name, redundantly stored so the document still says who uploaded it after the
@@ -34,6 +45,23 @@ public class FileOrigin : ValueObject
 
     protected FileOrigin() { }
 
+    /// <summary>A file kept by Blob Management, under <paramref name="fileId"/>.</summary>
+    public FileOrigin(
+        Guid fileId,
+        string uploadedByUserName,
+        string contentType,
+        string contentHash,
+        long fileSize,
+        string? originalFileName = null)
+        : this(uploadedByUserName, contentType, contentHash, fileSize, originalFileName)
+    {
+        FileId = Check.NotDefaultOrNull<Guid>(fileId, nameof(fileId));
+    }
+
+    /// <summary>
+    /// A file under <paramref name="blobName"/> in Extract's own container: how a document stored before the move to
+    /// Blob Management names its file. Nothing stores a new file that way.
+    /// </summary>
     public FileOrigin(
         string blobName,
         string uploadedByUserName,
@@ -41,8 +69,18 @@ public class FileOrigin : ValueObject
         string contentHash,
         long fileSize,
         string? originalFileName = null)
+        : this(uploadedByUserName, contentType, contentHash, fileSize, originalFileName)
     {
         BlobName = Check.NotNullOrWhiteSpace(blobName, nameof(blobName), FileOriginConsts.MaxBlobNameLength);
+    }
+
+    private FileOrigin(
+        string uploadedByUserName,
+        string contentType,
+        string contentHash,
+        long fileSize,
+        string? originalFileName)
+    {
         UploadedByUserName = Check.NotNullOrWhiteSpace(
             uploadedByUserName,
             nameof(uploadedByUserName),
@@ -55,7 +93,8 @@ public class FileOrigin : ValueObject
 
     protected override IEnumerable<object> GetAtomicValues()
     {
-        yield return BlobName;
+        yield return FileId ?? Guid.Empty;
+        yield return BlobName ?? string.Empty;
         yield return UploadedByUserName;
         yield return OriginalFileName ?? string.Empty;
         yield return ContentType;

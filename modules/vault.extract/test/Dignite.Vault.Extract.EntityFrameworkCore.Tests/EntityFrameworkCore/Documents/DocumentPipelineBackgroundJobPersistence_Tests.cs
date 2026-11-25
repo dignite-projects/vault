@@ -557,7 +557,7 @@ public class DocumentPipelineBackgroundJobPersistence_Tests
     // background-jobs.md short-UoW rule.
     private void StubExtraction(string markdown, bool usedOcr, string? incompleteReason = null)
     {
-        _blobContainer.GetAsync(Arg.Any<string>())
+        _blobContainer.GetOrNullAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
             .Returns(Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
         _extractionClient.Answers(_ =>
         {

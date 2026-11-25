@@ -18,11 +18,19 @@ public abstract class VaultExtractEntityFrameworkCoreTestBase : VaultExtractTest
     /// <c>EfCoreDocumentRepositoryStatistics_Tests</c> so neither hand-clones <see cref="FileOrigin"/> field-by-field.
     /// </summary>
     protected static FileOrigin CloneFileOrigin(FileOrigin source)
-        => new(
-            blobName: source.BlobName,
-            uploadedByUserName: source.UploadedByUserName,
-            contentType: source.ContentType,
-            contentHash: source.ContentHash,
-            fileSize: source.FileSize,
-            originalFileName: source.OriginalFileName);
+        => source.FileId is { } fileId
+            ? new FileOrigin(
+                fileId: fileId,
+                uploadedByUserName: source.UploadedByUserName,
+                contentType: source.ContentType,
+                contentHash: source.ContentHash,
+                fileSize: source.FileSize,
+                originalFileName: source.OriginalFileName)
+            : new FileOrigin(
+                blobName: source.BlobName!,
+                uploadedByUserName: source.UploadedByUserName,
+                contentType: source.ContentType,
+                contentHash: source.ContentHash,
+                fileSize: source.FileSize,
+                originalFileName: source.OriginalFileName);
 }

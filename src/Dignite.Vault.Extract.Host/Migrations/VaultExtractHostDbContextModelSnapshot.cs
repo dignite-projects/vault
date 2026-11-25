@@ -17,7 +17,7 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261125061352_Upgraded_BlobManagement_Preview7";
+    public override string LastMigrationId => "20261125124748_Added_FileOrigin_FileId";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -3051,7 +3051,6 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                             .HasColumnType("uniqueidentifier");
 
                         b1.Property<string>("BlobName")
-                            .IsRequired()
                             .HasMaxLength(512)
                             .HasColumnType("nvarchar(512)");
 
@@ -3064,6 +3063,9 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                             .IsRequired()
                             .HasMaxLength(256)
                             .HasColumnType("nvarchar(256)");
+
+                        b1.Property<Guid?>("FileId")
+                            .HasColumnType("uniqueidentifier");
 
                         b1.Property<long>("FileSize")
                             .HasColumnType("bigint");

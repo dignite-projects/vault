@@ -312,6 +312,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documents keep their files in Blob Management.** An upload's original, a submitted original and a page-range
+  sub-document's cut are stored by Dignite Blob Management in the managed container `extract-files`
+  (`DocumentFileConsts.ContainerName`), by id: `FileOrigin.FileId`, a new column (migration `Added_FileOrigin_FileId`).
+  The file goes to the recycle bin with its document (a sub-document withdrawn by a re-parse or reclassification too),
+  comes back with a restore, and is deleted for good with it; it counts toward the tenant's `BlobManagement.StorageSize`,
+  and a file whose bytes are not what its extension says is refused (`Dignite.Abp.BlobStoring:ContentTypeMismatch`).
+  **Every host now installs `Dignite.Abp.BlobManagement.Application` and `.EntityFrameworkCore`** (no longer only to
+  take submissions) **and declares the container `extract-files` with the "any" preset**; without it, uploads fail.
+  Files stored before stay in `extract-documents` under `FileOrigin.BlobName` and are read and deleted there; moving
+  them is a separate step. `FileOriginDto` is unchanged. See
+  [Original File Storage](docs/en/deployment/deployment.md#original-file-storage).
+
 - **BREAKING (`Document.Markdown`): an image is written as Azure Document Intelligence writes a figure.** The text
   read from an embedded image sits in a `<figure>` block, its caption in a `<figcaption>`, instead of between the
   `*[Image OCR p:N]*` and `*[End OCR]*` lines; see

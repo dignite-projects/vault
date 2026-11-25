@@ -23,7 +23,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Volo.Abp;
 using Volo.Abp.BackgroundJobs;
-using Volo.Abp.BlobStoring;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Users;
 using Volo.Abp.Clients;
@@ -74,7 +73,6 @@ public class DocumentSubmissionService : ITransientDependency
     private readonly ICurrentClient _currentClient;
     private readonly ICancellationTokenProvider _cancellationTokenProvider;
     private readonly ICurrentUser _currentUser;
-    private readonly IBlobContainer<VaultExtractDocumentContainer> _documentContainer;
     private readonly IAbpLazyServiceProvider _lazyServiceProvider;
 
     public ILogger<DocumentSubmissionService> Logger { get; set; } = NullLogger<DocumentSubmissionService>.Instance;
@@ -99,11 +97,9 @@ public class DocumentSubmissionService : ITransientDependency
         ICurrentClient currentClient,
         ICancellationTokenProvider cancellationTokenProvider,
         ICurrentUser currentUser,
-        IBlobContainer<VaultExtractDocumentContainer> documentContainer,
         IAbpLazyServiceProvider lazyServiceProvider)
     {
         _currentUser = currentUser;
-        _documentContainer = documentContainer;
         _lazyServiceProvider = lazyServiceProvider;
         _documentRepository = documentRepository;
         _fieldRepository = fieldRepository;
@@ -190,13 +186,13 @@ public class DocumentSubmissionService : ITransientDependency
             }
         }
 
-        // The original is stored as an upload stores its file, under a blob name of Extract's own container: the staged
-        // copy is Blob Management's and goes once the document holds it.
+        // The original is stored as an upload stores its file, a file of its own in the documents' container: the
+        // staged copy is the submission's and goes once the document holds its own.
         FileOrigin? fileOrigin = null;
         if (original != null)
         {
             fileOrigin = new FileOrigin(
-                _guidGenerator.Create().ToString("N") + original.Extension,
+                await DocumentFiles.CreateAsync(original.FileName, original.Bytes, original.ContentHash),
                 _currentUser.UserName ?? string.Empty,
                 original.ContentType,
                 original.ContentHash,
@@ -209,12 +205,6 @@ public class DocumentSubmissionService : ITransientDependency
         if (type != null)
         {
             _pipelineRunManager.DeclareDocumentType(document, type.Id);
-        }
-
-        if (fileOrigin != null)
-        {
-            using var saveStream = new MemoryStream(original!.Bytes, writable: false);
-            await _documentContainer.SaveAsync(fileOrigin.BlobName, saveStream);
         }
 
         await _documentRepository.InsertAsync(document, autoSave: true);
@@ -310,6 +300,9 @@ public class DocumentSubmissionService : ITransientDependency
     /// <summary>The bytes the longest submittable Markdown can take in UTF-8, plus a byte order mark.</summary>
     protected static long MaxMarkdownFileBytes => (long)DocumentConsts.MaxSubmittedMarkdownLength * 4 + 3;
 
+    /// <summary>Where the document's own file is stored.</summary>
+    protected DocumentFileStore DocumentFiles => _lazyServiceProvider.LazyGetRequiredService<DocumentFileStore>();
+
     /// <summary>Blob Management's file service: resolved only when a submission stages or names a file.</summary>
     protected IBlobManagementFileService FileService => _lazyServiceProvider.LazyGetRequiredService<IBlobManagementFileService>();
 
@@ -356,7 +349,7 @@ public class DocumentSubmissionService : ITransientDependency
                 .WithData("ExistingDocumentId", existing.Id);
         }
 
-        return new StagedOriginal(file.Name, extension, file.MimeType, contentHash, bytes);
+        return new StagedOriginal(file.Name, file.MimeType, contentHash, bytes);
     }
 
     /// <summary>
@@ -399,7 +392,7 @@ public class DocumentSubmissionService : ITransientDependency
     }
 
     /// <summary>A staged original file, checked and ready to be stored.</summary>
-    protected sealed record StagedOriginal(string FileName, string Extension, string ContentType, string ContentHash, byte[] Bytes);
+    protected sealed record StagedOriginal(string FileName, string ContentType, string ContentHash, byte[] Bytes);
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 

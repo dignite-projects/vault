@@ -17,7 +17,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
-using Volo.Abp.BlobStoring;
 using Volo.Abp.Data;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Entities;
@@ -40,7 +39,7 @@ public class DocumentParseBackgroundJob
     private readonly IBackgroundJobManager _backgroundJobManager;
     private readonly DocumentExtractionClient _extractionClient;
     private readonly Layout.DocumentLayoutStore _layoutStore;
-    private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
+    private readonly DocumentFileStore _documentFiles;
     private readonly IDistributedEventBus _distributedEventBus;
     private readonly IClock _clock;
     /// <summary>
@@ -76,7 +75,7 @@ public class DocumentParseBackgroundJob
         DocumentPipelineJobScheduler pipelineJobScheduler,
         IBackgroundJobManager backgroundJobManager,
         DocumentExtractionClient extractionClient,
-        IBlobContainer<VaultExtractDocumentContainer> blobContainer,
+        DocumentFileStore documentFiles,
         IDistributedEventBus distributedEventBus,
         IClock clock,
         [FromKeyedServices(VaultExtractConsts.TitleGeneratorChatClientKey)] IChatClient titleGeneratorChatClient,
@@ -96,7 +95,7 @@ public class DocumentParseBackgroundJob
         _backgroundJobManager = backgroundJobManager;
         _extractionClient = extractionClient;
         _layoutStore = layoutStore;
-        _blobContainer = blobContainer;
+        _documentFiles = documentFiles;
         _distributedEventBus = distributedEventBus;
         _clock = clock;
         _titleGeneratorChatClient = titleGeneratorChatClient;
@@ -162,16 +161,17 @@ public class DocumentParseBackgroundJob
             }
             else if (result is null)
             {
-                // Sub-documents derived from segment SliceText always have SeedMarkdown set; a null BlobName here
-                // indicates a configuration or data inconsistency — fail fast rather than NPE on GetAsync.
-                if (workItem.BlobName is null)
+                // Sub-documents derived from segment SliceText always have SeedMarkdown set; no file here indicates a
+                // configuration or data inconsistency — fail fast rather than NPE below.
+                if (workItem.File is null)
                     throw new InvalidOperationException(
-                        $"Document has no source blob and no seed Markdown (run {workItem.RunId}).");
+                        $"Document has no source file and no seed Markdown (run {workItem.RunId}).");
 
-                // The caller owns the blob stream. With the FileSystem provider this is a FileStream holding an OS file handle,
+                // The caller owns the stream. With the FileSystem provider this is a FileStream holding an OS file handle,
                 // so it must be disposed, consistent with DocumentAppService.GetBlobAsync disposeStream:true.
                 // Use await using so it is released when this try block (External phase) ends; CompleteRunAsync no longer needs it.
-                await using var blobStream = await _blobContainer.GetAsync(workItem.BlobName);
+                await using var blobStream = await _documentFiles.OpenOrNullAsync(workItem.File, _cancellationTokenProvider.Token)
+                    ?? throw new InvalidOperationException($"The source file of the document is missing (run {workItem.RunId}).");
 
                 // No language hints: OCR language is engine-specific (#441). VisionLlm / Azure DI auto-detect;
                 // PaddleOcr falls back to its own PaddleOcr:Languages config.
@@ -274,7 +274,7 @@ public class DocumentParseBackgroundJob
 
         return new ParseWorkItem(
             run.Id,
-            document.FileOrigin?.BlobName,
+            document.FileOrigin,
             document.FileOrigin?.ContentType,
             document.FileOrigin?.OriginalFileName,
             seedMarkdown,
@@ -571,7 +571,7 @@ public class DocumentParseBackgroundJob
 
     private sealed record ParseWorkItem(
         Guid RunId,
-        string? BlobName,
+        FileOrigin? File,
         string? ContentType,
         string? OriginalFileName,
         string? SeedMarkdown,
