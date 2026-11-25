@@ -746,6 +746,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WHERE JobName LIKE 'Dignite.Vault.Extract.%';
   ```
 
+- **Blob Management `10.7.7-preview.7`** (from `-preview.1`). The host migration `Upgraded_BlobManagement_Preview7`
+  drops the directory name key, makes `BlobFileDescriptors.Hash` an optional 44-character column (the base64 of a
+  checksum the uploader sent, no longer a hex digest of every upload) and changes two indexes. A database migrated
+  before it may hold rows the migration cannot convert: run this first, then migrate. Only staged submission uploads
+  live in these tables, and none of their old digests was a verified checksum.
+
+  ```sql
+  DELETE FROM BlobFileDescriptors WHERE IsDeleted = 1;  -- their bytes were already removed by the old version
+  UPDATE BlobFileDescriptors SET Hash = NULL;           -- 64-character digests do not fit the new column
+  ```
+
 - **Several host instances** now share the job queue safely, but every instance must run this release (an older one
   takes no SQL Server locks) and have the same `Vault:BackgroundJobs:MaxParallelJobExecutionCount`.
 

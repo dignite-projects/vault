@@ -141,10 +141,10 @@
              Not on nuget.org yet: these are abp-modules pre-releases from GitHub Packages (NuGet.Config maps
              Dignite.Abp.BlobManagement* and Dignite.Abp.BlobStoring* there), built against ABP 10.7 like the
              other Dignite.Abp pins. Move to nuget.org when Blob Management has a stable release. -->
-        <PackageVersion Include="Dignite.Abp.BlobManagement.Application.Contracts" Version="10.7.7-preview.1" />
-        <PackageVersion Include="Dignite.Abp.BlobManagement.Application" Version="10.7.7-preview.1" />
-        <PackageVersion Include="Dignite.Abp.BlobManagement.HttpApi" Version="10.7.7-preview.1" />
-        <PackageVersion Include="Dignite.Abp.BlobManagement.EntityFrameworkCore" Version="10.7.7-preview.1" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.Application.Contracts" Version="10.7.7-preview.7" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.Application" Version="10.7.7-preview.7" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.HttpApi" Version="10.7.7-preview.7" />
+        <PackageVersion Include="Dignite.Abp.BlobManagement.EntityFrameworkCore" Version="10.7.7-preview.7" />
     </ItemGroup>
 
     <ItemGroup Label="Aspire">

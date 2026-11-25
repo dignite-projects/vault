@@ -17,7 +17,7 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120011732_Added_DataProtectionKeys";
+    public override string LastMigrationId => "20261125061352_Upgraded_BlobManagement_Preview7";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -87,10 +87,6 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                     .HasMaxLength(256)
                     .HasColumnType("nvarchar(256)");
 
-                b.Property<string>("NameKey")
-                    .HasMaxLength(64)
-                    .HasColumnType("nvarchar(64)");
-
                 b.Property<int>("Order")
                     .HasColumnType("int");
 
@@ -107,10 +103,6 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                     .HasColumnName("TenantId");
 
                 b.HasKey("Id");
-
-                b.HasIndex("NameKey")
-                    .IsUnique()
-                    .HasFilter("[NameKey] IS NOT NULL");
 
                 b.HasIndex("ParentId");
 
@@ -173,9 +165,8 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
                     .HasColumnName("ExtraProperties");
 
                 b.Property<string>("Hash")
-                    .IsRequired()
-                    .HasMaxLength(64)
-                    .HasColumnType("nvarchar(64)");
+                    .HasMaxLength(44)
+                    .HasColumnType("nvarchar(44)");
 
                 b.Property<bool>("IsDeleted")
                     .ValueGeneratedOnAdd()
@@ -228,9 +219,9 @@ partial class VaultExtractHostDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("TenantId", "ContainerName", "BlobName");
 
-                b.HasIndex("TenantId", "ContainerName", "DirectoryId");
+                b.HasIndex("TenantId", "IsPending", "CreationTime");
 
-                b.HasIndex("TenantId", "ContainerName", "Name");
+                b.HasIndex("TenantId", "ContainerName", "DirectoryId", "Name");
 
                 b.ToTable("BlobFileDescriptors");
             });
