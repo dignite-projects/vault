@@ -410,7 +410,7 @@ public class DocumentAccessEntryGate_Tests : DocumentAccessTestBase
     public async Task Reaching_ones_own_document_costs_no_grant_check_and_no_type_layer_read()
     {
         var own = StubDocument(TypeA.Id, creatorId: OwnerId);
-        BlobContainer.GetAsync(own.FileOrigin!.BlobName, Arg.Any<System.Threading.CancellationToken>())
+        BlobContainer.GetOrNullAsync(own.FileOrigin!.BlobName!, Arg.Any<System.Threading.CancellationToken>())
             .Returns(_ => new System.IO.MemoryStream([1, 2, 3]));
         Grant(VaultExtractPermissions.Documents.Default, VaultExtractPermissions.Documents.Upload);
 

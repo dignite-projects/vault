@@ -15,7 +15,6 @@ using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
-using Volo.Abp.BlobStoring;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Guids;
@@ -88,7 +87,7 @@ public class DocumentSegmentationJob
     private readonly ICancellationTokenProvider _cancellationTokenProvider;
     private readonly DocumentWriteLock _documentWriteLock;
     private readonly DocumentLayoutStore _layoutStore;
-    private readonly IBlobContainer<VaultExtractDocumentContainer> _blobContainer;
+    private readonly DocumentFileStore _documentFiles;
     private readonly IReadOnlyList<ParsePageCopier> _pageCopiers;
 
     public DocumentSegmentationJob(
@@ -104,7 +103,7 @@ public class DocumentSegmentationJob
         ICancellationTokenProvider cancellationTokenProvider,
         DocumentWriteLock documentWriteLock,
         DocumentLayoutStore layoutStore,
-        IBlobContainer<VaultExtractDocumentContainer> blobContainer,
+        DocumentFileStore documentFiles,
         IEnumerable<ParsePageCopier> pageCopiers)
     {
         _documentRepository = documentRepository;
@@ -119,7 +118,7 @@ public class DocumentSegmentationJob
         _cancellationTokenProvider = cancellationTokenProvider;
         _documentWriteLock = documentWriteLock;
         _layoutStore = layoutStore;
-        _blobContainer = blobContainer;
+        _documentFiles = documentFiles;
         _pageCopiers = pageCopiers.ToList();
     }
 
@@ -537,8 +536,8 @@ public class DocumentSegmentationJob
 
         // Shared complete-phase UoW (#358): insert the derived document, mark this segment Spawned, publish
         // DocumentUploadedEto, and queue text extraction — atomically. The reload guard is kind-aware (#371).
-        // A spawn that throws (a concurrency conflict, the database) has written the cut already, under a name of this
-        // attempt's own; a retry cuts again under another, so the cut is removed here rather than left for it.
+        // A spawn that throws (a concurrency conflict, the database) has stored the cut already, as a file of this
+        // attempt's own; a retry cuts again into another, so the cut is removed here rather than left for it.
         Guid? spawnedId;
         try
         {
@@ -569,13 +568,13 @@ public class DocumentSegmentationJob
         }
         catch (Exception) when (fileOrigin is not null)
         {
-            await _blobContainer.DeleteAsync(fileOrigin.BlobName);
+            await _documentFiles.DeletePermanentlyAsync(fileOrigin);
             throw;
         }
 
         if (spawnedId is null && fileOrigin is not null)
         {
-            await _blobContainer.DeleteAsync(fileOrigin.BlobName);
+            await _documentFiles.DeletePermanentlyAsync(fileOrigin);
         }
     }
 
@@ -667,11 +666,12 @@ public class DocumentSegmentationJob
     protected const int MaxMovedCharacters = 40;
 
     /// <summary>
-    /// A constituent's own file: its pages cut out of the source's file and saved under a name of this attempt's own
-    /// (the segment's id and a fresh one). Two runs that spawn the same segment at once both cut it; the one whose spawn
-    /// does not claim the segment deletes its cut, and with a shared name it would delete the file the other run's child
-    /// is being committed with. <c>null</c> when the segment has no pages or the cut fails on the
-    /// file itself (it is then seeded from its slice like any other); a storage failure propagates and the job retries.
+    /// A constituent's own file: its pages cut out of the source's file and stored as a file of this attempt's own, counted
+    /// for the source's owner. Two runs that spawn the same segment at once both cut it; the one whose spawn does not
+    /// claim the segment deletes its cut, which is never the file the other run's child is being committed with.
+    /// <c>null</c> when the segment has no pages, the source's file is gone (or in the recycle bin with it), or the cut
+    /// fails on the file itself (it is then seeded from its slice like any other); a storage failure propagates and the
+    /// job retries.
     /// </summary>
     protected virtual async Task<FileOrigin?> TryCutPagesAsync(
         PendingSegment segment, DetectionContext context, CancellationToken cancellationToken)
@@ -685,7 +685,15 @@ public class DocumentSegmentationJob
         byte[] bytes;
         try
         {
-            await using var stream = await _blobContainer.GetAsync(source.BlobName, cancellationToken);
+            await using var stream = await _documentFiles.OpenOrNullAsync(source, cancellationToken);
+            if (stream is null)
+            {
+                Logger.LogWarning(
+                    "The file of source {SourceId} is missing; segment {SegmentId} is spawned from its slice.",
+                    context.SourceDocumentId, segment.SegmentId);
+                return null;
+            }
+
             bytes = await copier.CopyPagesAsync(stream, first, last, cancellationToken);
         }
         catch (InvalidDataException ex)
@@ -696,16 +704,17 @@ public class DocumentSegmentationJob
             return null;
         }
 
-        var blobName = $"{segment.SegmentId:N}-{_guidGenerator.Create():N}{Path.GetExtension(source.BlobName)}";
-        await _blobContainer.SaveAsync(blobName, bytes, overrideExisting: true, cancellationToken);
+        var fileName = PageRangeFileName(source.OriginalFileName, first, last);
+        var contentHash = ContentHasher.Sha256Hex(bytes);
+        var fileId = await _documentFiles.CreateAsync(fileName, bytes, contentHash, creatorId: context.OwnerId);
 
         return new FileOrigin(
-            blobName,
+            fileId,
             source.UploadedByUserName,
             source.ContentType,
-            ContentHasher.Sha256Hex(bytes),
+            contentHash,
             bytes.Length,
-            originalFileName: PageRangeFileName(source.OriginalFileName, first, last));
+            originalFileName: fileName);
     }
 
     /// <summary><c>bundle.pdf</c> → <c>bundle (p3-5).pdf</c>, or <c>(p3)</c> for one page.</summary>
@@ -718,7 +727,7 @@ public class DocumentSegmentationJob
 
     private ParsePageCopier? FindPageCopier(FileOrigin file)
         => _pageCopiers.FirstOrDefault(copier => copier.CanCopy(
-            Path.GetExtension(file.OriginalFileName ?? file.BlobName).ToLowerInvariant(), file.ContentType));
+            Path.GetExtension(file.OriginalFileName ?? file.BlobName ?? string.Empty).ToLowerInvariant(), file.ContentType));
 
     /// <summary>
     /// Kind-aware stale guard (#371), run inside the spawn UoW (opens none of its own): a

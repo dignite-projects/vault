@@ -68,6 +68,11 @@ public class DocumentSubmissionBlobManagementTestModule : AbpModule
                 container.UseBlobManagementContainer();
                 container.UseAnyPreset(preset => preset.MaxSizeInMegabytes = 20);
             });
+            options.Containers.Configure(DocumentFileConsts.ContainerName, container =>
+            {
+                container.UseBlobManagementContainer();
+                container.UseAnyPreset(preset => preset.MaxSizeInMegabytes = 20);
+            });
         });
 
         // One database for both modules' tables: the base test module's connection holds Extract's only.

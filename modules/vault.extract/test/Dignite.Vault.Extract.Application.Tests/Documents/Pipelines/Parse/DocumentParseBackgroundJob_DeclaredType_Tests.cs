@@ -198,7 +198,7 @@ public class DocumentParseBackgroundJob_DeclaredType_Tests
 
     private void StubExtraction(string markdown)
     {
-        _blobContainer.GetAsync(Arg.Any<string>())
+        _blobContainer.GetOrNullAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
             .Returns(Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
         _extractionClient.Answers(markdown, language: "en");
     }

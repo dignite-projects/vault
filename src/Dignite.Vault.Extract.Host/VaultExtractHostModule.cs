@@ -656,6 +656,16 @@ public class VaultExtractHostModule : AbpModule
                 });
             });
 
+            // Where each document's own file is kept, by id: its original, or a page-range sub-document's cut (a managed
+            // Blob Management container, on the default storage). Any type, stored as it came - a picture is not
+            // converted, the parse reads the original; the upload checks it against Extract's own allow-list first.
+            options.Containers.Configure(DocumentFileConsts.ContainerName, container =>
+            {
+                container.UseBlobManagementContainer();
+                container.UseAnyPreset(preset =>
+                    preset.MaxSizeInMegabytes = (int)Math.Ceiling(DocumentConsts.MaxUploadFileBytes / (1024d * 1024d)));
+            });
+
             // Where a client's submission uploads wait until the submission takes them (a managed Blob Management
             // container, on the default storage). Any type up to the upload limit: the upload link narrows the types
             // per kind, and the submission checks an original against Extract's own allow-list.

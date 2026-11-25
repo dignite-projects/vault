@@ -22,7 +22,7 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.Segmentation;
 ///   <item><see cref="RetractAllAsync"/> — a re-parse (#660). The Markdown every child was split from is gone, so every
 ///   child goes, whatever its kind, and the new Markdown is split from scratch.</item>
 /// </list>
-/// Each withdrawn sub-document is soft-deleted with one <see cref="DocumentDeletedEto"/>. Both run inside the caller's
+/// Each withdrawn sub-document is soft-deleted, with its own file if it has one, and one <see cref="DocumentDeletedEto"/>. Both run inside the caller's
 /// unit of work without <c>autoSave</c>, so the withdrawals, their events and the caller's own change land in one
 /// transactional-outbox commit or not at all. The fan-out is bounded by
 /// <c>VaultExtractBehaviorOptions.MaxSegmentsPerDocument</c>, which is why it runs synchronously, with no paging.
@@ -35,13 +35,16 @@ public class SubDocumentRetractor : ITransientDependency
     private readonly IRepository<DocumentSegment, Guid> _segmentRepository;
     private readonly IDistributedEventBus _distributedEventBus;
     private readonly IClock _clock;
+    private readonly DocumentFileStore _documentFiles;
 
     public SubDocumentRetractor(
         IDocumentRepository documentRepository,
         IRepository<DocumentSegment, Guid> segmentRepository,
         IDistributedEventBus distributedEventBus,
-        IClock clock)
+        IClock clock,
+        DocumentFileStore documentFiles)
     {
+        _documentFiles = documentFiles;
         _documentRepository = documentRepository;
         _segmentRepository = segmentRepository;
         _distributedEventBus = distributedEventBus;
@@ -101,6 +104,12 @@ public class SubDocumentRetractor : ITransientDependency
                 // No autoSave: the soft-delete UPDATE is flushed with the caller's unit of work, so a partial
                 // withdrawal can never commit ahead of the change that caused it.
                 await _documentRepository.DeleteAsync(subDocument);
+
+                // A page-range sub-document's own cut goes to the recycle bin with it.
+                if (subDocument.FileOrigin is not null)
+                {
+                    await _documentFiles.DeleteAsync(subDocument.FileOrigin);
+                }
 
                 await _distributedEventBus.PublishAsync(
                     new DocumentDeletedEto

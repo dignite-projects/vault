@@ -153,7 +153,7 @@ public class DeletedDocumentQueuedJob_Tests : VaultExtractTestBase<DeletedDocume
         // still fails the way it always has, and the run is left Running. The retry ABP schedules then ends it.
         var documentId = await ArrangeDocumentAsync();
         var runId = await QueueRunAsync(documentId, VaultExtractPipelines.Parse);
-        _blobContainer.GetAsync(Arg.Any<string>()).Returns(_ => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
+        _blobContainer.GetOrNullAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>()).Returns(_ => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
         _extractionClient.Answers(_ =>
         {
             WithUnitOfWorkAsync(() => _documentRepository.DeleteAsync(documentId)).GetAwaiter().GetResult();

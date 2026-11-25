@@ -26,6 +26,9 @@
     <PackageReference Include="Volo.Abp.Features"/>
     <PackageReference Include="Volo.Abp.Guids"/>
     <PackageReference Include="Volo.Abp.TestBase"/>
+    <!-- InMemoryBlobManagementFileService stands in for the module the host installs. -->
+    <PackageReference Include="Dignite.Abp.BlobManagement.Application.Contracts"/>
+    <PackageReference Include="Volo.Abp.Ddd.Domain"/>
   </ItemGroup>
 
 </Project>

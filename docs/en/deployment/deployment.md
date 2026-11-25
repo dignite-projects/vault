@@ -17,7 +17,8 @@ This page covers what a host operator configures to run the Dignite Vault host: 
 Dignite Vault host (ASP.NET Core)
   ├─► SQL Server ─── application data: documents, types and fields, identity, OpenIddict,
   │                  background jobs, event outbox and inbox, notifications
-  ├─► BLOB storage ─ original uploaded files (container "extract-documents")
+  ├─► BLOB storage ─ original files (Blob Management container "extract-files"),
+  │                   parse layouts and older originals (container "extract-documents")
   ├─► LLM provider ─ classification, field extraction, segmentation, titles (IChatClient)
   └─► OCR provider ─ Vision-LLM (default) / PaddleOCR sidecar / Azure Document Intelligence
 
@@ -64,9 +65,29 @@ Index indexes a document when Extract releases it (`DocumentReadyEto`) and follo
 
 ## Original File Storage
 
-Every upload's original file is written to the `extract-documents` BLOB container through [ABP BLOB Storing](https://abp.io/docs/latest/framework/infrastructure/blob-storing). Text extraction reads it, re-parse reads it again, and the document detail page downloads it, so losing it breaks those features for every stored document. Permanently deleting a document deletes its file.
+Every document's original file, and the file of each sub-document cut out of a bundle by its pages, is kept by [Dignite Blob Management](https://github.com/dignite-projects/abp-modules) in the managed container `extract-files`, by id: the document's `FileOrigin.FileId` names it. Text extraction reads it, re-parse reads it again, and the document detail page downloads it, so losing it breaks those features for every stored document.
 
-The shipped host configures the **file system provider** as the default for every container, under `<content root>/App_Data/blobs`:
+- The file follows its document: it goes to the recycle bin with it, keeping its bytes, comes back with a restore, and is deleted for good, bytes and all, when the document is.
+- It counts toward the tenant's Blob Management storage (`BlobManagement.StorageSize`). An upload that would exceed it is refused with `BlobManagement:StorageQuotaExceeded`; a tenant with `BlobManagement.Enable` switched off cannot upload, read or delete document files.
+- Blob Management detects the type from the bytes and reconciles it with the file name's extension: a file whose bytes are not what its extension says is refused with `Dignite.Abp.BlobStoring:ContentTypeMismatch`.
+- The Blob Management page lists the container like any other, and an operator with its file permissions can rename or delete a document's file there. A document whose file was removed that way reports it missing (`Extract:DocumentNoSourceBlob`).
+
+The host installs `Dignite.Abp.BlobManagement.Application` and `.EntityFrameworkCore` and declares the container (the shipped host does, in `VaultExtractHostModule.ConfigureEfCore`):
+
+```csharp
+options.Containers.Configure(DocumentFileConsts.ContainerName, container =>
+{
+    container.UseBlobManagementContainer();
+    container.UseAnyPreset(preset =>
+        preset.MaxSizeInMegabytes = (int)Math.Ceiling(DocumentConsts.MaxUploadFileBytes / (1024d * 1024d)));
+});
+```
+
+Use the "any" preset: the images preset would store a JPEG or PNG as WebP, and the parse reads the original.
+
+Extract's own container `extract-documents` holds each document's parse layout (`layout/{id}`), and the originals of documents stored before the move to Blob Management, which name their file by `FileOrigin.BlobName`. Those are still read from it and deleted from it with their document; they have no recycle-bin state of their own.
+
+Both containers use the storage provider beneath. The shipped host configures the **file system provider** as the default for every container, under `<content root>/App_Data/blobs`:
 
 ```csharp
 Configure<AbpBlobStoringOptions>(options =>

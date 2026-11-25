@@ -463,11 +463,11 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
                 .WithData("ExistingDocumentId", existing.Id);
         }
 
-        // The aggregate is built (and its invariants checked) before the blob write: anything FileOrigin / Document
-        // refuses must be refused while nothing has been written, or the bytes stay behind as a blob no row points at.
-        var blobName = GuidGenerator.Create().ToString("N") + extension;
+        // The file is kept by Blob Management, which gives it its id. Anything FileOrigin / Document refuses after it is
+        // stored rolls this unit of work back, and Blob Management removes the bytes of a write that does not last.
+        var fileId = await DocumentFiles.CreateAsync(fileName, bytes, contentHash);
         var fileOrigin = new FileOrigin(
-            blobName,
+            fileId,
             CurrentUser.UserName ?? string.Empty,
             contentType,
             contentHash,
@@ -488,11 +488,6 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         if (declaredType != null)
         {
             _pipelineRunManager.DeclareDocumentType(document, declaredType.Id);
-        }
-
-        using (var saveStream = new MemoryStream(bytes, writable: false))
-        {
-            await _blobContainer.SaveAsync(blobName, saveStream);
         }
 
         await _documentRepository.InsertAsync(document, autoSave: true);
@@ -630,6 +625,9 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
             disposeStream: true);
     }
 
+    /// <summary>Where a document's own file is stored, read and deleted.</summary>
+    protected DocumentFileStore DocumentFiles => LazyServiceProvider.LazyGetRequiredService<DocumentFileStore>();
+
     public virtual async Task<IRemoteStreamContent> GetBlobAsync(Guid id)
     {
         // #635: entry asserted before the load — see GetAsync.
@@ -643,16 +641,16 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
 
         // #485: FileOrigin is required on every Document going forward (#481), but a legacy pre-#481 derived row
         // (persisted before that migration's backfill ran) is still reachable during the documented binaries-first
-        // deploy window. Fail with a clean, mapped exception instead of an NRE/500 on FileOrigin.BlobName below.
-        if (document.FileOrigin is null)
+        // deploy window. Fail with a clean, mapped exception instead of an NRE/500 below. A file missing from storage
+        // gets the same answer.
+        var stream = document.FileOrigin is null ? null : await DocumentFiles.OpenOrNullAsync(document.FileOrigin);
+        if (stream is null)
             throw new BusinessException(VaultExtractErrorCodes.Document.NoSourceBlob)
                 .WithData("DocumentId", id);
 
-        var stream = await _blobContainer.GetAsync(document.FileOrigin.BlobName);
-
         return new RemoteStreamContent(
             stream,
-            document.FileOrigin.OriginalFileName,
+            document.FileOrigin!.OriginalFileName,
             document.FileOrigin.ContentType,
             disposeStream: true);
     }
@@ -701,6 +699,12 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
 
         await _documentRepository.DeleteAsync(id);
 
+        // The file goes to the recycle bin with its document, keeping its bytes for a restore.
+        if (document.FileOrigin is not null)
+        {
+            await DocumentFiles.DeleteAsync(document.FileOrigin);
+        }
+
         // Notify downstream consumers: the Document entered the trash bin, so derived data should move to a recoverable archived state.
         await _distributedEventBus.PublishAsync(
             new DocumentDeletedEto
@@ -748,20 +752,11 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
 
         await _documentRepository.HardDeleteAsync(id);
 
-        // A document owns its own upload blob; a derived sub-document has no FileOrigin (null), so there is
-        // nothing to reclaim for it.
+        // A document owns its own file; a sub-document seeded from a slice has no FileOrigin, so there is nothing to
+        // reclaim for it.
         if (document.FileOrigin is not null)
         {
-            try
-            {
-                await _blobContainer.DeleteAsync(document.FileOrigin.BlobName);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex,
-                    "Failed to delete blob {BlobName} for document {DocumentId}.",
-                    document.FileOrigin.BlobName, id);
-            }
+            await DocumentFiles.DeletePermanentlyAsync(document.FileOrigin);
         }
 
         try
@@ -906,6 +901,11 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
 
             await _documentRepository.UpdateAsync(document);
 
+            if (document.FileOrigin is not null)
+            {
+                await DocumentFiles.RestoreAsync(document.FileOrigin);
+            }
+
             await _distributedEventBus.PublishAsync(
                 new DocumentRestoredEto
                 {
@@ -1007,7 +1007,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // A re-parse reads the stored original file. Refused up front when it is not there (no FileOrigin, or lost
         // from blob storage): accepted, the run would fail in the background and leave a document whose text is
         // intact marked Failed, and every retry would fail the same way.
-        if (document.FileOrigin == null || !await _blobContainer.ExistsAsync(document.FileOrigin.BlobName))
+        if (document.FileOrigin == null || !await DocumentFiles.ExistsAsync(document.FileOrigin))
         {
             throw new BusinessException(VaultExtractErrorCodes.Document.ReparseSourceFileMissing);
         }
@@ -1078,7 +1078,7 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
                 // #485: null-safe -- a legacy pre-#481 derived row can still carry a null FileOrigin during the
                 // documented deploy window; avoid an NRE while building this diagnostic (and CS8604, since
                 // .WithData's value parameter is non-nullable).
-                .WithData("FileName", document.FileOrigin?.BlobName ?? string.Empty);
+                .WithData("FileName", document.FileOrigin?.OriginalFileName ?? string.Empty);
         }
     }
 

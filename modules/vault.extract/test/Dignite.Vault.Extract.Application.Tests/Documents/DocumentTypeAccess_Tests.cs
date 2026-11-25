@@ -187,7 +187,7 @@ public class DocumentTypeAccess_Tests : VaultExtractApplicationTestBase<Document
     {
         var granted = StubDocument(_typeA.Id);
         var denied = StubDocument(_typeB.Id);
-        _blobContainer.GetAsync(granted.FileOrigin!.BlobName, Arg.Any<CancellationToken>())
+        _blobContainer.GetOrNullAsync(granted.FileOrigin!.BlobName!, Arg.Any<CancellationToken>())
             .Returns(_ => new MemoryStream([1, 2, 3]));
 
         GrantEntryOnly();
