@@ -107,6 +107,8 @@ A file that cannot be moved stays where it is, still read from `extract-document
 
 Once the cause is fixed, the next `--migrate-database` tries again; a file already moved is not read again. Back up the BLOB storage before the first run: the bytes of a moved file live only in `extract-files` afterwards.
 
+A failure in the middle of one document leaves a copy behind rather than losing one. A host that stops between steps 2 and 3 leaves the new file in `extract-files` with no document naming it, still counted toward the owner's storage, and the next run copies the blob again. A blob that cannot be deleted at step 4 is logged (`could not be deleted`) and stays in `extract-documents`, unread. Search the log for `could not be moved` as well as `was not moved`: the first is a failure the job did not expect, logged as an error with its exception.
+
 Both containers use the storage provider beneath. The shipped host configures the **file system provider** as the default for every container, under `<content root>/App_Data/blobs`:
 
 ```csharp

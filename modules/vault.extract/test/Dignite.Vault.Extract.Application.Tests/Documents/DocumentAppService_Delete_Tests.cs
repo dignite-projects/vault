@@ -434,7 +434,7 @@ public class DocumentAppService_Delete_Tests
             await _appService.PermanentDeleteAsync(doc.Id));
 
         exception.Code.ShouldBe(VaultExtractErrorCodes.Document.HasSubDocumentsPermanentDelete);
-        await _documentRepository.DidNotReceive().HardDeleteAsync(doc.Id, Arg.Any<CancellationToken>());
+        await _documentRepository.DidNotReceive().HardDeleteAsync(doc.Id, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _blobContainer.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _distributedEventBus.DidNotReceive().PublishAsync(
             Arg.Any<DocumentPermanentlyDeletedEto>(),

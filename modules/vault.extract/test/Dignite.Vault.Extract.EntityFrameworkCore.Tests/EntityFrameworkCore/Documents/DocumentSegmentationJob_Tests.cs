@@ -1133,6 +1133,58 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
     }
 
     /// <summary>
+    /// An older document's file moves to Blob Management while its split is detected, and the blob it left is deleted. The
+    /// cut reads the file where it went, so each constituent still gets a file of its own pages.
+    /// </summary>
+    [Fact]
+    public async Task A_source_file_that_moved_while_the_split_was_detected_is_cut_where_it_went()
+    {
+        var tree = Bundle(["Invoice A"], ["Invoice B"], ["B total"]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        var bundle = Encoding.UTF8.GetBytes("%PDF bundle");
+        var moved = false;
+        GetRequiredService<IBlobContainer<VaultExtractDocumentContainer>>()
+            .GetOrNullAsync($"blobs/{containerId:N}.pdf", Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<System.IO.Stream?>(moved ? null : new System.IO.MemoryStream(bundle)));
+        var files = GetRequiredService<InMemoryBlobManagementFileService>();
+        var outcome = new DocumentSegmentationOutcome();
+        outcome.Boundaries.Add(new SegmentBoundary("Invoice A", true));
+        outcome.Boundaries.Add(new SegmentBoundary("Invoice B", true));
+        _workflow.RunAsync(Arg.Any<string>(), Arg.Any<SubDocumentDetectionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                // The legacy file mover, while the model reads: a copy in Blob Management, the source names it, the old
+                // blob is gone.
+                var file = files.CreateAsync(new Dignite.Abp.BlobManagement.Files.CreateBlobManagementFileInput
+                {
+                    ContainerName = DocumentFileConsts.ContainerName,
+                    Name = "bundle.pdf",
+                    File = new Volo.Abp.Content.RemoteStreamContent(new System.IO.MemoryStream(bundle), "bundle.pdf", "application/pdf")
+                }).GetAwaiter().GetResult();
+                WithUnitOfWorkAsync(async () =>
+                {
+                    var source = await _documentRepository.GetAsync(containerId);
+                    source.MoveFileTo(file.Id);
+                    await _documentRepository.UpdateAsync(source, autoSave: true);
+                }).GetAwaiter().GetResult();
+                moved = true;
+                return outcome;
+            });
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = (await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId)).OrderBy(s => s.Ordinal).ToList();
+            segments.ShouldAllBe(s => s.Status == DocumentSegmentStatus.Spawned);
+            var second = await _documentRepository.GetAsync(segments[1].RoutedDocumentId!.Value);
+            var cut = files.Find(second.FileOrigin!.FileId!.Value).ShouldNotBeNull();
+            cut.Bytes.ShouldBe(FakePageCopier.Cut(2, 3));
+        });
+    }
+
+    /// <summary>
     /// A cut stores the source's pages a second time, so a bundle that fit the tenant's storage can have its cuts refused.
     /// Retrying would meet the same quota, so each constituent is spawned from its slice instead of the job retrying
     /// until ABP gives up and the sub-documents never appear.

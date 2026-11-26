@@ -750,7 +750,8 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
             }
         }
 
-        await _documentRepository.HardDeleteAsync(id);
+        // As read: a write since (the move of its file to Blob Management) would leave the file it names now unreclaimed.
+        await _documentRepository.HardDeleteAsync(id, document.ConcurrencyStamp);
 
         // A document owns its own file; a sub-document seeded from a slice has no FileOrigin, so there is nothing to
         // reclaim for it.

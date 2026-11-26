@@ -104,6 +104,28 @@ public class LegacyDocumentFileMove_Tests : VaultExtractTestBase<DocumentSubmiss
         (await _legacyContainer.ExistsAsync(blobName)).ShouldBeTrue();
     }
 
+    /// <summary>
+    /// A permanent delete reads the document, then deletes its row and reclaims the file it read. If the file moved in
+    /// between, reclaiming the old one would leave the new one in Blob Management with no document, counted against the
+    /// quota and holding what was to be deleted. The row is deleted only as it was read.
+    /// </summary>
+    [Fact]
+    public async Task A_permanent_delete_that_read_the_document_before_its_file_moved_deletes_nothing()
+    {
+        var (documentId, _) = await ArrangeLegacyDocumentAsync(Pdf);
+        var readStamp = await WithUnitOfWorkAsync(async () => (await _documentRepository.GetAsync(documentId, includeDetails: false)).ConcurrencyStamp);
+
+        (await _mover.MoveAsync(documentId)).Outcome.ShouldBe(LegacyDocumentFileMoveOutcome.Moved);
+
+        await Should.ThrowAsync<AbpDbConcurrencyException>(
+            () => WithUnitOfWorkAsync(() => _documentRepository.HardDeleteAsync(documentId, readStamp)));
+        (await LoadOriginAsync(documentId)).FileId.ShouldNotBeNull();
+
+        var currentStamp = await WithUnitOfWorkAsync(async () => (await _documentRepository.GetAsync(documentId, includeDetails: false)).ConcurrencyStamp);
+        await WithUnitOfWorkAsync(() => _documentRepository.HardDeleteAsync(documentId, currentStamp));
+        (await WithUnitOfWorkAsync(() => _documentRepository.FindAsync(documentId))).ShouldBeNull();
+    }
+
     [Fact]
     public async Task A_run_that_finds_the_file_moved_meanwhile_keeps_the_other_runs_copy_and_drops_its_own()
     {

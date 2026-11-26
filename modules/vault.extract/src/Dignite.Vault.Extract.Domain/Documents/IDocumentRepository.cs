@@ -251,7 +251,13 @@ public interface IDocumentRepository : IRepository<Document, Guid>
         int maxCount,
         CancellationToken cancellationToken = default);
 
-    Task HardDeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Deletes the document's row for good, in the recycle bin or not (<c>IMultiTenant</c> stays on). With
+    /// <paramref name="concurrencyStamp"/>, only the row as it was read: one changed since, or already gone, is not
+    /// deleted and <see cref="Volo.Abp.Data.AbpDbConcurrencyException"/> is thrown, so the caller never reclaims a file the
+    /// row no longer names.
+    /// </summary>
+    Task HardDeleteAsync(Guid id, string? concurrencyStamp = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Finds a Document by Id and eager-loads its <b>field-stage</b> child collection —
