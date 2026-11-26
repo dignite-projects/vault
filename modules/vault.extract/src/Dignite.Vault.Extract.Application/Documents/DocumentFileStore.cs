@@ -133,7 +133,9 @@ public class DocumentFileStore : ITransientDependency
     /// <summary>
     /// Deletes the file for good with its document. Blob Management removes the row in the caller's unit of work and the
     /// bytes once it commits. A file named by <see cref="FileOrigin.BlobName"/> is deleted at once, best-effort: a
-    /// storage failure is logged and leaves the bytes behind, not the document.
+    /// storage failure is logged and leaves the bytes behind, not the document. Call it once no document names the file:
+    /// a blob another document still names (a sub-document's from #481, see
+    /// <see cref="IDocumentRepository.AnyNamingBlobAsync"/>) is kept for that one.
     /// </summary>
     public virtual async Task DeletePermanentlyAsync(FileOrigin file)
     {
@@ -145,6 +147,12 @@ public class DocumentFileStore : ITransientDependency
 
         try
         {
+            if (await _lazyServiceProvider.LazyGetRequiredService<IDocumentRepository>().AnyNamingBlobAsync(file.BlobName!))
+            {
+                Logger.LogInformation("Blob {BlobName} is kept: another document still names it.", file.BlobName);
+                return;
+            }
+
             await _legacyContainer.DeleteAsync(file.BlobName!);
         }
         catch (Exception ex)

@@ -326,8 +326,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   take submissions) **and declares the container `extract-files` with the "any" preset**; without it, uploads fail.
   Files stored before name theirs by `FileOrigin.BlobName` in `extract-documents`, and `--migrate-database` moves
   them: in every layer that has any, it queues a low-priority job that copies each file into `extract-files`,
-  verified against the hash recorded at upload, points the document at it, and only then deletes the old blob
-  (recycle-bin documents included, with their file in the recycle bin). A file that cannot be moved stays where it is,
+  verified against the hash recorded at upload, points the document at it, and only then deletes the old blob, once
+  no other document names it (recycle-bin documents included, with their file in the recycle bin). A sub-document
+  spawned under #481 can name its source's blob; a permanent delete now keeps such a blob for the other document too. A file that cannot be moved stays where it is,
   still readable, with a logged reason; the next `--migrate-database` tries it again. A permanent delete that read a
   document before its file moved deletes nothing and fails with a concurrency conflict (`409`); calling it again
   deletes the document and its new file. `FileOriginDto` is unchanged. See

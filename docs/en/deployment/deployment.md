@@ -95,7 +95,9 @@ Extract's own container `extract-documents` holds each document's parse layout (
 1. reads the blob and checks its bytes against the SHA-256 recorded at upload (`FileOrigin.ContentHash`);
 2. stores them as a new file in `extract-files`, which Blob Management verifies against the same hash and counts for the document's owner;
 3. points the document at the new file, in one transaction under the document's write lock, after checking that the document still names the same blob; a document in the recycle bin gets its file in the recycle bin;
-4. once that has committed, deletes the blob.
+4. once that has committed, deletes the blob, unless another document still names it.
+
+Two documents can name one blob: a sub-document spawned while `FileOrigin` was required (#481, on the way to 0.3.0), or given its source's file by that change's backfill script, names its source's blob, and #487 kept it so. Each of the two gets a file of its own in `extract-files`, and the blob is deleted when the last of them has moved. A permanent delete keeps such a blob for the document that still names it in the same way.
 
 A file that cannot be moved stays where it is, still read from `extract-documents`, and the job logs a warning naming the document and the reason:
 

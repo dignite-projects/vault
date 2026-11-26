@@ -122,16 +122,9 @@ public class LegacyDocumentFileMover : ITransientDependency
             return LegacyDocumentFileMoveResult.NotLegacy;
         }
 
-        try
-        {
-            await _legacyContainer.DeleteAsync(blobName, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            // The document names its new file already; the old bytes are only left behind.
-            Logger.LogWarning(ex, "Document {DocumentId} moved its file, but the old blob {BlobName} could not be deleted.",
-                documentId, blobName);
-        }
+        // The document names its new file already, so a failure here only leaves the old bytes behind. Another document
+        // that names the same blob (a sub-document from #481) keeps it until its own move.
+        await _documentFiles.DeletePermanentlyAsync(origin);
 
         return LegacyDocumentFileMoveResult.Moved;
     }
