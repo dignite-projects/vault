@@ -35,6 +35,25 @@ public class EfCoreChunkRepository : EfCoreRepository<IVaultIndexDbContext, Chun
                 GetCancellationToken(cancellationToken));
     }
 
+    public virtual async Task UpdatePlacementAsync(IEnumerable<Chunk> chunks)
+    {
+        var dbContext = await GetDbContextAsync();
+        foreach (var chunk in chunks)
+        {
+            var entry = dbContext.Entry(chunk);
+            if (entry.State == EntityState.Detached)
+            {
+                // Taken as the database has it, so that only the placement below is written.
+                entry.State = EntityState.Unchanged;
+            }
+
+            entry.Property(c => c.FirstPage).IsModified = true;
+            entry.Property(c => c.LastPage).IsModified = true;
+            entry.Property(c => c.Regions).IsModified = true;
+            entry.Property(c => c.Content).IsModified = true;
+        }
+    }
+
     public virtual async Task<List<string>> GetDisabledContentHashesAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
         return await (await GetDbSetAsync())

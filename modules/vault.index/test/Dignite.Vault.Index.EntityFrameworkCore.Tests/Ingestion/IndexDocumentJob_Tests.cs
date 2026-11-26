@@ -435,6 +435,39 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
     }
 
     [Fact]
+    public async Task A_reclassification_that_re_embeds_and_places_the_chunks_moves_their_read_scope_too()
+    {
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        await RunAsync(IndexDocumentJobKind.Withhold, T2);
+        (await ChunksAsync()).ShouldAllBe(c => c.IsHidden);
+        var chunkIds = (await ChunksAsync()).Select(c => c.Id).ToList();
+
+        // The same text under a new type: its field values embed the same chunks again, and the pages that arrive with it
+        // place them. Those chunks are loaded before the new read scope is written; placing them must not write it back.
+        var breakAt = Contract.IndexOf("## 第2条", StringComparison.Ordinal);
+        var first = Contract.IndexOf("甲は乙に対し", StringComparison.Ordinal);
+        var dto = Dto(Contract, TypeB);
+        dto.ExtractedFields = new() { ["tenant"] = System.Text.Json.JsonSerializer.SerializeToElement("山田太郎") };
+        dto.Pages =
+        [
+            new() { PageNumber = 1, Spans = [new() { Offset = 0, Length = breakAt }] },
+            new() { PageNumber = 2, Spans = [new() { Offset = breakAt, Length = Contract.Length - breakAt }] }
+        ];
+        dto.Regions = [new() { Offset = first, Length = 10, PageNumber = 1, Left = 0.1, Top = 0.4, Width = 0.8, Height = 0.03 }];
+        _extract.FindReadyAsync(DocumentId).Returns(dto);
+        await RunAsync(IndexDocumentJobKind.Sync, T3);
+
+        var chunks = await ChunksAsync();
+        chunks.Select(c => c.Id).ShouldBe(chunkIds, ignoreOrder: true);
+        chunks.ShouldAllBe(c => c.FirstPage != null);
+        chunks.Single(c => c.Text.Contains("住居として賃貸する")).Regions.ShouldBe([new ChunkRegion(1, 0.1, 0.4, 0.8, 0.03)]);
+        chunks.ShouldAllBe(c => c.DocumentTypeId == TypeB && !c.IsHidden);
+        _vectors.Vectors.Values.ShouldAllBe(v => v.DocumentTypeId == TypeB);
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).IsWithheld.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task A_document_no_longer_Ready_keeps_its_last_Ready_version()
     {
         ExtractReturns(Contract, TypeA);

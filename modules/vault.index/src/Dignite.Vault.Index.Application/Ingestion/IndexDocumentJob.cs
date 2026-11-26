@@ -486,7 +486,9 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
             var moved = Place(document, existing, withPages: document.Pages is { Count: > 0 });
             if (moved.Count > 0)
             {
-                await _chunkRepository.UpdateManyAsync(moved);
+                // Only the placement: the chunks re-embedded above were loaded before CopyFiltersAsync wrote the new
+                // read scope, and a whole-row update would write their old type, owner and hidden mark back.
+                await _chunkRepository.UpdatePlacementAsync(moved);
             }
         }
 
