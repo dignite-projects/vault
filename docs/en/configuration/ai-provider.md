@@ -196,9 +196,11 @@ An index profile can have an LLM add to each chunk a few keywords and the questi
 
 | Key | Required | Description |
 | --- | --- | --- |
-| `ChatModelId` | To enrich or summarize | A chat model that honors JSON schema output, such as `Qwen/Qwen3-30B-A3B-Instruct-2507`. Unset leaves both off. There is no fallback to `Vault:Extract:ChatModelId`: Index calls it for every document of the types that switch it on, so pick a model for that volume |
+| `ChatModelId` | To enrich or summarize | An instruct (non-thinking) chat model that honors JSON schema output, such as `Qwen/Qwen3-30B-A3B-Instruct-2507`. Unset leaves both off. There is no fallback to `Vault:Extract:ChatModelId`: Index calls it for every document of the types that switch it on, so pick a model for that volume |
 
 It uses Extract's endpoint and key and its `UseLegacyMaxTokens` setting. The model is told the document's language, which Extract detects; asked only to follow the text, a model can take kanji-heavy Japanese for Chinese.
+
+**Use an instruct model, not a hybrid thinking one.** Both calls cap their output at a few hundred tokens per chunk or section, and a model that reasons before it answers spends that cap on its reasoning: the JSON is cut off and the call fails as unreadable. On SiliconFlow `Qwen/Qwen3-32B` reasons by default, and `ReasoningEffort` does not turn that off there (SiliconFlow ignores `reasoning_effort`); measured with Index's own prompts, more than half of its enrichment calls ran out of output, and some section summaries too. `Qwen/Qwen3-30B-A3B-Instruct-2507` and `deepseek-ai/DeepSeek-V3` answered every call.
 
 - **Enrichment.** One call reads 10 chunks. On the evaluation set both kinds took about 670 input and 1,020 output tokens per document. An answer that cannot be read is asked for once more, as for summaries. A call that still fails leaves its chunks without enrichment and is noted on the index run; the document is still indexed.
 - **Summaries.** A separate job after each sync summarizes the sections bottom-up, eight per call, then the document. A summary that states a number its text does not is not kept: the compile model has filled document summaries with invented dates. An answer that cannot be read is asked for once more: in JSON schema mode Qwen3 sometimes opens the object and then writes only whitespace. A call that still fails leaves its sections without summaries and is noted on the artifact; when every call fails, the job is retried later.
@@ -216,8 +218,10 @@ For production, prefer a model that is strict about schema compliance. A model t
 
 | Tier | Examples (OpenAI-compatible providers) | Trade-off |
 | --- | --- | --- |
-| **Recommended** | `gpt-6-luna` (with `ReasoningEffort`), `Qwen/Qwen3-32B`, `deepseek-ai/DeepSeek-V3` | Schema-bound output is reliable and field extraction returns useful values most of the time |
+| **Recommended** | `gpt-6-luna` (with `ReasoningEffort`), `Qwen/Qwen3-32B` (with its thinking off), `deepseek-ai/DeepSeek-V3` | Schema-bound output is reliable and field extraction returns useful values most of the time |
 | **Budget** (development only) | `Qwen/Qwen3-8B`, small Llama variants | The JSON shape is usually right, field values less so (numeric coercion failures, missed fields). Good enough to smoke-test the wiring |
+
+A model's reasoning tokens count against the output cap each call sets. A hybrid model such as Qwen3 reasons by default on some providers, SiliconFlow among them, and there `ReasoningEffort` does not turn it off: switch thinking off with the provider's own setting, or use an instruct model (see [Index chat model](#index-chat-model-vaultindex)).
 
 The title-generator client can run on a smaller, cheaper model than the structured client. It must still honor `ChatResponseFormat.ForJsonSchema`, because slug suggestion also uses it.
 
