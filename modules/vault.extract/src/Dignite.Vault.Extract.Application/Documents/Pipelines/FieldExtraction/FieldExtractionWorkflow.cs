@@ -28,7 +28,9 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 /// <para>
 /// Design points:
 /// <list type="bullet">
-///   <item>Extract all fields in one call, reducing LLM round-trips and repeated context.</item>
+///   <item>Extract all fields in one call, reducing LLM round-trips and repeated context. The exception is a table too
+///         long for one answer: the <c>Table</c> fields are then read in excerpts first (<see cref="MarkdownExcerptSplitter"/>),
+///         and the one call extracts the rest and checks their rows.</item>
 ///   <item>Constrain output schema with <c>ChatResponseFormat.ForJsonSchema</c>.</item>
 ///   <item>Normalization is requested in the prompt: the AI should output canonical shapes by field type
 ///         (bare JSON number for numbers, ISO-8601 string for dates, JSON true/false for booleans). Parsing then runs strict validation through
@@ -66,6 +68,9 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// Extracts fields in batch from one LLM call, returning both the field values and any field validation warnings
     /// (#527 §1) in a single <see cref="FieldExtractionWorkflowResult"/>. Missing or unparseable values appear as null;
     /// a warned field still keeps its value (a warning is never a null value). Warnings are defensively normalized (#527 §3).
+    /// When the Markdown's table rows are longer than one answer is sized for, or the one answer was cut off inside a
+    /// <c>Table</c> field, the <c>Table</c> fields are read in excerpts before that call (see
+    /// <see cref="ExtractTablesInExcerptsAsync"/>); the result has the same shape either way.
     /// </summary>
     public virtual async Task<FieldExtractionWorkflowResult> ExtractAsync(
         IReadOnlyList<FieldExtractionDescriptor> fields,
@@ -109,13 +114,67 @@ public class FieldExtractionWorkflow : ITransientDependency
         // answer cut off at the output limit loses the fewest fields. OrderBy is stable: equal estimates keep the
         // configured order.
         fields = fields.OrderBy(EstimateFieldChars).ToList();
-        var schemaMessage = BuildSchemaUserMessage(fields);
+        var tables = fields.Where(IsTable).ToList();
+        if (tables.Count == 0)
+        {
+            return await CallAsync(fields, Array.Empty<ExtractedTable>(), markdown, cancellationToken);
+        }
+
+        // A table's answer transcribes its rows, so rows longer than one excerpt are longer than one answer can be relied
+        // on to hold. Reading them in excerpts is decided here, before any call, the way Extend sizes its chunks by table
+        // size; only rows in a table the parse recognised are counted.
+        var excerptChars = ExcerptChars(tables.Count);
+        var tableRowChars = MarkdownExcerptSplitter.TableRowChars(markdown);
+        if (tableRowChars > excerptChars)
+        {
+            _logger.LogInformation(
+                "Field extraction reads {TableFieldCount} table field(s) in excerpts: the document's table rows run to " +
+                "{TableRowChars} characters, over the {ExcerptChars} one answer is sized for.",
+                tables.Count, tableRowChars, excerptChars);
+            return await ExtractTablesInExcerptsAsync(fields, tables, markdown, cancellationToken);
+        }
+
+        var result = await CallAsync(fields, Array.Empty<ExtractedTable>(), markdown, cancellationToken);
+        if (!tables.Any(table => result.UnfinishedFields.Contains(table.Name)))
+        {
+            return result;
+        }
+
+        // The estimate missed: a table the parse did not recognise (its grid flattened into lines of text), or one whose
+        // rows cost more output than their characters suggest. The answer is redone with the tables read in excerpts.
+        _logger.LogWarning(
+            "Field extraction answer was cut off inside a table field ({TableFields}); reading the table fields again in excerpts.",
+            string.Join(", ", tables.Where(table => result.UnfinishedFields.Contains(table.Name)).Select(table => table.Name)));
+        return await ExtractTablesInExcerptsAsync(fields, tables, markdown, cancellationToken);
+    }
+
+    /// <summary>
+    /// One call: the values, validation warnings and sources of <paramref name="fields"/> over the whole document, and the
+    /// validation warnings of the <paramref name="extracted"/> tables, whose rows were read in excerpts before it and are
+    /// given to it as data. With no extracted tables this is the single call field extraction has always made.
+    /// </summary>
+    private async Task<FieldExtractionWorkflowResult> CallAsync(
+        IReadOnlyList<FieldExtractionDescriptor> fields,
+        IReadOnlyList<ExtractedTable> extracted,
+        string markdown,
+        CancellationToken cancellationToken)
+    {
+        var extractedFields = extracted.Select(table => table.Field).ToList();
+        var warned = fields.Concat(extractedFields).ToList();
+        var schemaMessage = BuildSchemaUserMessage(fields, extractedFields);
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, SystemInstructions + "\n\n" + PromptBoundary.BoundaryRule),
+            new(ChatRole.System,
+                (extracted.Count == 0 ? SystemInstructions : SystemInstructions + ExtractedTablesInstructions) +
+                "\n\n" + PromptBoundary.BoundaryRule),
             new(ChatRole.User, schemaMessage),
             new(ChatRole.User, PromptBoundary.WrapDocument(markdown))
         };
+
+        if (extracted.Count > 0)
+        {
+            messages.Add(new ChatMessage(ChatRole.User, ExtractedRowsLabel + "\n" + PromptBoundary.WrapDocument(ExtractedRowsJson(extracted))));
+        }
 
         // The schema's worst case, capped at what the host says the structured model accepts: a max-tokens value above
         // the model's limit is refused outright (400) on every retry, which is worse than a rare Length cut-off below.
@@ -131,7 +190,7 @@ public class FieldExtractionWorkflow : ITransientDependency
 
         var options = new ChatOptions
         {
-            ResponseFormat = BuildResponseFormat(fields),
+            ResponseFormat = BuildResponseFormat(fields, warned),
             MaxOutputTokens = (int)Math.Min(estimatedOutputTokens, outputTokenCeiling)
         };
 
@@ -143,11 +202,380 @@ public class FieldExtractionWorkflow : ITransientDependency
             // The provider stopped generation at the output limit: a long Table field written out row by row is the
             // usual cause (a 114-row bank statement ran past 8,192 and 16,384 tokens), and reasoning tokens count
             // against the same limit. The answer is incomplete, never an empty extraction.
-            return ParseCutOffResult(rawJson, fields, options.MaxOutputTokens!.Value);
+            return ParseCutOffResult(rawJson, fields, warned, options.MaxOutputTokens!.Value);
         }
 
-        return ParseResult(rawJson, fields);
+        return ParseResult(rawJson, fields, warned);
     }
+
+    /// <summary>
+    /// The table fields read in excerpts, the rest in one call after them.
+    /// <para>
+    /// Each excerpt is one call for every table field: the rows that begin in it, in order, and up to three quoted
+    /// passages per field, with no validation (Reducto's array extraction and LlamaExtract's per-row target likewise
+    /// extract the repeated entries apart from the document-level fields). The excerpts run in parallel, a few at a time.
+    /// An excerpt whose answer was cut off or could not be read is read once more, in two halves where it can be cut: a
+    /// fresh call also gets past a model that ran away into whitespace. An excerpt that still has no answer leaves every
+    /// table field unfinished, so the document keeps the rows it had: a table is never stored with a part missing.
+    /// </para>
+    /// <para>
+    /// The rows are merged in document order, with no deduplication: the excerpts do not overlap. Then one call extracts
+    /// the other fields over the whole document, as before, and is given the merged rows to judge against the validation
+    /// rules in their fields' prompts, so a rule over the whole table (a running balance, the first and last rows against
+    /// the opening and closing balance) is still judged over the whole table, where Extend verifies its merged array and
+    /// Reducto's Deep Extract reconciles totals.
+    /// </para>
+    /// </summary>
+    private async Task<FieldExtractionWorkflowResult> ExtractTablesInExcerptsAsync(
+        IReadOnlyList<FieldExtractionDescriptor> fields,
+        IReadOnlyList<FieldExtractionDescriptor> tables,
+        string markdown,
+        CancellationToken cancellationToken)
+    {
+        var excerpts = MarkdownExcerptSplitter.Split(markdown, ExcerptChars(tables.Count));
+        var answers = new IReadOnlyList<ExcerptAnswer>?[excerpts.Count];
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, excerpts.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentExcerptCalls, CancellationToken = cancellationToken },
+            async (index, token) => answers[index] = await ReadExcerptAsync(tables, markdown, excerpts[index], token));
+
+        var extracted = new List<ExtractedTable>();
+        var unread = answers.Count(answer => answer == null);
+        if (unread > 0)
+        {
+            _logger.LogWarning(
+                "Field extraction could not read {UnreadCount} of {ExcerptCount} excerpts, even after a second call: the table " +
+                "fields ({TableFields}) are unfinished and keep the document's earlier values.",
+                unread, excerpts.Count, string.Join(", ", tables.Select(table => table.Name)));
+        }
+        else
+        {
+            var read = answers.SelectMany(answer => answer!).ToList();
+            extracted.AddRange(tables.Select(table => MergeRows(table, read)));
+
+            // The merged rows go into the last call as data, so they are held to the same ceiling as the document itself.
+            var rowsChars = ExtractedRowsJson(extracted).Length;
+            if (rowsChars > _behaviorOptions.MaxFieldExtractionMarkdownLength)
+            {
+                _logger.LogWarning(
+                    "Field extraction read the table fields ({TableFields}) in {ExcerptCount} excerpts, but their rows run to " +
+                    "{RowsChars} characters, over the MaxFieldExtractionMarkdownLength ceiling of {Ceiling} for checking them " +
+                    "in one call: the table fields are unfinished and keep the document's earlier values.",
+                    string.Join(", ", tables.Select(table => table.Name)), excerpts.Count, rowsChars,
+                    _behaviorOptions.MaxFieldExtractionMarkdownLength);
+                extracted.Clear();
+            }
+        }
+
+        var others = fields.Where(field => !IsTable(field)).ToList();
+        var rest = others.Count == 0 && extracted.Count == 0
+            ? new FieldExtractionWorkflowResult(new Dictionary<string, JsonElement?>(), Array.Empty<FieldValidationWarningResult>())
+            : await CallAsync(others, extracted, markdown, cancellationToken);
+
+        var values = new Dictionary<string, JsonElement?>(rest.Values);
+        var sources = new Dictionary<string, IReadOnlyList<string>>(rest.Sources, StringComparer.Ordinal);
+        var unfinished = new HashSet<string>(rest.UnfinishedFields, StringComparer.Ordinal);
+        foreach (var table in tables)
+        {
+            var merged = extracted.FirstOrDefault(candidate => candidate.Field.Name == table.Name);
+            values[table.Name] = merged?.Rows;
+            if (merged == null)
+            {
+                unfinished.Add(table.Name);
+            }
+            else if (merged.Sources.Count > 0)
+            {
+                sources[table.Name] = merged.Sources;
+            }
+        }
+
+        return new FieldExtractionWorkflowResult(values, rest.ValidationWarnings, sources)
+        {
+            UnfinishedFields = unfinished,
+            ValidationWarningsUnfinished = rest.ValidationWarningsUnfinished
+        };
+    }
+
+    /// <summary>
+    /// The answers for <paramref name="excerpt"/>: one, or two when it was read again in halves; <c>null</c> when it could
+    /// not be read.
+    /// <para>
+    /// It is read again, once, in halves, when the answer was cut off or unreadable, and when it returned fewer rows than
+    /// the excerpt's recognised tables hold. Models skip rows (2026-11-26, DeepSeek-V3: 8 of an excerpt's 27), and a
+    /// smaller excerpt is read more faithfully. Checking the count follows Reducto's advice for Deep Extract (verify that
+    /// the entries match a known count), re-reading its loop, run once here. The fuller of the two readings is kept. A
+    /// reading that still returns fewer rows is kept without a review signal: the excerpt may hold a table no field asks for.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<ExcerptAnswer>?> ReadExcerptAsync(
+        IReadOnlyList<FieldExtractionDescriptor> tables,
+        string markdown,
+        MarkdownExcerpt excerpt,
+        CancellationToken cancellationToken)
+    {
+        var answer = await CallExcerptAsync(tables, excerpt, cancellationToken);
+        if (answer != null && RowCount(answer) >= excerpt.TableRows)
+        {
+            return [answer];
+        }
+
+        var parts = MarkdownExcerptSplitter.Halve(markdown, excerpt);
+        var again = new List<ExcerptAnswer>(parts.Count);
+        foreach (var part in parts)
+        {
+            var partAnswer = await CallExcerptAsync(tables, part, cancellationToken);
+            if (partAnswer == null)
+            {
+                return answer == null ? null : [answer];
+            }
+
+            again.Add(partAnswer);
+        }
+
+        if (answer == null)
+        {
+            return again;
+        }
+
+        var rowsAgain = again.Sum(RowCount);
+        _logger.LogInformation(
+            "Field extraction answer for the excerpt at {Offset} returned {Rows} rows of its {TableRows} table rows; read " +
+            "again in {Parts} parts, it returned {RowsAgain}. Keeping the {Kept} reading.",
+            excerpt.Offset, RowCount(answer), excerpt.TableRows, again.Count, rowsAgain, rowsAgain > RowCount(answer) ? "second" : "first");
+        return rowsAgain > RowCount(answer) ? again : [answer];
+    }
+
+    /// <summary>The rows one excerpt answer returned, over every table field.</summary>
+    private static int RowCount(ExcerptAnswer answer)
+        => answer.Rows.Values.Sum(rows => rows?.GetArrayLength() ?? 0);
+
+    /// <summary>
+    /// One excerpt's call. <c>null</c> when its rows are not known: the answer was cut off before its values closed, is
+    /// not JSON, or gives a field something other than an array of rows. An answer cut off only in its sources is read.
+    /// </summary>
+    private async Task<ExcerptAnswer?> CallExcerptAsync(
+        IReadOnlyList<FieldExtractionDescriptor> tables,
+        MarkdownExcerpt excerpt,
+        CancellationToken cancellationToken)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, ExcerptInstructions + "\n\n" + PromptBoundary.BoundaryRule),
+            new(ChatRole.User, BuildSchemaUserMessage(tables, Array.Empty<FieldExtractionDescriptor>())),
+            new(ChatRole.User, BuildExcerptMessage(excerpt))
+        };
+
+        // The excerpt is sized to need a fraction of this; the ceiling only keeps an unexpected answer from being cut off.
+        var options = new ChatOptions
+        {
+            ResponseFormat = BuildExcerptResponseFormat(tables),
+            MaxOutputTokens = MaxOutputTokenCeiling
+        };
+
+        var response = await _chatClient.GetResponseAsync(messages, options, cancellationToken);
+        var rawJson = response.Text?.Trim() ?? string.Empty;
+
+        JsonElement root;
+        if (response.FinishReason == ChatFinishReason.Length)
+        {
+            var answer = TruncatedJsonObject.Read(rawJson);
+            if (!answer.ClosedMembers.Contains(ExcerptRowsKey))
+            {
+                _logger.LogWarning(
+                    "Field extraction answer for the excerpt at {Offset} ({Length} characters) was cut off at the output limit " +
+                    "(MaxOutputTokens={MaxOutputTokens}) before its rows closed.",
+                    excerpt.Offset, excerpt.Length, options.MaxOutputTokens);
+                return null;
+            }
+
+            root = JsonSerializer.SerializeToElement(answer.Members);
+        }
+        else
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(rawJson);
+                root = document.RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning(
+                    "Field extraction answer for the excerpt at {Offset} ({Length} characters) is not JSON.",
+                    excerpt.Offset, excerpt.Length);
+                return null;
+            }
+        }
+
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty(ExcerptRowsKey, out var values)
+            || values.ValueKind != JsonValueKind.Object)
+        {
+            _logger.LogWarning(
+                "Field extraction answer for the excerpt at {Offset} ({Length} characters) has no rows object.",
+                excerpt.Offset, excerpt.Length);
+            return null;
+        }
+
+        var rows = new Dictionary<string, JsonElement?>(StringComparer.Ordinal);
+        foreach (var table in tables)
+        {
+            if (!values.TryGetProperty(table.Name, out var tableRows) || tableRows.ValueKind == JsonValueKind.Null)
+            {
+                rows[table.Name] = null;
+            }
+            else if (tableRows.ValueKind == JsonValueKind.Array)
+            {
+                rows[table.Name] = tableRows.Clone();
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Field extraction answer for the excerpt at {Offset} gives table field {FieldName} a {JsonValueKind}, not rows.",
+                    excerpt.Offset, table.Name, tableRows.ValueKind);
+                return null;
+            }
+        }
+
+        return new ExcerptAnswer(rows, ParseSources(root, tables));
+    }
+
+    /// <summary>
+    /// <paramref name="table"/>'s rows from every excerpt, in document order. No row from any excerpt is an empty table when
+    /// some excerpt answered with an array, and no value when none did, as one answer over the whole document would say.
+    /// </summary>
+    private static ExtractedTable MergeRows(FieldExtractionDescriptor table, IReadOnlyList<ExcerptAnswer> answers)
+    {
+        var rows = new JsonArray();
+        var answered = false;
+        var sources = new List<string>();
+        foreach (var answer in answers)
+        {
+            if (answer.Rows[table.Name] is { } excerptRows)
+            {
+                answered = true;
+                foreach (var row in excerptRows.EnumerateArray())
+                {
+                    rows.Add(JsonNode.Parse(row.GetRawText()));
+                }
+            }
+
+            if (answer.Sources.TryGetValue(table.Name, out var passages))
+            {
+                sources.AddRange(passages.Where(passage => !sources.Contains(passage, StringComparer.Ordinal)));
+            }
+        }
+
+        return new ExtractedTable(table, answered ? JsonSerializer.SerializeToElement(rows) : null, sources);
+    }
+
+    /// <summary>
+    /// The merged rows as the last call reads them: a JSON object keyed by field name, each row's cells without the
+    /// <c>"values"</c> wrapper the stored shape has.
+    /// </summary>
+    private static string ExtractedRowsJson(IReadOnlyList<ExtractedTable> extracted)
+    {
+        var tables = new JsonObject();
+        foreach (var table in extracted)
+        {
+            if (table.Rows is not { } rows)
+            {
+                tables[table.Field.Name] = null;
+                continue;
+            }
+
+            var cells = new JsonArray();
+            foreach (var row in rows.EnumerateArray())
+            {
+                cells.Add(JsonNode.Parse(
+                    row.ValueKind == JsonValueKind.Object && row.TryGetProperty("values", out var inner) ? inner.GetRawText() : row.GetRawText()));
+            }
+
+            tables[table.Field.Name] = cells;
+        }
+
+        return tables.ToJsonString();
+    }
+
+    private static string BuildExcerptMessage(MarkdownExcerpt excerpt)
+    {
+        var sb = new StringBuilder();
+        void Part(string label, string text) => sb.Append(label).Append('\n').Append(PromptBoundary.WrapDocument(text)).Append('\n');
+
+        if (excerpt.TableHeader != null)
+        {
+            Part(ExcerptTableHeaderLabel, excerpt.TableHeader);
+        }
+
+        if (excerpt.ContextBefore != null)
+        {
+            Part(ExcerptContextBeforeLabel, excerpt.ContextBefore);
+        }
+
+        Part(ExcerptLabel, excerpt.Text);
+
+        if (excerpt.ContextAfter != null)
+        {
+            Part(ExcerptContextAfterLabel, excerpt.ContextAfter);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The excerpt answer's member holding the rows. Not <c>"values"</c>: SiliconFlow writes an answer's keys in
+    /// alphabetical order whatever order the schema gives (#836 saw <c>"sources"</c> and <c>"validationWarnings"</c> come
+    /// before <c>"values"</c>), and an excerpt answer that quoted its three source passages first went on to return only
+    /// the three rows it had quoted (2026-11-26, Qwen3-30B-A3B-Instruct and DeepSeek-V3: 15 to 62 of 114 rows). Named
+    /// <c>"rows"</c>, the rows come first in either order.
+    /// </summary>
+    private const string ExcerptRowsKey = "rows";
+
+    private ChatResponseFormat BuildExcerptResponseFormat(IReadOnlyList<FieldExtractionDescriptor> tables)
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                [ExcerptRowsKey] = BuildValuesSchema(tables),
+                ["sources"] = BuildSourcesSchema(tables)
+            },
+            ["required"] = new JsonArray { ExcerptRowsKey, "sources" },
+            ["additionalProperties"] = false
+        };
+
+        using var document = JsonDocument.Parse(schema.ToJsonString());
+        return ChatResponseFormat.ForJsonSchema(
+            document.RootElement.Clone(),
+            schemaName: "ExtractTableExcerpt",
+            schemaDescription: "The rows of table fields that begin in one excerpt of a document.");
+    }
+
+    private static bool IsTable(FieldExtractionDescriptor field)
+        => string.Equals(field.FieldTypeName, TableFieldType.ControlName, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The characters of Markdown one excerpt may hold. Its answer transcribes the rows that begin in it, for every table
+    /// field, so the excerpt is sized for half the output the host allows, at <see cref="CjkTokenSafetyMultiplier"/> tokens
+    /// a character, shared among the table fields: 2,048 characters at the default 16,384 tokens for one table. The other
+    /// half is room for reasoning tokens and an estimate that runs short. Sizing low costs only a few more small calls.
+    /// </summary>
+    private int ExcerptChars(int tableCount)
+        => Math.Max(MinExcerptChars, MaxOutputTokenCeiling / 2 / CjkTokenSafetyMultiplier / tableCount);
+
+    /// <summary>The smallest excerpt, so a host's very low output ceiling cannot turn every line into a call of its own.</summary>
+    private const int MinExcerptChars = 512;
+
+    /// <summary>Excerpt calls in flight at once for one document.</summary>
+    private const int MaxConcurrentExcerptCalls = 4;
+
+    /// <summary>A table field whose rows were read in excerpts: the merged rows (<c>null</c> when no excerpt had the table) and the passages quoted for them.</summary>
+    private sealed record ExtractedTable(FieldExtractionDescriptor Field, JsonElement? Rows, IReadOnlyList<string> Sources);
+
+    /// <summary>One excerpt's answer: per table field, its rows there (an array, or <c>null</c>) and the passages quoted for them.</summary>
+    private sealed record ExcerptAnswer(
+        IReadOnlyDictionary<string, JsonElement?> Rows,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> Sources);
 
     /// <summary>
     /// Conservative worst-case output-token ceiling for the requested schema, so the provider's own default
@@ -275,19 +703,9 @@ public class FieldExtractionWorkflow : ITransientDependency
         "The first user message lists the fields to extract (schema), each annotated with its data type. " +
         "The second user message contains the document body. " +
         "Respond with JSON only. Produce one normalized value for each requested field. " +
-        "Normalize each value to its declared data type: " +
-        "Number as a bare JSON number, integer or decimal (strip currency symbols, thousands separators, and units; " +
-        "use '.' as the decimal point and '-' for negatives); " +
-        "Date as an ISO-8601 \"YYYY-MM-DD\" JSON string; " +
-        "DateTime as an offset-free ISO-8601 \"YYYY-MM-DDThh:mm:ss\" JSON string (local wall-clock time, no timezone offset or trailing Z); " +
-        "Month as an ISO-8601 \"YYYY-MM\" JSON string, with no day; " +
-        "Boolean as JSON true or false; " +
-        "Text as the original text. " +
-        "When a value cannot be normalized to its declared data type, set that field to null. " +
+        ValueNormalizationInstructions +
         "A field whose schema type is array accepts multiple values: return a JSON array of strings (each a distinct value found in the document), or an empty array when none apply. " +
-        "The document is Markdown produced by automated extraction (digital parsing or OCR), so its layout is best-effort and table grids are frequently flattened into plain lines: " +
-        "a line of column labels followed by one or more lines of space- or tab-separated values is still a table — read each such line as a row and align its cells to the column labels from left to right. " +
-        "Use headings, tables, and lists as structure signals, but never require Markdown table syntax: extract tabular values even when the pipes and separators have been stripped during extraction. " +
+        TableReadingInstructions +
         "Set a field to null only when its information is genuinely absent from the document — not merely because the text is unformatted, split across lines, or lacks table syntax. " +
         "Return the result as an object with three keys, in this order: \"values\" (one key per requested field, as described above), \"validationWarnings\" and \"sources\". " +
         "A field's prompt may declare validation rules for its own extracted value (for example a running-balance or total check). " +
@@ -298,10 +716,89 @@ public class FieldExtractionWorkflow : ITransientDependency
         "as written in the document and not normalized (the date, amount or name exactly as printed, with its label when the label fits), one passage per distinct place, " +
         "and an empty array when the value is null.";
 
-    private static string BuildSchemaUserMessage(IReadOnlyList<FieldExtractionDescriptor> fields)
+    /// <summary>
+    /// Appended to <see cref="SystemInstructions"/> for the call that follows the excerpts: the table fields read in
+    /// excerpts are given to it as data, to check and not to extract again.
+    /// </summary>
+    private const string ExtractedTablesInstructions =
+        " Fields listed under \"Already extracted\" in the first user message are not extracted again: they are tables whose rows were read from the document in parts and merged in document order, " +
+        "and the third user message gives those rows as a JSON object keyed by field name. " +
+        "Leave them out of \"values\" and \"sources\", but judge each against the validation rules its prompt declares, including rules that relate it to other fields, " +
+        "and report every mismatch in \"validationWarnings\" as for any other field. " +
+        "Rules in such a prompt about reordering or deduplicating the rows have not been applied to them: when the rows as given break such a rule, report that as a warning too.";
+
+    /// <summary>The instructions for one excerpt's call: the rows that begin in it, nothing reordered or checked.</summary>
+    private const string ExcerptInstructions =
+        "You transcribe the rows of table fields from one excerpt of a longer Markdown document; the rest of the document is read in other calls. " +
+        "The first user message lists the table fields to extract (schema), each annotated with its data type. " +
+        "The second user message holds the excerpt. When the excerpt starts inside a table, that table's header is given before it, " +
+        "and the lines just before and after the excerpt may be given as context. " +
+        "Respond with JSON only: an object with two keys, in this order: \"rows\" (one key per requested field: an array with one object per row of that table that begins inside the excerpt, " +
+        "or an empty array when none does) and \"sources\". " +
+        "Return every such row, however many there are, exactly once and in the order the rows appear in the excerpt: do not skip, sample or summarize rows. " +
+        "A table often runs over several pages: after a page break (a page number, \"continued on the next page\", the document's title again) its header is repeated and its rows go on. " +
+        "The rows after such a break belong to the same table: return the rows of every part of it in the excerpt, not only of the first part. " +
+        "A row that begins in the context before the excerpt was read with the previous excerpt: leave it out. " +
+        "A row that begins inside the excerpt and continues into the context after it: return it whole. Never return a table header as a row. " +
+        "Rules in a field's prompt about the order of the whole table (sorting or reversing it) or about checking its values (totals, running balances, the first and last rows) " +
+        "apply to the whole table and are applied after every excerpt has been read: do not reorder, reverse, deduplicate or check the rows here. " +
+        "Follow the rest of the prompt (which table, which columns, how to read each cell) as written. " +
+        ValueNormalizationInstructions +
+        TableReadingInstructions +
+        "Write \"rows\" in full before \"sources\". \"sources\" has one key per requested field: an array of up to three short passages copied character for character from the excerpt where that field's rows appear, " +
+        "and an empty array when no row of it begins in the excerpt.";
+
+    private const string ExtractedRowsLabel =
+        "Rows of the fields under \"Already extracted\", merged from every part of the document in document order, as a JSON object keyed by field name:";
+
+    private const string ExcerptTableHeaderLabel = "Header of the table the excerpt starts inside:";
+
+    private const string ExcerptContextBeforeLabel =
+        "Context before the excerpt (rows that begin here were read with the previous excerpt):";
+
+    private const string ExcerptLabel = "Excerpt:";
+
+    private const string ExcerptContextAfterLabel =
+        "Context after the excerpt (read it only to finish a row that begins in the excerpt):";
+
+    private const string ValueNormalizationInstructions =
+        "Normalize each value to its declared data type: " +
+        "Number as a bare JSON number, integer or decimal (strip currency symbols, thousands separators, and units; " +
+        "use '.' as the decimal point and '-' for negatives); " +
+        "Date as an ISO-8601 \"YYYY-MM-DD\" JSON string; " +
+        "DateTime as an offset-free ISO-8601 \"YYYY-MM-DDThh:mm:ss\" JSON string (local wall-clock time, no timezone offset or trailing Z); " +
+        "Month as an ISO-8601 \"YYYY-MM\" JSON string, with no day; " +
+        "Boolean as JSON true or false; " +
+        "Text as the original text. " +
+        "When a value cannot be normalized to its declared data type, set that field to null. ";
+
+    private const string TableReadingInstructions =
+        "The document is Markdown produced by automated extraction (digital parsing or OCR), so its layout is best-effort and table grids are frequently flattened into plain lines: " +
+        "a line of column labels followed by one or more lines of space- or tab-separated values is still a table — read each such line as a row and align its cells to the column labels from left to right. " +
+        "Use headings, tables, and lists as structure signals, but never require Markdown table syntax: extract tabular values even when the pipes and separators have been stripped during extraction. ";
+
+    /// <summary>
+    /// The schema message: the fields to extract, then, for the call after the excerpts, the table fields already
+    /// extracted, which it only checks.
+    /// </summary>
+    private static string BuildSchemaUserMessage(
+        IReadOnlyList<FieldExtractionDescriptor> fields,
+        IReadOnlyList<FieldExtractionDescriptor> alreadyExtracted)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Fields to extract:");
+        sb.AppendLine(fields.Count == 0 ? "Fields to extract: none." : "Fields to extract:");
+        AppendSchemaLines(sb, fields);
+        if (alreadyExtracted.Count > 0)
+        {
+            sb.AppendLine("Already extracted (check against their validation rules only):");
+            AppendSchemaLines(sb, alreadyExtracted);
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendSchemaLines(StringBuilder sb, IReadOnlyList<FieldExtractionDescriptor> fields)
+    {
         foreach (var f in fields)
         {
             // f.Name has already been allow-list regex validated in the FieldDefinition entity layer and contains only [A-Za-z0-9_-].
@@ -318,7 +815,6 @@ public class FieldExtractionWorkflow : ITransientDependency
                 ? header
                 : $"{header}: {PromptBoundary.WrapField(f.Prompt)}");
         }
-        return sb.ToString();
     }
 
     /// <summary>
@@ -342,14 +838,17 @@ public class FieldExtractionWorkflow : ITransientDependency
         };
     }
 
-    private ChatResponseFormat BuildResponseFormat(IReadOnlyList<FieldExtractionDescriptor> fields)
+    private ChatResponseFormat BuildResponseFormat(
+        IReadOnlyList<FieldExtractionDescriptor> fields,
+        IReadOnlyList<FieldExtractionDescriptor> warned)
     {
         // #527 §1/§3: the response is an envelope { values, validationWarnings }. `values` is the existing per-field
         // typed object; `validationWarnings` is a bounded array whose fieldName is constrained to the declared field
         // names (an enum) and whose message length is capped, so the model cannot emit warnings for unknown fields or
-        // unbounded text. additionalProperties:false + `required` at every level keeps the shape strict.
+        // unbounded text. additionalProperties:false + `required` at every level keeps the shape strict. The tables read
+        // in excerpts are among the names a warning may carry, though not among the values.
         var fieldNameEnum = new JsonArray();
-        foreach (var field in fields)
+        foreach (var field in warned)
         {
             fieldNameEnum.Add(field.Name);
         }
@@ -451,7 +950,8 @@ public class FieldExtractionWorkflow : ITransientDependency
 
     private FieldExtractionWorkflowResult ParseResult(
         string rawJson,
-        IReadOnlyList<FieldExtractionDescriptor> fields)
+        IReadOnlyList<FieldExtractionDescriptor> fields,
+        IReadOnlyList<FieldExtractionDescriptor> warned)
     {
         if (string.IsNullOrWhiteSpace(rawJson))
         {
@@ -472,7 +972,7 @@ public class FieldExtractionWorkflow : ITransientDependency
 
         // Envelope (#527 §1): { "values": { ... }, "validationWarnings": [ ... ] }. The two halves are parsed
         // independently, so a malformed warning can never drop a valid value (and vice versa).
-        return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseWarnings(root, fields), ParseSources(root, fields));
+        return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseWarnings(root, warned), ParseSources(root, fields));
     }
 
     /// <summary>
@@ -483,13 +983,18 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// lost) is a complete extraction.
     /// <para>
     /// Instructor raises on this finish reason and keeps nothing; LangExtract and Reducto split the document so no answer
-    /// grows that long. Keeping the closed fields is what lets one long table cost only itself: in the order the schema
-    /// asks for, the short fields close before it.
+    /// grows that long, which <see cref="ExtractAsync"/> also does for tables. Keeping the closed fields is what lets a
+    /// cut cost only what it cut: in the order the schema asks for, the short fields close before a long one.
     /// </para>
     /// </summary>
+    /// <param name="rawJson">The answer as far as it was written.</param>
+    /// <param name="fields">The fields whose values the call asked for.</param>
+    /// <param name="warned">The fields a validation warning may name: <paramref name="fields"/>, and the tables read in excerpts before the call.</param>
+    /// <param name="maxOutputTokens">The output limit the answer was cut off at.</param>
     protected virtual FieldExtractionWorkflowResult ParseCutOffResult(
         string rawJson,
         IReadOnlyList<FieldExtractionDescriptor> fields,
+        IReadOnlyList<FieldExtractionDescriptor> warned,
         int maxOutputTokens)
     {
         var answer = TruncatedJsonObject.Read(rawJson);
@@ -506,7 +1011,7 @@ public class FieldExtractionWorkflow : ITransientDependency
 
         var result = new FieldExtractionWorkflowResult(
             ParseValues(root, fields),
-            warningsClosed ? ParseWarnings(root, fields) : Array.Empty<FieldValidationWarningResult>(),
+            warningsClosed ? ParseWarnings(root, warned) : Array.Empty<FieldValidationWarningResult>(),
             ParseSources(root, fields))
         {
             UnfinishedFields = unfinished,
