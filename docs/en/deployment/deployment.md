@@ -264,6 +264,15 @@ dotnet run --migrate-database
 
 The process migrates, prints `Migration completed.` and exits; start the host normally afterwards. `migrate-database.ps1` runs the same command, and the Compose layout's `db-migrator` service does the same in a container. There is no separate DbMigrator project.
 
+**Upgrade with the old version stopped.** Background jobs are stored by name, and an instance that takes a queued job whose name it does not know abandons it at once, with no retry (ABP's `BackgroundJobWorker` marks it `IsAbandoned`). An instance of the previous version that still runs therefore abandons every job the new version queues under a name it lacks: the jobs `--migrate-database` queues (moving older files to Blob Management, Vault Index's backfill) and, in a release that renames its jobs, every document's pipeline jobs. The new version abandons the old names the same way. Stop every instance of the old version, run `--migrate-database`, then start the new version. Jobs an old instance abandoned anyway stay in `AbpBackgroundJobs` and can be queued again (times are UTC):
+
+```sql
+UPDATE AbpBackgroundJobs SET IsAbandoned = 0, NextTryTime = GETUTCDATE()
+WHERE IsAbandoned = 1
+  AND LastTryTime >= '<when the upgrade started, UTC>'
+  AND (JobName LIKE 'VaultExtract.%' OR JobName LIKE 'VaultIndex.%');
+```
+
 Releases that need more than a schema migration say so in `CHANGELOG.md`. The 0.3.x → 0.5.x field-storage change has its own runbook: [Field Architecture v2 → v3 Migration](field-architecture-v3-migration.md).
 
 ## Verifying a Release

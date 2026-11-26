@@ -754,6 +754,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VaultIndexedDocuments`. A document of a by-page profile indexed before it is chunked and embedded once more on its
   next sync, since the text hash no longer includes the pages.
 
+- **Stop the old version before migrating.** An instance abandons, without retry, a queued job whose name it does not
+  know. An instance of the previous version that still runs therefore abandons the jobs this version queues: every
+  pipeline job (renamed, below) and the move of older files to Blob Management that `--migrate-database` queues. Stop
+  every old instance, run `--migrate-database`, then start this version. To queue again jobs an old instance abandoned
+  anyway, see [Migrations](docs/en/deployment/deployment.md#migrations).
+
 - **Background job names.** Jobs queued before the upgrade carry the old names, and the new host abandons them. Let
   the queue drain first, or rename them in the `Default` database before starting the new host:
 

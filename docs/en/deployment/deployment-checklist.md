@@ -21,6 +21,7 @@ Recurring checks to run when deploying to a new environment, upgrading a critica
 - [ ] `StringEncryption:DefaultPassPhrase` is the value the database was created with (never rotated)
 - [ ] The OpenIddict signing certificate and `AuthServer:Authority` are production values; `/.well-known/openid-configuration` answers
 - [ ] `App:CorsOrigins` lists the SPA origin (and any browser-based MCP client)
+- [ ] Every instance of the previous version was stopped before `--migrate-database` ran, so none of them took and abandoned the new version's jobs ([Migrations](deployment.md#migrations))
 - [ ] `--migrate-database` ran for this release and printed `Migration completed.`
 - [ ] No `appsettings.secrets.json` from a developer machine reached the deployment (the host excludes it from `dotnet publish`; check images built another way)
 
