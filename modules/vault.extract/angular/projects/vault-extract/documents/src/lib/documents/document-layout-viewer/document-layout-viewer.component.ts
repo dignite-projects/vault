@@ -16,7 +16,16 @@ import { DocumentService } from '@dignite/ng.vault-extract';
 import { HttpErrorResponse } from '@angular/common/http';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { Subscription } from 'rxjs';
-import { LayoutBox, LayoutField, LayoutPage, PageRegion, layoutErrorCode, readLayout } from './layout-boxes';
+import {
+  LayoutBox,
+  LayoutField,
+  PageRegion,
+  ScreenRect,
+  boxOnScreen,
+  layoutErrorCode,
+  readLayout,
+  regionOnScreen,
+} from './layout-boxes';
 import { PageBuffer, samePages } from './page-buffer';
 
 /** A field listed beside the pages: its name in the layout, and the label and value the page shows for it. */
@@ -35,14 +44,7 @@ interface ViewerPage {
   /** The regions of every field on this page; a box's `text` is its field's name. */
   fieldBoxes: ViewerBox[];
   /** The regions handed in by link (`highlight`) on this page, in screen pixels. */
-  linked: ScreenBox[];
-}
-
-interface ScreenBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  linked: ScreenRect[];
 }
 
 interface ViewerBox extends LayoutBox {
@@ -298,17 +300,13 @@ export class DocumentLayoutViewerComponent {
       const scale = Math.min(1.5, MAX_PAGE_WIDTH / natural.width);
       const viewport = page.getViewport({ scale });
       this.scales.set(number, scale);
+      const layoutPage = layout.pages.find(p => p.number === number);
+      const shown = layoutPage?.width && layoutPage.height ? { width: layoutPage.width, height: layoutPage.height } : natural;
       const onScreen = (boxes: LayoutBox[]): ViewerBox[] =>
-        boxes
-          .filter(box => box.pageNumber === number)
-          .map(box => {
-            const [x1, y1] = viewport.convertToViewportPoint(box.left, box.bottom);
-            const [x2, y2] = viewport.convertToViewportPoint(box.right, box.top);
-            return { ...box, x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
-          });
+        boxes.filter(box => box.pageNumber === number).map(box => ({ ...box, ...boxOnScreen(box, shown, viewport) }));
       const linked = this.highlight()
         .filter(region => region.page === number)
-        .map(region => linkedOnScreen(region, layout.pages.find(p => p.number === number), viewport));
+        .map(region => regionOnScreen(region, viewport));
       pages.push({
         number,
         width: viewport.width,
@@ -378,31 +376,4 @@ export class DocumentLayoutViewerComponent {
       this.renders.delete(canvas);
     }
   }
-}
-
-/**
- * A linked region on screen. On a page whose layout is in PDF points it is turned back into points and through the
- * viewport, exactly as the layout's own boxes are, so a cropped or rotated page lines up; on any other page the
- * fractions are taken of the rendered page.
- */
-function linkedOnScreen(
-  region: PageRegion,
-  page: LayoutPage | undefined,
-  viewport: { width: number; height: number; convertToViewportPoint(x: number, y: number): number[] },
-): ScreenBox {
-  if (page?.drawable && page.width && page.height) {
-    const [x1, y1] = viewport.convertToViewportPoint(region.left * page.width, (1 - region.top) * page.height);
-    const [x2, y2] = viewport.convertToViewportPoint(
-      (region.left + region.width) * page.width,
-      (1 - region.top - region.height) * page.height,
-    );
-    return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
-  }
-
-  return {
-    x: region.left * viewport.width,
-    y: region.top * viewport.height,
-    w: region.width * viewport.width,
-    h: region.height * viewport.height,
-  };
 }
