@@ -83,9 +83,8 @@ export class DocumentFilePreviewComponent implements OnInit {
   readonly contentType = computed(() => this.document()?.fileOrigin?.contentType ?? '');
   readonly isImage = computed(() => isImageContentType(this.contentType()));
   readonly isPdf = computed(() => isPdfContentType(this.contentType()));
-  // #481: every document carries a required FileOrigin (a text-slice sub-document shares the parent's bundle
-  // file; a figure sub-document its retained image), so the preview now works for sub-documents too. This
-  // gate survives as null-safety for pre-migration legacy rows; the template shows a neutral notice then.
+  // No FileOrigin: a text submitted without its original, or a sub-document seeded from its slice (a sub-document cut by
+  // page has a file of its own). The template shows a neutral notice then, which for a submitted text says why.
   readonly hasSourceFile = computed(() => !!this.document()?.fileOrigin);
   /** A document submitted as text without its original file: it never had one, which the notice says. */
   readonly isSubmittedText = computed(() => this.document()?.textOrigin === DocumentTextOrigin.Submitted);
@@ -141,7 +140,7 @@ export class DocumentFilePreviewComponent implements OnInit {
         next: doc => {
           this.document.set(doc);
           this.isLoading.set(false);
-          // Null-safety (#481: FileOrigin required; only pre-migration legacy rows can lack one): skip the fetch.
+          // No file of its own (a submitted text, a sub-document seeded from its slice): nothing to fetch.
           if (doc.fileOrigin) {
             this.fileBlob.ensureLoaded(this.documentId);
           }

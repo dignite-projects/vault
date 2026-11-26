@@ -465,10 +465,9 @@ export class DocumentDetailComponent implements OnInit {
     isPdfContentType(this.document()?.fileOrigin?.contentType)
   );
 
-  // #481: every document carries a required FileOrigin (a text-slice sub-document shares the parent's bundle
-  // file; a figure sub-document its retained image), so source-file affordances now show for sub-documents
-  // too — deliberate provenance UX. This gate survives as null-safety only: the DTO field is nullable and
-  // pre-migration legacy rows may lack a FileOrigin.
+  // A document has no FileOrigin when it was submitted as text without its original, or is a sub-document seeded from
+  // its slice (its text was read from the parent's file; a sub-document cut by page has a file of its own). With
+  // nothing to preview or download, the source-file affordances hide.
   hasSourceFile = computed(() => !!this.document()?.fileOrigin);
   /** The text came from a client that converted the document itself (a submission), not from Vault's parse. */
   isSubmittedText = computed(() => this.document()?.textOrigin === DocumentTextOrigin.Submitted);
@@ -1071,9 +1070,9 @@ export class DocumentDetailComponent implements OnInit {
   // service prevents duplicate requests and revokes on component destroy.
   // Fixes imageError getting stuck and Refresh being ineffective.
   private ensureFilePreview(): void {
-    // Null-safety guard (#481: FileOrigin is required, so this is only reachable for pre-migration legacy
-    // rows / a missing DTO field): skip the blob fetch when there is no FileOrigin. loadDocument still
-    // reaches here when the file tab was active, so guard at the source — this path re-fired on every reload.
+    // No FileOrigin (a text submitted without its original, a sub-document seeded from its slice): nothing to fetch.
+    // loadDocument still reaches here when the file tab was active, so guard at the source — this path re-fired on
+    // every reload.
     if (!this.hasSourceFile()) return;
     this.fileBlob.resetError();
     this.fileBlob.ensureLoaded(this.documentId);

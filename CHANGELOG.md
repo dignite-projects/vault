@@ -150,8 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Document layout** (modules and shipped host). A parse now keeps the document tree it produced — sections, headings,
   lists, tables with merged cells, images with their OCR text, and the page region every element was read from — as the
   blob `layout/{documentId}`, and `GET /api/vault-extract/documents/{id}/layout` (`IDocumentAppService.GetLayoutAsync`)
-  serves it as JSON with `current`, false once an operator has corrected the Markdown. A sub-document, or a document
-  parsed before this release until it is re-parsed, has none (`Extract:DocumentNoLayout`). `ExtractionDocumentJson`
+  serves it as JSON with `current`, false once an operator has corrected the Markdown. A sub-document seeded from its
+  slice, or a document parsed before this release until it is re-parsed, has none (`Extract:DocumentNoLayout`). `ExtractionDocumentJson`
   (`Dignite.Vault.Parse.Abstractions`) reads and writes the tree, which `Microsoft.Extensions.Documents` cannot
   serialize itself. The Angular client proxies are not regenerated yet. See
   [REST API](docs/en/egress/rest-api.md).
@@ -731,7 +731,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Figures in stored Markdown.** Documents parsed before this release keep the `*[Image OCR]*` lines in their
   Markdown, and classification and sub-document segmentation no longer read those as figures. **Re-parse** such a
-  document to write its figures as `<figure>` blocks (it re-runs classification and re-splits its sub-documents).
+  document to write its figures as `<figure>` blocks (it re-runs classification and re-splits its sub-documents). The
+  re-parse also gives it the layout it lacks (see Document layout): its pages and regions in Index, its fields placed
+  on the page, and a bundle's parts cut into files of their own pages.
 
 - **Extract migrations `DocumentFieldSources` and `DocumentSegmentPages`.** Both add columns only:
   `VaultDocuments.FieldSources` (not null, default `'{}'`) and two nullable page columns on `VaultDocumentSegments`.
@@ -741,6 +743,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Index chunk pages.** The Index migration `ChunkPages` adds two nullable columns to `VaultIndexChunks`. Chunks
   indexed before it have no pages until their document is synced again. The next event for the document places them
   without re-chunking or re-embedding; **Rebuild** on the index status page does it at once, re-embedding the document.
+  Either needs the document's layout: one parsed before this release has none, and its chunks get pages only after it
+  is re-parsed.
 
 - **Index page cuts.** The Index migration `IndexedDocumentPageCuts` adds the nullable `PageCutsHash` to
   `VaultIndexedDocuments`. A document of a by-page profile indexed before it is chunked and embedded once more on its

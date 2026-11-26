@@ -238,10 +238,8 @@
                   <i class="fas fa-code me-1"></i>{{ 'VaultExtract::Document:Tab:Source' | abpLocalization }}
                 </button>
               </li>
-              <!-- #481: every document carries a required FileOrigin now (a text-slice sub-document shares the
-                   parent's bundle file; a figure sub-document its retained image), so this tab shows for
-                   sub-documents too — deliberate provenance UX. The gate remains as null-safety only (nullable
-                   DTO field; pre-migration legacy rows). -->
+              <!-- Only for a document with a file of its own: not a text submitted without its original, nor a
+                   sub-document seeded from its slice. -->
               @if (hasSourceFile()) {
                 <li class="nav-item">
                   <button class="nav-link" [class.active]="activeTab() === 'file'"
@@ -359,9 +357,7 @@
               }
             }
           </div>
-          <!-- Source-file footer (name / type / download). #481: sub-documents carry a real FileOrigin too
-               (text slice → the parent's bundle file; figure → its retained image), so the footer shows for
-               them as well; the gate remains as null-safety only. -->
+          <!-- Source-file footer (name / type / download), for a document with a file of its own. -->
           @if (hasSourceFile()) {
             <div class="card-footer text-muted small d-flex align-items-center gap-2">
               <i class="fas fa-file"></i>

@@ -639,10 +639,9 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // The original file is the document's own content, so it rides the same Read rule as GetAsync.
         await _documentAccess.CheckAsync(DocumentAccessRule.Read, DocumentAccessSubject.Of(document));
 
-        // #485: FileOrigin is required on every Document going forward (#481), but a legacy pre-#481 derived row
-        // (persisted before that migration's backfill ran) is still reachable during the documented binaries-first
-        // deploy window. Fail with a clean, mapped exception instead of an NRE/500 below. A file missing from storage
-        // gets the same answer.
+        // A document without a file of its own (a text submitted without its original, a sub-document seeded from its
+        // slice) has nothing to download: a clean, mapped exception instead of an NRE/500 below. A file missing from
+        // storage gets the same answer.
         var stream = document.FileOrigin is null ? null : await DocumentFiles.OpenOrNullAsync(document.FileOrigin);
         if (stream is null)
             throw new BusinessException(VaultExtractErrorCodes.Document.NoSourceBlob)
