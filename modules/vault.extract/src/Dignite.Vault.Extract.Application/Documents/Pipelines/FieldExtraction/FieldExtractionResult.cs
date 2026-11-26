@@ -24,7 +24,15 @@ public enum FieldExtractionOutcome
     /// caller completes the pipeline run rather than throwing, so the job never re-enters the job-store retry loop with
     /// the same oversized body.
     /// </summary>
-    Declined
+    Declined,
+
+    /// <summary>
+    /// The model's answer was cut off at the output limit before it settled every value and warning. The fields it
+    /// finished are written; the others keep the values they had. Sets the blocking
+    /// <c>DocumentReviewReasons.FieldExtractionIncomplete</c> signal. Terminal and successful, like <see cref="Declined"/>:
+    /// a retry would send the same request to the same limit.
+    /// </summary>
+    Incomplete
 }
 
 public readonly record struct FieldExtractionResult(FieldExtractionOutcome Outcome, int FieldCount)
@@ -33,4 +41,5 @@ public readonly record struct FieldExtractionResult(FieldExtractionOutcome Outco
     public static readonly FieldExtractionResult Cleared = new(FieldExtractionOutcome.Cleared, 0);
     public static readonly FieldExtractionResult Declined = new(FieldExtractionOutcome.Declined, 0);
     public static FieldExtractionResult Extracted(int fieldCount) => new(FieldExtractionOutcome.Extracted, fieldCount);
+    public static FieldExtractionResult Incomplete(int fieldCount) => new(FieldExtractionOutcome.Incomplete, fieldCount);
 }

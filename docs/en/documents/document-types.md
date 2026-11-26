@@ -105,6 +105,10 @@ Every returned value is validated against its field type before it is stored; an
 
 The Markdown is never truncated for field extraction, because a field can sit anywhere in a document. A document longer than `MaxFieldExtractionMarkdownLength` (default 200,000 characters) is not sent at all: it gets the blocking `FieldExtractionIncomplete` review reason, and an operator enters the values by hand and confirms them. See [AI Provider](../configuration/ai-provider.md#cross-cutting-llm-behavior-extractbehavior).
 
+### Answers Cut Off at the Output Limit
+
+The model writes every field into one answer, and a `Table` field over a long table (a bank statement's transactions, say) can make that answer longer than `MaxFieldExtractionOutputTokens` allows. The provider then stops it mid-way. The schema asks for the short fields first and tables last, so the fields that finished before the cut are kept and written; the field the cut fell inside, and any after it, keep the values the document already had. A table is never stored with only its first rows. The document gets the blocking `FieldExtractionIncomplete` review reason: an operator enters what is missing and confirms the field entry, or a later extraction (after the host raises the limit, for example) replaces the set. An answer cut off only in the passages it quotes as sources is complete.
+
 Operators can correct any value on the document's detail page. A correction is validated the same way, replaces the whole set, and re-fires `DocumentReadyEto` for a document that stays Ready.
 
 ## Duplicate Detection

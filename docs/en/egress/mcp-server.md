@@ -67,7 +67,7 @@ These ceilings are compile-time constants (`VaultExtractMcpConsts`), so runtime 
 | Fields in one `vault_extract_list_document_types` call | 1,000 (`MaxDocumentTypeListFields`), filled in typeCode order. Pass `documentTypeCode` to get a cut type alone |
 | Markdown characters of one document body (tool and resource) | 200,000 (`MaxDocumentMarkdownChars`). A clipped body reports `markdownTruncated` and `markdownTotalChars` |
 
-`vault_extract_get_document` also reports `fieldExtractionDeclined` when the document was too large for field extraction, so a client does not read an empty field set as the document's real values.
+`vault_extract_get_document` also reports `fieldExtractionDeclined` when the document was too large for field extraction, or the model's answer was cut off before it settled every field, so a client does not read an empty or partial field set as the document's real values.
 
 ## Authentication
 

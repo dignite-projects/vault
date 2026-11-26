@@ -60,8 +60,11 @@ public enum DocumentReviewReasons
     DuplicateSuspected = 1 << 3,
 
     /// <summary>
-    /// The document's Markdown exceeds <c>VaultExtractBehaviorOptions.MaxFieldExtractionMarkdownLength</c>, so the field
-    /// extraction stage <b>declined to call the LLM at all</b> (#491) rather than send an unbounded prompt body. Only ever
+    /// The document's field set is not a full extraction, for one of two reasons: its Markdown exceeds
+    /// <c>VaultExtractBehaviorOptions.MaxFieldExtractionMarkdownLength</c>, so the field extraction stage <b>declined to call
+    /// the LLM at all</b> (#491) rather than send an unbounded prompt body; or the model's answer was <b>cut off at the
+    /// output limit</b> (<c>MaxFieldExtractionOutputTokens</c>, typically by a long Table field) before it settled every
+    /// value, so only the fields it finished were written and the others kept their earlier values. Only ever
     /// set when the document's type actually declares field definitions — a type with no fields issues no call, so it can
     /// never be "incomplete". <b>blocking</b>: <c>ExtractedFields</c> would be empty for a reason unrelated to the
     /// document's content, and downstream cannot distinguish "this type declares no fields" from "we declined to look", so
