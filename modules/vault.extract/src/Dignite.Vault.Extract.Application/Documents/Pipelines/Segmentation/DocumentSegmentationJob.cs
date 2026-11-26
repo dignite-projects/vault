@@ -14,6 +14,8 @@ using Dignite.Vault.Extract.Documents.Layout;
 using Dignite.Vault.Extract.Documents.Segments;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Volo.Abp;
+using Volo.Abp.Authorization;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Repositories;
@@ -669,9 +671,11 @@ public class DocumentSegmentationJob
     /// A constituent's own file: its pages cut out of the source's file and stored as a file of this attempt's own, counted
     /// for the source's owner. Two runs that spawn the same segment at once both cut it; the one whose spawn does not
     /// claim the segment deletes its cut, which is never the file the other run's child is being committed with.
-    /// <c>null</c> when the segment has no pages, the source's file is gone (or in the recycle bin with it), or the cut
-    /// fails on the file itself (it is then seeded from its slice like any other); a storage failure propagates and the
-    /// job retries.
+    /// <c>null</c> when the segment has no pages, the source's file is gone (or in the recycle bin with it), the cut
+    /// fails on the file itself, or Blob Management refuses to keep it (the tenant is over its storage quota, or Blob
+    /// Management is switched off for it): the constituent is then seeded from its slice like any other. A refusal is
+    /// not retried, since a retry would meet the same quota until someone frees space; a storage failure propagates and
+    /// the job retries.
     /// </summary>
     protected virtual async Task<FileOrigin?> TryCutPagesAsync(
         PendingSegment segment, DetectionContext context, CancellationToken cancellationToken)
@@ -706,7 +710,19 @@ public class DocumentSegmentationJob
 
         var fileName = PageRangeFileName(source.OriginalFileName, first, last);
         var contentHash = ContentHasher.Sha256Hex(bytes);
-        var fileId = await _documentFiles.CreateAsync(fileName, bytes, contentHash, creatorId: context.OwnerId);
+        Guid fileId;
+        try
+        {
+            fileId = await _documentFiles.CreateAsync(fileName, bytes, contentHash, creatorId: context.OwnerId);
+        }
+        catch (Exception ex) when (ex is BusinessException or AbpAuthorizationException)
+        {
+            // The cut stores the same pages a second time, so a bundle that fit the quota can still be refused here.
+            Logger.LogWarning(ex,
+                "Blob Management refused the cut of pages {FirstPage}-{LastPage} of source {SourceId}; segment {SegmentId} is spawned from its slice.",
+                first, last, context.SourceDocumentId, segment.SegmentId);
+            return null;
+        }
 
         return new FileOrigin(
             fileId,

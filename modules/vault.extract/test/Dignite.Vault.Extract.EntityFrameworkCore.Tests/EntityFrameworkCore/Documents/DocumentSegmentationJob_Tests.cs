@@ -1133,6 +1133,45 @@ public class DocumentSegmentationJob_Tests : VaultExtractTestBase<DocumentSegmen
     }
 
     /// <summary>
+    /// A cut stores the source's pages a second time, so a bundle that fit the tenant's storage can have its cuts refused.
+    /// Retrying would meet the same quota, so each constituent is spawned from its slice instead of the job retrying
+    /// until ABP gives up and the sub-documents never appear.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_cut_Blob_Management_refuses_spawns_the_constituent_from_its_slice(bool overQuota)
+    {
+        var tree = Bundle(["Invoice A"], ["Invoice B"], ["B total"]);
+        var containerId = await ArrangeContainerAsync(ExtractionDocumentMarkdown.Render(tree));
+        await StoreLayoutAsync(containerId, tree);
+        StubSplit(("Invoice A", true), ("Invoice B", true));
+        var files = GetRequiredService<InMemoryBlobManagementFileService>();
+        var stored = files.CreatedIds.Count;
+        files.Refusal = overQuota
+            ? new Volo.Abp.BusinessException(Dignite.Abp.BlobManagement.BlobManagementErrorCodes.StorageQuotaExceeded)
+            : new Volo.Abp.Authorization.AbpAuthorizationException("Blob Management is switched off for the tenant.");
+
+        await _job.ExecuteAsync(new DocumentSegmentationJobArgs { SourceDocumentId = containerId });
+
+        files.CreatedIds.Count.ShouldBe(stored);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var segments = await _segmentRepository.GetListAsync(s => s.SourceDocumentId == containerId);
+            segments.Count.ShouldBe(2);
+            segments.ShouldAllBe(s => s.Status == DocumentSegmentStatus.Spawned && s.FirstPage != null);
+            foreach (var segment in segments)
+            {
+                // No file of its own: the parse seeds it from its SliceText.
+                (await _documentRepository.GetAsync(segment.RoutedDocumentId!.Value)).FileOrigin.ShouldBeNull();
+            }
+
+            (await _documentRepository.GetAsync(containerId)).ReviewReasons
+                .HasFlag(DocumentReviewReasons.SegmentationIncomplete).ShouldBeFalse();
+        });
+    }
+
+    /// <summary>
     /// The model's boundary sits under a stamp line at the top of the contract's first page, so that line lands in the
     /// invoice's slice. The page still belongs to the contract, which holds nearly all of its text.
     /// </summary>
