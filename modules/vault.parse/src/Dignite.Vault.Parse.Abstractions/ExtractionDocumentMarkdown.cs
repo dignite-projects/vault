@@ -123,7 +123,8 @@ public static class ExtractionDocumentMarkdown
 
             case ParseElementRoles.Code:
                 var language = Property<string>(element, ParseContentProperties.CodeLanguage);
-                return "```" + language + "\n" + text + "\n```";
+                var fence = CodeFence(text);
+                return fence + language + "\n" + text + "\n" + fence;
 
             case ParseElementRoles.Quote:
                 return string.Join('\n', text.Split('\n').Select(line => line.Length == 0 ? ">" : "> " + line));
@@ -131,6 +132,33 @@ public static class ExtractionDocumentMarkdown
             default:
                 return text;
         }
+    }
+
+    /// <summary>
+    /// A backtick fence longer than any run of backticks that starts a line of <paramref name="code"/>, so that no line of
+    /// it closes the block early (CommonMark closes a fence with a run of the same character at least as long).
+    /// </summary>
+    private static string CodeFence(string code)
+    {
+        var longest = 0;
+        foreach (var line in code.Split('\n'))
+        {
+            var start = 0;
+            while (start < line.Length && start < 3 && line[start] == ' ')
+            {
+                start++;
+            }
+
+            var end = start;
+            while (end < line.Length && line[end] == '`')
+            {
+                end++;
+            }
+
+            longest = Math.Max(longest, end - start);
+        }
+
+        return new string('`', Math.Max(3, longest + 1));
     }
 
     /// <summary>

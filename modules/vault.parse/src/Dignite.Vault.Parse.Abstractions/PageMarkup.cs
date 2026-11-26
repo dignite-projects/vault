@@ -49,16 +49,27 @@ public static partial class PageMarkup
     /// <summary>
     /// The pages of <paramref name="markdown"/>, numbered from 1: one per run between page breaks, or a single page
     /// when it marks none. Each page's text is its lines without the page metadata; its headers and footers are
-    /// returned beside it, and page numbers are dropped (the page's position says it).
+    /// returned beside it, and page numbers are dropped (the page's position says it). A page break inside a figure
+    /// takes effect after it: the figure stays whole, on the page it starts on, and the pages after keep their numbers.
     /// </summary>
     public static IReadOnlyList<PageMarkupPage> Split(string markdown)
     {
         var lines = Lines(markdown);
         var code = FigureMarkup.CodeLines(lines);
+        var figures = FigureMarkup.FigureCloses(lines, code);
         var pages = new List<PageMarkupPage>();
         var text = new List<string>();
         var headers = new List<string>();
         var footers = new List<string>();
+        var deferred = 0;
+
+        void EndPage()
+        {
+            pages.Add(new PageMarkupPage(pages.Count + 1, string.Join('\n', text), headers.ToArray(), footers.ToArray()));
+            text.Clear();
+            headers.Clear();
+            footers.Clear();
+        }
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -70,10 +81,21 @@ public static partial class PageMarkup
 
             if (BreakLine().IsMatch(lines[i]))
             {
-                pages.Add(new PageMarkupPage(pages.Count + 1, string.Join('\n', text), headers.ToArray(), footers.ToArray()));
-                text.Clear();
-                headers.Clear();
-                footers.Clear();
+                if (figures[i] >= 0)
+                {
+                    deferred++;
+
+                    // The blank lines around the break would leave two in a row inside the figure.
+                    if (text.Count > 0 && text[^1].Trim().Length == 0 && i + 1 < lines.Length && lines[i + 1].Trim().Length == 0)
+                    {
+                        i++;
+                    }
+                }
+                else
+                {
+                    EndPage();
+                }
+
                 continue;
             }
 
@@ -95,9 +117,16 @@ public static partial class PageMarkup
             }
 
             text.Add(lines[i]);
+            if (figures[i] == i)
+            {
+                for (; deferred > 0; deferred--)
+                {
+                    EndPage();
+                }
+            }
         }
 
-        pages.Add(new PageMarkupPage(pages.Count + 1, string.Join('\n', text), headers.ToArray(), footers.ToArray()));
+        EndPage();
         return pages;
     }
 

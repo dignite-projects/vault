@@ -105,6 +105,22 @@ public class MarkdownExtractionClient_Tests
     }
 
     [Fact]
+    public async Task A_page_break_inside_a_figure_takes_effect_after_it()
+    {
+        const string markdown = "前文\n\n<figure>\n<figcaption>領収書</figcaption>\n\n金額 500円\n\n<!-- PageBreak -->\n\n但し書き\n\n</figure>\n\n後文\n\n<!-- PageBreak -->\n\n三頁目";
+
+        var result = await ParseAsync(markdown);
+
+        result.Document.Sections.Count.ShouldBe(3);
+        var image = result.Document.Sections[0].Elements.OfType<ExtractionDocumentImageElement>().Single();
+        image.Text.ShouldBe("金額 500円\n\n但し書き");
+        image.AlternativeText.ShouldBe("領収書");
+        result.Markdown.ShouldNotContain("\\<figure");
+        result.Markdown.ShouldNotContain("\\</figure>");
+        PagesOf(result.Document.Sections[2]).ShouldAllBe(page => page == 3);
+    }
+
+    [Fact]
     public async Task A_byte_order_mark_is_skipped()
     {
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes("本文")).ToArray();

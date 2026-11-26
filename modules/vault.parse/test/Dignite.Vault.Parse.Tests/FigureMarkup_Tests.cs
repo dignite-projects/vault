@@ -121,9 +121,60 @@ public class FigureMarkup_Tests
         FigureMarkup.Contains("\\<figure>").ShouldBeFalse();
 
         FigureMarkup.IsOpenLine("  <figure>  ").ShouldBeTrue();
-        FigureMarkup.IsOpenLine("<figure class=\"x\">").ShouldBeFalse();
+        FigureMarkup.IsOpenLine("<figure>\r").ShouldBeTrue();
+        FigureMarkup.IsOpenLine("<figure> text").ShouldBeFalse();
+        FigureMarkup.IsOpenLine("<figcaption>").ShouldBeFalse();
+        FigureMarkup.IsOpenLine("　<figure>").ShouldBeFalse();
         FigureMarkup.IsCloseLine("</figure>").ShouldBeTrue();
         FigureMarkup.IsCloseLine("</figure> trailing").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_opening_tag_with_any_attributes_opens_a_figure_as_HTML_reads_it()
+    {
+        FigureMarkup.IsOpenLine("<figure class=\"chart\">").ShouldBeTrue();
+        FigureMarkup.IsOpenLine("<figure id=\"図1\">").ShouldBeTrue();
+        FigureMarkup.IsOpenLine("<FIGURE>").ShouldBeTrue();
+        FigureMarkup.IsCloseLine("</Figure>").ShouldBeTrue();
+
+        // Read as a figure, it is no longer an HTML block left open by a close tag that was escaped as text.
+        var parts = FigureMarkup.Split("<figure class=\"chart\">\n<figcaption>売上</figcaption>\n\n10\n\n</figure>").ToList();
+        parts.Single().ShouldBe(new FigureMarkupPart(true, "10", "売上"));
+        FigureMarkup.Escape("<figure class=\"chart\">\nx\n</figure>").ShouldBe("\\<figure class=\"chart\">\nx\n\\</figure>");
+    }
+
+    [Fact]
+    public void A_caption_keeps_its_characters_and_encodes_only_markup()
+    {
+        var written = FigureMarkup.Write("x", "Company's revenue (¥) × 𠮷 & <b>");
+
+        written.ShouldStartWith("<figure>\n<figcaption>Company's revenue (¥) × 𠮷 &amp; &lt;b&gt;</figcaption>\n");
+        FigureMarkup.Split(written).Single().Caption.ShouldBe("Company's revenue (¥) × 𠮷 & <b>");
+    }
+
+    [Fact]
+    public void A_figure_the_transcription_found_is_flattened_into_the_figure()
+    {
+        // An OCR engine that reads a chart inside the picture returns a figure of its own: its caption and content stay,
+        // its tags go, instead of being escaped into text.
+        var written = FigureMarkup.Write("<figure>\n<figcaption>月別売上</figcaption>\n\n1月 10\n\n</figure>", "図2");
+
+        written.ShouldBe("<figure>\n<figcaption>図2</figcaption>\n\n月別売上\n\n1月 10\n\n</figure>");
+        FigureMarkup.Split(written).Single().ShouldBe(new FigureMarkupPart(true, "月別売上\n\n1月 10", "図2"));
+    }
+
+    [Fact]
+    public void Opening_lines_no_closing_line_follows_are_read_in_one_pass()
+    {
+        // Each of these lines used to scan to the end for a closing line: 2 × 10¹⁰ line checks.
+        var markdown = FigureMarkup.Write("x", null) + "\n" + string.Join('\n', Enumerable.Repeat("<figure>", 200_000));
+
+        var parts = FigureMarkup.Split(markdown).ToList();
+
+        parts.Count.ShouldBe(2);
+        parts[0].ShouldBe(new FigureMarkupPart(true, "x", null));
+        parts[1].IsFigure.ShouldBeFalse();
+        FigureMarkup.Strip(markdown).ShouldNotContain("<figure>");
     }
 
     [Fact]

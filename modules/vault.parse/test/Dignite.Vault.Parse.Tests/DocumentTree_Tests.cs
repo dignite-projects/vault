@@ -123,6 +123,23 @@ public class DocumentTree_Tests
     }
 
     [Fact]
+    public void Code_holding_a_fence_line_is_fenced_longer_so_it_ends_where_it_should()
+    {
+        // A sample that shows a Markdown fence: written inside ``` it would close the block at its own fence line.
+        var document = new ExtractionDocument("doc");
+        var section = new ExtractionDocumentSection();
+        document.Sections.Add(section);
+        section.Elements.Add(new ExtractionDocumentTextElement(new TextContent("```\nx\n```"), ParseElementRoles.Code));
+        section.Elements.Add(new ExtractionDocumentImageElement(text: "図の文字"));
+
+        var markdown = ExtractionDocumentMarkdown.Render(document);
+
+        markdown.ShouldStartWith("````\n```\nx\n```\n````\n\n");
+        FigureMarkup.Contains(markdown).ShouldBeTrue();
+        Elements(markdown).Select(e => e.GetType()).ShouldBe([typeof(ExtractionDocumentTextElement), typeof(ExtractionDocumentImageElement)]);
+    }
+
+    [Fact]
     public void An_open_figure_tag_never_closed_is_ordinary_text()
     {
         Elements("<figure>\n本文").Single().ShouldBeOfType<ExtractionDocumentTextElement>();

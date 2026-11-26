@@ -100,7 +100,8 @@ public static class MarkdownText
 
     /// <summary>
     /// Backslash-escapes a single leading <b>block</b> marker on one line so literal text is not re-parsed as
-    /// structure: an ATX heading (<c>#</c>…, 1-6 then space/tab/end), a blockquote (<c>&gt;</c>), a Setext H1
+    /// structure: an ATX heading (<c>#</c>…, 1-6 then space/tab/end), a blockquote (<c>&gt;</c>), a code fence (≥3
+    /// <c>~</c> or <c>`</c>), a Setext H1
     /// underline (a line of <c>=</c>), a thematic break (≥3 <c>-</c>/<c>*</c>/<c>_</c>), a GFM table-delimiter
     /// row (only <c>-</c>/<c>:</c>/<c>|</c>), a bullet (<c>-</c>/<c>+</c>/<c>*</c> then a space/tab), or an
     /// ordered marker (<c>1.</c>/<c>1)</c> then a space/tab). Only the one significant character is escaped;
@@ -146,6 +147,13 @@ public static class MarkdownText
 
         // Blockquote.
         if (c == '>')
+        {
+            return EscapeAt(line, start);
+        }
+
+        // Code fence: three or more '~' (or '`', where the inline pass has not escaped them already). Left as it is, a
+        // separator line of tildes opens a code block that nothing closes, and everything after it reads as code.
+        if ((c == '~' || c == '`') && rest.Length >= 3 && rest[1] == c && rest[2] == c)
         {
             return EscapeAt(line, start);
         }

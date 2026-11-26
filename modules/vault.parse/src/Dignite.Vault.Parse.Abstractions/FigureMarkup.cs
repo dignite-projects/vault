@@ -30,8 +30,8 @@ namespace Dignite.Vault.Parse;
 /// <para>
 /// The renderer numbers the figures of a document (<c>id="fig-N"</c>, the HTML <c>id</c> attribute) so that each
 /// opening line is unique: sub-document segmentation finds a span by its first line, and two identical
-/// <c>&lt;figure&gt;</c> lines would let a cut land on the wrong figure. Azure's own output carries no id; both forms
-/// are read.
+/// <c>&lt;figure&gt;</c> lines would let a cut land on the wrong figure. Azure's own output carries no id. Any form of
+/// the opening tag is read, with or without attributes, as HTML reads it, and the renderer writes it back numbered.
 /// </para>
 /// <para>
 /// Each tag is a line of its own, and the pipeline reads them as structure: the parse reads a figure back into an
@@ -73,8 +73,10 @@ public static partial class FigureMarkup
     }
 
     /// <summary>
-    /// A figure holding <paramref name="text"/> (written as it is, but for <see cref="Escape"/>, and with a fenced code
-    /// block left open at its end closed) under <paramref name="caption"/>, either of which may be empty.
+    /// A figure holding <paramref name="text"/> (written as it is, but for <see cref="Escape"/>, with a fenced code block
+    /// left open at its end closed, and with each whole figure inside it flattened: a transcription that found a figure
+    /// in the picture keeps that figure's caption and content, not tags that would read as text) under
+    /// <paramref name="caption"/>, either of which may be empty.
     /// </summary>
     public static string Write(string? text, string? caption, string? id = null)
     {
@@ -82,10 +84,10 @@ public static partial class FigureMarkup
         var captionText = CollapseWhitespace(caption);
         if (captionText.Length > 0)
         {
-            builder.Append('\n').Append(CaptionOpenTag).Append(WebUtility.HtmlEncode(captionText)).Append(CaptionCloseTag);
+            builder.Append('\n').Append(CaptionOpenTag).Append(EncodeCaption(captionText)).Append(CaptionCloseTag);
         }
 
-        var body = text?.Trim('\n');
+        var body = Flatten(text).Trim('\n');
         if (string.IsNullOrWhiteSpace(body))
         {
             builder.Append('\n');
@@ -116,7 +118,7 @@ public static partial class FigureMarkup
     /// </summary>
     public static string Escape(string text)
     {
-        if (string.IsNullOrEmpty(text) || text.IndexOf("figure", StringComparison.Ordinal) < 0)
+        if (string.IsNullOrEmpty(text) || text.IndexOf("figure", StringComparison.OrdinalIgnoreCase) < 0)
         {
             return text;
         }
@@ -144,12 +146,13 @@ public static partial class FigureMarkup
     {
         var lines = markdown.Split('\n');
         var code = CodeLines(lines);
+        var closes = NextCloses(lines, code);
         var text = new List<string>();
         for (var i = 0; i < lines.Length; i++)
         {
             if (!code[i] && IsOpenLine(lines[i]))
             {
-                var close = CloseOf(lines, code, i);
+                var close = closes[i];
                 if (close > 0)
                 {
                     if (text.Count > 0)
@@ -180,7 +183,7 @@ public static partial class FigureMarkup
     /// </summary>
     public static bool Contains(string? markdown)
     {
-        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf("<figure", StringComparison.Ordinal) < 0)
+        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf("<figure", StringComparison.OrdinalIgnoreCase) < 0)
         {
             return false;
         }
@@ -213,13 +216,14 @@ public static partial class FigureMarkup
     /// </summary>
     public static string Strip(string? markdown)
     {
-        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf("figure", StringComparison.Ordinal) < 0)
+        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf("figure", StringComparison.OrdinalIgnoreCase) < 0)
         {
             return markdown ?? string.Empty;
         }
 
         var lines = markdown.Split('\n');
         var code = CodeLines(lines);
+        var closes = NextCloses(lines, code);
         var kept = new List<string>(lines.Length);
         for (var i = 0; i < lines.Length; i++)
         {
@@ -234,7 +238,7 @@ public static partial class FigureMarkup
                 continue;
             }
 
-            var close = CloseOf(lines, code, i);
+            var close = closes[i];
             var next = ReadCaption(lines, i + 1, close > 0 ? close : lines.Length, out var caption);
             if (caption is not null)
             {
@@ -262,6 +266,7 @@ public static partial class FigureMarkup
 
         var lines = markdown.Split('\n');
         var code = CodeLines(lines);
+        var closes = NextCloses(lines, code);
         var bodies = new List<string>();
         for (var i = 0; i < lines.Length; i++)
         {
@@ -270,7 +275,7 @@ public static partial class FigureMarkup
                 continue;
             }
 
-            var close = CloseOf(lines, code, i);
+            var close = closes[i];
             var end = close > 0 ? close : lines.Length;
             var start = ReadCaption(lines, i + 1, end, out _);
             var body = string.Join('\n', lines[start..end]).Trim('\n');
@@ -286,36 +291,119 @@ public static partial class FigureMarkup
     }
 
     /// <summary>
-    /// Whether the line opens a figure (<see cref="OpenTag"/>, with or without an id), indented by at most three spaces
-    /// as CommonMark requires of an HTML block. Says nothing of a code block around it.
+    /// Whether the line is a figure's opening tag and nothing else, indented by at most three spaces as CommonMark requires
+    /// of an HTML block: <see cref="OpenTag"/>, or the tag with attributes (the renderer's <c>id</c>, or any a client
+    /// wrote), the tag name in any case as HTML reads it. Says nothing of a code block around it.
     /// </summary>
     public static bool IsOpenLine(string? line)
+        => line is not null && Indent(line) <= 3 && OpenWithAttributes().IsMatch(line.Trim(TagLinePadding));
+
+    /// <summary>Whether the line is <see cref="CloseTag"/>, in any case, indented by at most three spaces.</summary>
+    public static bool IsCloseLine(string? line)
+        => line is not null && Indent(line) <= 3 && line.Trim(TagLinePadding).Equals(CloseTag, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What may pad a tag line: CommonMark's spaces and tabs, and the carriage return of a CRLF line end. Not other
+    /// whitespace: a line led by an ideographic space is a paragraph, not an HTML block.
+    /// </summary>
+    private static readonly char[] TagLinePadding = [' ', '\t', '\r'];
+
+    /// <summary>
+    /// For each line, the first closing line after it outside a code block, or -1: one pass from the end, so that reading
+    /// a figure costs no scan of its own, however many opening lines no closing line follows.
+    /// </summary>
+    private static int[] NextCloses(string[] lines, bool[] code)
     {
-        if (line is null || Indent(line) > 3)
+        var next = new int[lines.Length];
+        var close = -1;
+        for (var i = lines.Length - 1; i >= 0; i--)
         {
-            return false;
-        }
-
-        var trimmed = line.Trim();
-        return trimmed == OpenTag || OpenWithId().IsMatch(trimmed);
-    }
-
-    /// <summary>Whether the line is <see cref="CloseTag"/>, indented by at most three spaces.</summary>
-    public static bool IsCloseLine(string? line) => line is not null && Indent(line) <= 3 && line.Trim() == CloseTag;
-
-    /// <summary>The first closing line after <paramref name="open"/> outside a code block, or -1.</summary>
-    private static int CloseOf(string[] lines, bool[] code, int open)
-    {
-        for (var j = open + 1; j < lines.Length; j++)
-        {
-            if (!code[j] && IsCloseLine(lines[j]))
+            next[i] = close;
+            if (!code[i] && IsCloseLine(lines[i]))
             {
-                return j;
+                close = i;
             }
         }
 
-        return -1;
+        return next;
     }
+
+    /// <summary>
+    /// For each line of a figure, from its opening line to its closing line, that closing line; -1 for every other line.
+    /// The figures are those <see cref="Split"/> reads. <see cref="PageMarkup"/> keeps a page break inside one from
+    /// cutting it in two.
+    /// </summary>
+    internal static int[] FigureCloses(string[] lines, bool[] code)
+    {
+        var closes = NextCloses(lines, code);
+        var result = new int[lines.Length];
+        Array.Fill(result, -1);
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (code[i] || !IsOpenLine(lines[i]) || closes[i] < 0)
+            {
+                continue;
+            }
+
+            for (var j = i; j <= closes[i]; j++)
+            {
+                result[j] = closes[i];
+            }
+
+            i = closes[i];
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> with each whole figure in it (an opening line a closing line follows) replaced by its caption,
+    /// as a line of text, and its content. A tag line that is not part of one stays, for <see cref="Escape"/>.
+    /// </summary>
+    private static string Flatten(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf("figure", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return text ?? string.Empty;
+        }
+
+        var lines = text.Split('\n');
+        var code = CodeLines(lines);
+        var closes = NextCloses(lines, code);
+        var kept = new List<string>(lines.Length);
+        var flattened = false;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (code[i] || !IsOpenLine(lines[i]) || closes[i] < 0)
+            {
+                kept.Add(lines[i]);
+                continue;
+            }
+
+            var close = closes[i];
+            var start = ReadCaption(lines, i + 1, close, out var caption);
+            if (caption is not null)
+            {
+                kept.Add(caption);
+            }
+
+            kept.AddRange(lines[start..close]);
+            i = close;
+            flattened = true;
+        }
+
+        return flattened ? string.Join('\n', kept) : text;
+    }
+
+    /// <summary>
+    /// A caption as the text of an HTML element: only <c>&amp;</c>, <c>&lt;</c> and <c>&gt;</c> need encoding there, and
+    /// every other character stays itself, so the stored Markdown reads <c>¥</c> and <c>'</c> rather than numeric
+    /// references (which <see cref="System.Net.WebUtility.HtmlEncode(string)"/> writes for them).
+    /// </summary>
+    private static string EncodeCaption(string caption)
+        => caption.Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal);
 
     /// <summary>
     /// Reads the caption that opens a figure at <paramref name="from"/>: lines from a <see cref="CaptionOpenTag"/> to the
@@ -462,6 +550,13 @@ public static partial class FigureMarkup
 
     [GeneratedRegex(@"^<figure id=""[A-Za-z0-9][A-Za-z0-9._:-]{0,63}"">$")]
     private static partial Regex OpenWithId();
+
+    /// <summary>
+    /// A figure's opening tag as CommonMark starts an HTML block with it: the tag name, then <c>&gt;</c> or whitespace and
+    /// attributes up to the <c>&gt;</c> that ends the line.
+    /// </summary>
+    [GeneratedRegex(@"^<figure(?:[ \t][^<>]*)?>$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OpenWithAttributes();
 }
 
 /// <summary>
