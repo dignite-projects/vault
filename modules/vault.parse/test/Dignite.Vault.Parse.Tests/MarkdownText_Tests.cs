@@ -48,6 +48,9 @@ public class MarkdownText_Tests
     [InlineData(":---:", "\\:---:")]
     [InlineData("-\titem", "\\-\titem")]      // bullet + TAB (not only a space)
     [InlineData("1.\titem", "1\\.\titem")]    // ordered marker + TAB
+    [InlineData("~~~~~~~~", "\\~~~~~~~~")]   // a separator line of tildes would open a code block nothing closes
+    [InlineData("```", "\\```")]
+    [InlineData("  ~~~ x", "  \\~~~ x")]
     public void EscapeLineStart_escapes_a_leading_block_marker(string input, string expected)
         => MarkdownText.EscapeLineStart(input).ShouldBe(expected);
 
@@ -59,6 +62,7 @@ public class MarkdownText_Tests
     [InlineData("well-known")]     // interior dash
     [InlineData("#hashtag")]       // '#' not followed by whitespace => not a heading
     [InlineData("--")]             // only two => neither a thematic break nor a bullet
+    [InlineData("~~struck~~")]     // two tildes are strikethrough, not a fence
     [InlineData("１. 项目")] // full-width digit => not an ASCII ordered marker
     [InlineData("١. item")]          // Arabic-Indic digit => likewise
     [InlineData("# heading")]        // '#' + NBSP => NBSP is not a Markdown space, not a heading

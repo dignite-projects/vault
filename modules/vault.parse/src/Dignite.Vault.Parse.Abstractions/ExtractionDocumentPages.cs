@@ -145,12 +145,13 @@ public static class ExtractionDocumentPages
     public static IReadOnlyList<ExtractionDocumentPageRegion> Regions(ExtractionDocumentMarkdownMap map)
     {
         var result = new List<ExtractionDocumentPageRegion>();
+        var seen = new HashSet<ExtractionDocumentPageRegion>();
         foreach (var span in Leaves(map))
         {
             foreach (var source in span.Sources)
             {
                 if (Box(source) is { } box && box with { Offset = span.Offset, Length = span.Length } is var region
-                    && !result.Contains(region))
+                    && seen.Add(region))
                 {
                     result.Add(region);
                 }
