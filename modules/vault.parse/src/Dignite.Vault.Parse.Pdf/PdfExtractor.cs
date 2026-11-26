@@ -417,9 +417,9 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
     /// — the canonical sandwich signature; a bonus that is sufficient but not necessary).</item>
     /// </list>
     /// Out of scope (left to double-OCR for now, #309): tiled multi-image scan pages, heavily
-    /// margined/cropped scans whose single image does not clear the coverage bar, and rotated placements
-    /// (PdfPig's PdfRectangle edge accessors are not rotation-aware, so the geometry math no-ops). All fail
-    /// safe — they re-OCR rather than ever dropping a figure.
+    /// margined/cropped scans whose single image does not clear the coverage bar. Both fail safe — they re-OCR
+    /// rather than ever dropping a figure. A page at /Rotate is in scope: PdfPig reads the page box, the image
+    /// and the words on the page as it is shown.
     /// </summary>
     protected virtual bool IsFullPageScanBackground(Page page, IPdfImage image, IReadOnlyList<Word> words)
     {
@@ -428,9 +428,11 @@ public class PdfExtractor : ParseExtractionClient, ITransientDependency
             return false;
         }
 
+        // On a page at /Rotate the image's box is turned with the page: its Width and Height are its own sides,
+        // swapped at 90 and 270. Its edges are where it lies on the page as shown, as PdfBlocks.Polygon reads them.
         var imageBox = image.BoundingBox;
-        var imageWidth = Math.Abs(imageBox.Width);
-        var imageHeight = Math.Abs(imageBox.Height);
+        var imageWidth = Math.Abs(imageBox.Right - imageBox.Left);
+        var imageHeight = Math.Abs(imageBox.Top - imageBox.Bottom);
         if (imageWidth <= 0 || imageHeight <= 0)
         {
             return false;

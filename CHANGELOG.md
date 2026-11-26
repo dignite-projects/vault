@@ -502,6 +502,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A searchable scan on a page at `/Rotate 90` or `270` is no longer read twice.** The full-page scan under the
+  page's OCR text layer was measured by its own sides, which are swapped on such a page, so it missed the coverage
+  bar: it went to the OCR engine as a figure, and the page's text came out twice in the Markdown.
+
 - **Sub-documents and layouts (from the refactor review).**
   - A bundle part is cut by page only when reading it from those pages moves at most 40 characters into or out of it.
     Before, up to a fifth of a part could move: the tail of one document (its total, its signature) at the top of the
