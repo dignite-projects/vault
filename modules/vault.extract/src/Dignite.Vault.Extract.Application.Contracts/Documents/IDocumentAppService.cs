@@ -130,7 +130,7 @@ public interface IDocumentAppService : IApplicationService
 
     /// <summary>
     /// #657: the operator's explicit declaration that field entry is complete for a document #491 declined to
-    /// auto-extract for being too large. Clears the blocking <c>FieldExtractionIncomplete</c> review reason and
+    /// auto-extract for being too large, or whose extraction answer was cut off at the output limit. Clears the blocking <c>FieldExtractionIncomplete</c> review reason and
     /// re-derives lifecycle so the document may transition to Ready. This is the <b>only</b> path that clears the
     /// reason — <see cref="UpdateExtractedFieldsAsync"/> does not, however many (or how few) fields it submits, so
     /// that an edit can never release a partially-filled document as a side effect. "None of this type's fields

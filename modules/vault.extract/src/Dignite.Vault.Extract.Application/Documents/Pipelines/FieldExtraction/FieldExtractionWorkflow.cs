@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Dignite.Abp.FlexFields.CKEditor;
 using Dignite.Abp.FlexFields.Date;
 using Dignite.Abp.FlexFields.Select;
+using Dignite.Abp.FlexFields.Table;
 using Dignite.Abp.FlexFields.Text;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.FlexFields;
@@ -102,6 +103,12 @@ public class FieldExtractionWorkflow : ITransientDependency
         // MaxFieldSchemaPromptLength over the whole type (#468); assert it again here so a repository bypass, seed, or
         // future migration can never hand an unbounded schema message to the LLM.
         _schemaPromptBudget.AssertWithinBudget(fields.Select(f => f.Prompt));
+
+        // Shortest answers first, the open-ended ones (a Table above all) last, in the field list and in the schema. A
+        // provider that writes the schema's keys in order then finishes every short value before the long ones, so an
+        // answer cut off at the output limit loses the fewest fields. OrderBy is stable: equal estimates keep the
+        // configured order.
+        fields = fields.OrderBy(EstimateFieldChars).ToList();
         var schemaMessage = BuildSchemaUserMessage(fields);
         var messages = new List<ChatMessage>
         {
@@ -125,7 +132,7 @@ public class FieldExtractionWorkflow : ITransientDependency
         var options = new ChatOptions
         {
             ResponseFormat = BuildResponseFormat(fields),
-            MaxOutputTokens = Math.Min(estimatedOutputTokens, outputTokenCeiling)
+            MaxOutputTokens = (int)Math.Min(estimatedOutputTokens, outputTokenCeiling)
         };
 
         var response = await _chatClient.GetResponseAsync(messages, options, cancellationToken);
@@ -133,16 +140,10 @@ public class FieldExtractionWorkflow : ITransientDependency
 
         if (response.FinishReason == ChatFinishReason.Length)
         {
-            // The provider cut generation off mid-JSON before the model finished the envelope — observed in
-            // practice on a many-row AllowMultiple field (SiliconFlow's own default output cap, ~4096 tokens,
-            // silently applies whenever the caller sends none). Log it distinctly from a genuinely malformed
-            // response so this is diagnosable from logs alone; ParseResult's JSON-parse failure below still
-            // falls back to all-null for whichever fields did not fully decode.
-            _logger.LogWarning(
-                "Field extraction response was cut off at the token limit (MaxOutputTokens={MaxOutputTokens}); " +
-                "the JSON envelope is likely incomplete and some or all field values may parse as null. If the " +
-                "structured model allows more output, raise Vault:ExtractBehavior:MaxFieldExtractionOutputTokens.",
-                options.MaxOutputTokens);
+            // The provider stopped generation at the output limit: a long Table field written out row by row is the
+            // usual cause (a 114-row bank statement ran past 8,192 and 16,384 tokens), and reasoning tokens count
+            // against the same limit. The answer is incomplete, never an empty extraction.
+            return ParseCutOffResult(rawJson, fields, options.MaxOutputTokens!.Value);
         }
 
         return ParseResult(rawJson, fields);
@@ -165,7 +166,7 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// kana/kanji character into 2+ tokens), which reproduced the exact mid-JSON truncation this method exists
     /// to prevent even though the estimate looked generous in characters. <c>MaxOutputTokens</c> is a ceiling
     /// the model can stop well short of, not a target it is asked to fill, so erring high here is cheap; erring
-    /// low silently nulls fields (see <see cref="ExtractAsync"/>'s <c>ChatFinishReason.Length</c> branch).
+    /// low cuts the answer off and leaves the document's extraction incomplete (see <see cref="ParseCutOffResult"/>).
     /// </para>
     /// <para>
     /// <b>Erring high has a limit, though:</b> the provider refuses a max-tokens value above its model's own limit, on
@@ -174,9 +175,9 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// estimated 177,664 tokens and SiliconFlow refused it for DeepSeek-V3 (max 163,840).
     /// </para>
     /// </summary>
-    private static int EstimateMaxOutputTokens(IReadOnlyList<FieldExtractionDescriptor> fields)
+    private static long EstimateMaxOutputTokens(IReadOnlyList<FieldExtractionDescriptor> fields)
     {
-        var chars = 0;
+        long chars = 0;
         foreach (var field in fields)
         {
             chars += EstimateFieldChars(field);
@@ -201,6 +202,12 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// </summary>
     private static int EstimateFieldChars(FieldExtractionDescriptor field)
     {
+        // A table has no row limit, so its worst case is whatever the host's ceiling allows.
+        if (string.Equals(field.FieldTypeName, TableFieldType.ControlName, StringComparison.Ordinal))
+        {
+            return int.MaxValue;
+        }
+
         if (string.Equals(field.FieldTypeName, TagsFieldType.ControlName, StringComparison.Ordinal))
         {
             var tags = new TagsConfiguration(field.Configuration);
@@ -282,14 +289,14 @@ public class FieldExtractionWorkflow : ITransientDependency
         "a line of column labels followed by one or more lines of space- or tab-separated values is still a table — read each such line as a row and align its cells to the column labels from left to right. " +
         "Use headings, tables, and lists as structure signals, but never require Markdown table syntax: extract tabular values even when the pipes and separators have been stripped during extraction. " +
         "Set a field to null only when its information is genuinely absent from the document — not merely because the text is unformatted, split across lines, or lacks table syntax. " +
-        "Return the result as an object with three keys: \"values\" (one key per requested field, as described above), \"sources\" and \"validationWarnings\". " +
-        "\"sources\" has one key per requested field: an array of up to three short passages copied character for character from the document body where that field's value appears, " +
-        "as written in the document and not normalized (the date, amount or name exactly as printed, with its label when the label fits), one passage per distinct place, " +
-        "and an empty array when the value is null. " +
+        "Return the result as an object with three keys, in this order: \"values\" (one key per requested field, as described above), \"validationWarnings\" and \"sources\". " +
         "A field's prompt may declare validation rules for its own extracted value (for example a running-balance or total check). " +
         "When a field's value fails such a rule, still return the value in \"values\" exactly as found in the document, and additionally add one entry to \"validationWarnings\" naming that field and giving a concise, human-readable explanation of the mismatch. " +
         "Never invent, alter, or fabricate data to make a rule pass, and never drop a value merely because it failed validation — the value stays, the warning is reported separately. " +
-        "When every value passes, or a field declares no validation rule, return an empty \"validationWarnings\" array.";
+        "When every value passes, or a field declares no validation rule, return an empty \"validationWarnings\" array. " +
+        "\"sources\" has one key per requested field: an array of up to three short passages copied character for character from the document body where that field's value appears, " +
+        "as written in the document and not normalized (the date, amount or name exactly as printed, with its label when the label fits), one passage per distinct place, " +
+        "and an empty array when the value is null.";
 
     private static string BuildSchemaUserMessage(IReadOnlyList<FieldExtractionDescriptor> fields)
     {
@@ -375,16 +382,18 @@ public class FieldExtractionWorkflow : ITransientDependency
             }
         };
 
+        // Values, then warnings, then sources: an answer cut off at the output limit is still complete when only its
+        // sources are missing, because they only locate values (see FieldExtractionWorkflowResult.IsIncomplete).
         var schema = new JsonObject
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
                 ["values"] = BuildValuesSchema(fields),
-                ["sources"] = BuildSourcesSchema(fields),
-                ["validationWarnings"] = warningsSchema
+                ["validationWarnings"] = warningsSchema,
+                ["sources"] = BuildSourcesSchema(fields)
             },
-            ["required"] = new JsonArray { "values", "sources", "validationWarnings" },
+            ["required"] = new JsonArray { "values", "validationWarnings", "sources" },
             ["additionalProperties"] = false
         };
 
@@ -464,6 +473,55 @@ public class FieldExtractionWorkflow : ITransientDependency
         // Envelope (#527 §1): { "values": { ... }, "validationWarnings": [ ... ] }. The two halves are parsed
         // independently, so a malformed warning can never drop a valid value (and vice versa).
         return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseWarnings(root, fields), ParseSources(root, fields));
+    }
+
+    /// <summary>
+    /// An answer the provider stopped at the output limit. What closed before the cut is kept: every field whose value
+    /// finished, the warnings if their list closed, and each field's sources whose list closed. The field the cut fell
+    /// inside, and every field after it, is unfinished: not a <c>null</c> the model wrote but no answer at all, so a
+    /// half-written table never reaches the document. A cut that spared every value and the warnings (only sources were
+    /// lost) is a complete extraction.
+    /// <para>
+    /// Instructor raises on this finish reason and keeps nothing; LangExtract and Reducto split the document so no answer
+    /// grows that long. Keeping the closed fields is what lets one long table cost only itself: in the order the schema
+    /// asks for, the short fields close before it.
+    /// </para>
+    /// </summary>
+    protected virtual FieldExtractionWorkflowResult ParseCutOffResult(
+        string rawJson,
+        IReadOnlyList<FieldExtractionDescriptor> fields,
+        int maxOutputTokens)
+    {
+        var answer = TruncatedJsonObject.Read(rawJson);
+        var root = JsonSerializer.SerializeToElement(answer.Members);
+
+        var valuesClosed = answer.ClosedMembers.Contains("values");
+        var writtenValues = answer.Members["values"] as JsonObject;
+        var unfinished = valuesClosed
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : fields.Where(f => writtenValues == null || !writtenValues.ContainsKey(f.Name))
+                .Select(f => f.Name)
+                .ToHashSet(StringComparer.Ordinal);
+        var warningsClosed = answer.ClosedMembers.Contains("validationWarnings");
+
+        var result = new FieldExtractionWorkflowResult(
+            ParseValues(root, fields),
+            warningsClosed ? ParseWarnings(root, fields) : Array.Empty<FieldValidationWarningResult>(),
+            ParseSources(root, fields))
+        {
+            UnfinishedFields = unfinished,
+            ValidationWarningsUnfinished = !warningsClosed
+        };
+
+        _logger.LogWarning(
+            "Field extraction answer was cut off at the output limit (MaxOutputTokens={MaxOutputTokens}): " +
+            "{UnfinishedCount} of {FieldCount} fields unfinished ({UnfinishedFields}), warnings {WarningsState}. " +
+            "Unfinished fields keep the document's earlier values. If the structured model allows more output, " +
+            "raise Vault:ExtractBehavior:MaxFieldExtractionOutputTokens.",
+            maxOutputTokens, unfinished.Count, fields.Count, string.Join(", ", unfinished),
+            warningsClosed ? "complete" : "unfinished");
+
+        return result;
     }
 
     private static FieldExtractionWorkflowResult AllNull(IReadOnlyList<FieldExtractionDescriptor> fields)

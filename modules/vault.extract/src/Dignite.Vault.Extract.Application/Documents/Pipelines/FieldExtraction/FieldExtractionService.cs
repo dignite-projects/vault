@@ -338,10 +338,17 @@ public class FieldExtractionService : ITransientDependency
             var currentDefinitions = await _fieldRepository.GetListAsync(documentTypeId);
             var currentDefinitionsById = currentDefinitions.ToDictionary(d => d.Id);
 
+            // A field whose value the answer did not finish (cut off at the output limit) has no answer, so the document
+            // keeps what it holds for it, the same way a declined run leaves every value untouched. Its source and its
+            // warning stay with it below.
+            var unfinished = extractionResult.UnfinishedFields;
+            var heldFieldNames = new HashSet<string>(StringComparer.Ordinal);
             var fieldValues = new Dictionary<string, object?>(StringComparer.Ordinal);
             foreach (var d in descriptors)
             {
-                if (!extracted.TryGetValue(d.Name, out var value) || !value.HasValue)
+                var isUnfinished = unfinished.Contains(d.Name);
+                extracted.TryGetValue(d.Name, out var value);
+                if (!isUnfinished && !value.HasValue)
                 {
                     continue;
                 }
@@ -378,12 +385,23 @@ public class FieldExtractionService : ITransientDependency
                     continue;
                 }
 
+                if (isUnfinished)
+                {
+                    if (document.FlexFields.TryGetValue(currentDefinition.Name, out var held))
+                    {
+                        fieldValues[currentDefinition.Name] = held;
+                        heldFieldNames.Add(currentDefinition.Name);
+                    }
+
+                    continue;
+                }
+
                 // Validated against the CURRENT definition and converted in one step. A value the model
                 // returned in the wrong shape, or outside a Select's options, is skipped and logged rather
                 // than stored - the same "store nothing, say so" trade v2 made, now with one gate instead
                 // of a validator here and a converter in the entity.
                 if (!FlexFieldValueReader.TryRead(
-                        value.Value, currentDefinition.FieldTypeName, currentDefinition.Configuration,
+                        value!.Value, currentDefinition.FieldTypeName, currentDefinition.Configuration,
                         _fieldTypeExtensionRegistry, out var read))
                 {
                     _logger.LogWarning(
@@ -404,13 +422,29 @@ public class FieldExtractionService : ITransientDependency
             // Where each written value was found, as ranges of the Markdown the model read. Only while the document still
             // holds that Markdown: a correction or a re-parse during the call would make the ranges point at other text.
             // The guards above keep a field's name equal to its descriptor's, so the model's keys are the bag's keys.
-            document.SetFieldSources(string.Equals(document.Markdown, markdown, StringComparison.Ordinal)
-                ? FieldSourceLocator.Locate(
-                    markdown,
-                    extractionResult.Sources
-                        .Where(pair => fieldValues.ContainsKey(pair.Key))
-                        .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal))
-                : null);
+            var fieldSources = new Dictionary<string, IReadOnlyList<DocumentTextSpan>>(StringComparer.Ordinal);
+            if (string.Equals(document.Markdown, markdown, StringComparison.Ordinal))
+            {
+                foreach (var (name, spans) in FieldSourceLocator.Locate(
+                             markdown,
+                             extractionResult.Sources
+                                 .Where(pair => fieldValues.ContainsKey(pair.Key) && !heldFieldNames.Contains(pair.Key))
+                                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)))
+                {
+                    fieldSources[name] = spans;
+                }
+            }
+
+            // A held value keeps the sources it had, which the aggregate has kept valid for the current Markdown.
+            foreach (var name in heldFieldNames)
+            {
+                if (document.FieldSources.TryGetValue(name, out var spans))
+                {
+                    fieldSources[name] = spans;
+                }
+            }
+
+            document.SetFieldSources(fieldSources);
 
             // #527 §5/§7: persist the field validation warnings atomically with SetFlexFields below. The
             // workflow keys warnings by field name and has already normalized them (§3); here each is resolved
@@ -420,8 +454,28 @@ public class FieldExtractionService : ITransientDependency
             // collection, so a clean re-extraction (no warnings) clears both and lets the document re-derive to Ready.
             var descriptorsByName = descriptors.ToDictionary(d => d.Name, StringComparer.Ordinal);
             var warnings = new List<FieldValidationWarning>();
+
+            // What a cut-off answer did not settle keeps the warning the document has: every warning when the answer's
+            // own warning list did not close, otherwise those of the fields whose values were not finished.
+            var unsettledFieldIds = extractionResult.ValidationWarningsUnfinished
+                ? currentDefinitionsById.Keys.ToHashSet()
+                : descriptors.Where(d => unfinished.Contains(d.Name)).Select(d => d.FieldId).ToHashSet();
+            foreach (var held in document.FieldValidationWarnings)
+            {
+                if (unsettledFieldIds.Contains(held.FieldDefinitionId) && currentDefinitionsById.ContainsKey(held.FieldDefinitionId))
+                {
+                    warnings.Add(new FieldValidationWarning(held.FieldDefinitionId, held.Message));
+                }
+            }
+
             foreach (var w in extractionResult.ValidationWarnings)
             {
+                // A warning about a value the answer did not finish judges a value the document does not get.
+                if (descriptorsByName.TryGetValue(w.FieldName, out var warned) && unsettledFieldIds.Contains(warned.FieldId))
+                {
+                    continue;
+                }
+
                 // The same in-flight guards the values pass through, so a warning whose field was removed,
                 // renamed, or retyped mid-call is discarded rather than left as stale review state.
                 if (!descriptorsByName.TryGetValue(w.FieldName, out var descriptor)
@@ -442,8 +496,10 @@ public class FieldExtractionService : ITransientDependency
 
             // #491: this run reached the LLM, so an earlier declined run has been superseded. The decline is
             // superseded by a raised MaxFieldExtractionMarkdownLength, an operator Markdown correction (#555), or a
-            // re-parse (#660).
-            document.SetReviewReason(DocumentReviewReasons.FieldExtractionIncomplete, present: false);
+            // re-parse (#660). An answer cut off at the output limit left the field set incomplete in the same sense:
+            // the document is held from Ready until an operator enters what is missing and confirms it, or a later
+            // run finishes.
+            document.SetReviewReason(DocumentReviewReasons.FieldExtractionIncomplete, present: extractionResult.IsIncomplete);
 
             // #284: evaluate required-field missingness at the moment extraction completes and materialize MissingRequiredFields.
             // Read paths cannot know whether extraction already ran, so this must be decided at write time.
@@ -482,6 +538,17 @@ public class FieldExtractionService : ITransientDependency
             await _indexManager.SynchronizeAsync(document);
 
             await writeUow.CompleteAsync();
+
+            if (extractionResult.IsIncomplete)
+            {
+                _logger.LogWarning(
+                    "Field extraction for document {DocumentId} is incomplete: the answer was cut off at the output limit. " +
+                    "{NonNullCount}/{TotalCount} fields hold a value ({HeldCount} kept from before); the document carries the " +
+                    "blocking FieldExtractionIncomplete review reason and is withheld from Ready.",
+                    documentId, fieldCount, definitions.Count, heldFieldNames.Count);
+
+                return FieldExtractionResult.Incomplete(fieldCount);
+            }
 
             _logger.LogInformation(
                 "Field extraction for document {DocumentId} produced {NonNullCount}/{TotalCount} non-null fields.",

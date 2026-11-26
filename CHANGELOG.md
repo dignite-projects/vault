@@ -502,6 +502,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A field-extraction answer cut off at the output limit no longer empties the document's fields.** A `Table` field
+  over a long table (a 114-row bank statement) could run the model past `MaxFieldExtractionOutputTokens`; the cut-off
+  JSON did not parse, every field came back empty (dates, balances and bank name too), the empty set replaced the
+  document's values, and the document went Ready. Now the fields that finished before the cut are written, the others
+  keep the values the document had (a table is never stored with only its first rows), and the document gets the
+  blocking `FieldExtractionIncomplete` review reason, which so far meant only "too long to send". The schema asks for
+  short fields first and tables last, then for warnings before the quoted sources, so a provider that writes in schema
+  order loses the fewest fields; an answer cut off only in its sources counts as complete. A schema with a `Table`
+  field now always asks for the full `MaxFieldExtractionOutputTokens`, where before the table was budgeted like a
+  number. See [Answers Cut Off at the Output Limit](docs/en/documents/document-types.md#answers-cut-off-at-the-output-limit).
+
 - **A searchable scan on a page at `/Rotate 90` or `270` is no longer read twice.** The full-page scan under the
   page's OCR text layer was measured by its own sides, which are swapped on such a page, so it missed the coverage
   bar: it went to the OCR engine as a figure, and the page's text came out twice in the Markdown.

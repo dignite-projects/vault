@@ -27,6 +27,25 @@ public sealed record FieldExtractionWorkflowResult(
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Sources { get; init; } =
         Sources ?? new Dictionary<string, IReadOnlyList<string>>();
+
+    /// <summary>
+    /// The fields whose value the answer did not finish: it was cut off at the output limit before or inside them. They
+    /// read as <c>null</c> in <see cref="Values"/>, but unlike a <c>null</c> the model wrote, nothing is known about them,
+    /// so the caller keeps what the document already holds. Empty for an answer that finished.
+    /// </summary>
+    public IReadOnlySet<string> UnfinishedFields { get; init; } = new HashSet<string>();
+
+    /// <summary>
+    /// The answer was cut off before its warning list closed, so <see cref="ValidationWarnings"/> is empty for want of an
+    /// answer, not because every value passed.
+    /// </summary>
+    public bool ValidationWarningsUnfinished { get; init; }
+
+    /// <summary>
+    /// The answer was cut off before it settled every value and warning: the field set it leaves is not the document's
+    /// full extraction. Sources cut off alone do not count, because they only locate values.
+    /// </summary>
+    public bool IsIncomplete => UnfinishedFields.Count > 0 || ValidationWarningsUnfinished;
 }
 
 /// <summary>

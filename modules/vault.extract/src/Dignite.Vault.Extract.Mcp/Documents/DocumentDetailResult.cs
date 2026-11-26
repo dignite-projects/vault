@@ -57,8 +57,9 @@ public sealed record DocumentDetailResult
 
     /// <summary>
     /// Whether the last field-extraction run <b>declined</b> to read this document because its body exceeded the
-    /// host's size ceiling (#491). When true, <see cref="ExtractedFields"/> is either empty or carries values from an
-    /// earlier, in-budget run — in both cases it is <b>not current</b>, and its emptiness says nothing about the
+    /// host's size ceiling (#491), or the model's answer was cut off at the output limit before it settled every value.
+    /// When true, <see cref="ExtractedFields"/> is empty, carries values from an earlier run, or carries only the fields
+    /// the cut-off answer finished — in every case it is <b>not current</b>, and its emptiness says nothing about the
     /// document's content. Without this flag a client cannot tell that apart from "this document type declares no
     /// fields at all", which is exactly why such a document is withheld from <c>DocumentReadyEto</c>.
     /// <para>

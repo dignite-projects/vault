@@ -1,6 +1,7 @@
 using Dignite.Abp.FlexFields;
 using Dignite.Abp.FlexFields.CKEditor;
 using Dignite.Abp.FlexFields.Date;
+using Dignite.Abp.FlexFields.Table;
 using Dignite.Abp.FlexFields.Text;
 using Dignite.Vault.Extract.FlexFields.Tags;
 using System;
@@ -567,7 +568,7 @@ public class FieldExtractionWorkflow_Tests
     {
         // finish_reason=length with an incomplete (unterminated) JSON body — the exact shape observed against a
         // real multi-page document once its AllowMultiple field grew past the provider's silent default cap.
-        // ExtractAsync must not throw; it degrades through the existing non-JSON-output fallback (all-null).
+        // ExtractAsync must not throw, and the cut field is unfinished rather than a null the model wrote.
         var (workflow, _) = CreateWorkflowCapturingOptions(
             """{ "values": { "amount": 1""",
             ChatFinishReason.Length);
@@ -575,6 +576,199 @@ public class FieldExtractionWorkflow_Tests
         var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
 
         result.Values["amount"].ShouldBeNull();
+        result.UnfinishedFields.ShouldBe(["amount"]);
+        result.IsIncomplete.ShouldBeTrue();
+    }
+
+    // ─── an answer cut off at the output limit ───
+    // 2026-11-26, a bank statement with a 114-row transaction table: Qwen3-32B (8,192 output tokens) ran out on every run
+    // and Qwen3-30B-A3B-Instruct (16,384) on two of three, and the unparseable answer nulled every field, the scalars too.
+
+    private static readonly FieldConfigurationDictionary TransactionColumns = new TableConfiguration
+    {
+        Columns = new List<InlineFieldDefinition>
+        {
+            new() { Name = "date", DisplayName = "Date", FieldTypeName = TextFieldType.ControlName, Required = true },
+            new() { Name = "amount", DisplayName = "Amount", FieldTypeName = "Number" }
+        }
+    }.ConfigurationDictionary;
+
+    private static FieldExtractionDescriptor[] StatementFields() =>
+    [
+        Field("transactions", TableFieldType.ControlName, TransactionColumns),
+        Field("bank_name", TextFieldType.ControlName),
+        Field("closing_balance", "Number")
+    ];
+
+    [Fact]
+    public async Task A_cut_off_answer_keeps_the_values_that_closed_and_none_of_the_cut_table()
+    {
+        var (workflow, _) = CreateWorkflowCapturingOptions(
+            """
+            { "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567, "transactions": [
+              { "values": { "date": "2026-10-01", "amount": 12000 } },
+              { "values": { "date": "2026-10-0
+            """,
+            ChatFinishReason.Length);
+
+        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        result.Values["bank_name"]!.Value.GetString().ShouldBe("三井住友銀行");
+        result.Values["closing_balance"]!.Value.GetDecimal().ShouldBe(1234567m);
+        result.Values["transactions"].ShouldBeNull();
+        result.UnfinishedFields.ShouldBe(["transactions"]);
+        result.ValidationWarningsUnfinished.ShouldBeTrue();
+        result.IsIncomplete.ShouldBeTrue();
+    }
+
+    /// <summary>A number the cut fell right after may have had more digits: "12" could be the start of "1234567".</summary>
+    [Fact]
+    public async Task A_number_at_the_cut_is_unfinished_not_read_short()
+    {
+        var (workflow, _) = CreateWorkflowCapturingOptions(
+            """{ "values": { "bank_name": "三井住友銀行", "closing_balance": 12""",
+            ChatFinishReason.Length);
+
+        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        result.Values["bank_name"]!.Value.GetString().ShouldBe("三井住友銀行");
+        result.Values["closing_balance"].ShouldBeNull();
+        result.UnfinishedFields.ShouldBe(["closing_balance", "transactions"], ignoreOrder: true);
+    }
+
+    /// <summary>The order the measured provider wrote the answer in: sources and warnings first, values last.</summary>
+    [Fact]
+    public async Task A_cut_off_answer_written_values_last_keeps_its_sources_and_warnings()
+    {
+        var (workflow, _) = CreateWorkflowCapturingOptions(
+            """
+            { "sources": { "bank_name": ["銀行名 三井住友銀行"], "closing_balance": ["残高 1,234,567"], "transactions": ["10/01 12,000"] },
+              "validationWarnings": [ { "fieldName": "closing_balance", "message": "残高が取引の合計と一致しません。" } ],
+              "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567, "transactions": [ { "values": { "date": "2026-10-01"
+            """,
+            ChatFinishReason.Length);
+
+        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        result.Values["closing_balance"]!.Value.GetDecimal().ShouldBe(1234567m);
+        result.UnfinishedFields.ShouldBe(["transactions"]);
+        result.ValidationWarningsUnfinished.ShouldBeFalse();
+        result.ValidationWarnings.Single().FieldName.ShouldBe("closing_balance");
+        result.Sources["bank_name"].ShouldBe(["銀行名 三井住友銀行"]);
+    }
+
+    /// <summary>
+    /// Every value finished but the warnings did not: a balance check that failed may be among the missing warnings, so
+    /// the extraction is still incomplete.
+    /// </summary>
+    [Fact]
+    public async Task An_answer_cut_off_inside_its_warnings_has_every_value_and_is_still_incomplete()
+    {
+        var (workflow, _) = CreateWorkflowCapturingOptions(
+            """
+            { "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567,
+                          "transactions": [ { "values": { "date": "2026-10-01" } } ] },
+              "validationWarnings": [ { "fieldName": "closing_balance", "message": "残高が
+            """,
+            ChatFinishReason.Length);
+
+        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        result.Values["bank_name"]!.Value.GetString().ShouldBe("三井住友銀行");
+        result.Values["transactions"]!.Value.GetArrayLength().ShouldBe(1);
+        result.UnfinishedFields.ShouldBeEmpty();
+        result.ValidationWarnings.ShouldBeEmpty();
+        result.ValidationWarningsUnfinished.ShouldBeTrue();
+        result.IsIncomplete.ShouldBeTrue();
+    }
+
+    /// <summary>Sources only locate values: an answer cut off inside them has still settled every value and warning.</summary>
+    [Fact]
+    public async Task An_answer_cut_off_inside_its_sources_is_complete()
+    {
+        var (workflow, _) = CreateWorkflowCapturingOptions(
+            """
+            { "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567, "transactions": [] },
+              "validationWarnings": [],
+              "sources": { "bank_name": ["銀行名 三井住友銀行"], "closing_balance": ["残高 1,23
+            """,
+            ChatFinishReason.Length);
+
+        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        result.IsIncomplete.ShouldBeFalse();
+        result.Values["transactions"]!.Value.GetArrayLength().ShouldBe(0);
+        result.Sources.Keys.ShouldBe(["bank_name"]);
+    }
+
+    [Theory]
+    [InlineData("")]                                              // reasoning used up the whole output allowance
+    [InlineData("{\n\n\n\n            ")]                         // Qwen3's whitespace runaway after the opening brace
+    [InlineData("""{ "values": { "bank_name": "三井""")]           // cut inside the first value
+    [InlineData("""{ "values": { "bank_name": "三井住友銀行", oops""")] // ran off into invalid text: nothing after the last close
+    public async Task A_cut_off_answer_leaves_unfinished_every_field_whose_value_did_not_close(string answer)
+    {
+        var (workflow, _) = CreateWorkflowCapturingOptions(answer, ChatFinishReason.Length);
+
+        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        var finished = StatementFields().Select(f => f.Name).Except(result.UnfinishedFields).ToList();
+        finished.ShouldBe(answer.Contains("oops") ? new[] { "bank_name" } : Array.Empty<string>());
+        finished.ShouldAllBe(name => result.Values[name] != null);
+        result.IsIncomplete.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task The_schema_asks_for_values_then_warnings_then_sources_and_a_table_last()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        List<ChatMessage>? sent = null;
+        ChatOptions? options = null;
+        chatClient.GetResponseAsync(
+                Arg.Do<IEnumerable<ChatMessage>>(messages => sent = messages.ToList()),
+                Arg.Do<ChatOptions?>(o => options = o),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "{ \"values\": {} }")])));
+        var workflow = new FieldExtractionWorkflow(
+            chatClient,
+            NullLogger<FieldExtractionWorkflow>.Instance,
+            new FieldSchemaPromptBudgetGuard(Options.Create(new VaultExtractBehaviorOptions())),
+            TestFieldTypeRegistry.Default,
+            Options.Create(new VaultExtractBehaviorOptions()));
+
+        await workflow.ExtractAsync(StatementFields(), "# doc");
+
+        var schema = ((ChatResponseFormatJson)options!.ResponseFormat!).Schema!.Value;
+        schema.GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .ShouldBe(["values", "validationWarnings", "sources"]);
+        schema.GetProperty("properties").GetProperty("values").GetProperty("properties").EnumerateObject()
+            .Select(p => p.Name).Last().ShouldBe("transactions");
+
+        var schemaMessage = sent![1].Text;
+        schemaMessage.IndexOf("\"transactions\"", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(schemaMessage.IndexOf("\"closing_balance\"", StringComparison.Ordinal));
+        schemaMessage.IndexOf("\"transactions\"", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(schemaMessage.IndexOf("\"bank_name\"", StringComparison.Ordinal));
+    }
+
+    /// <summary>A table has no row limit, so a schema with one asks for all the output the host allows.</summary>
+    [Fact]
+    public async Task MaxOutputTokens_for_a_table_is_the_hosts_ceiling()
+    {
+        var ceiling = new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = 163_840 }; // DeepSeek-V3 on SiliconFlow
+
+        var (scalarWorkflow, scalarOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "closing_balance": 1 }, "validationWarnings": [] }""", behaviorOptions: ceiling);
+        await scalarWorkflow.ExtractAsync(new[] { Field("closing_balance", "Number") }, "# doc");
+
+        var (tableWorkflow, tableOptions) = CreateWorkflowCapturingOptions(
+            """{ "values": { "closing_balance": 1, "transactions": [] }, "validationWarnings": [] }""", behaviorOptions: ceiling);
+        await tableWorkflow.ExtractAsync(
+            new[] { Field("closing_balance", "Number"), Field("transactions", TableFieldType.ControlName, TransactionColumns) },
+            "# doc");
+
+        scalarOptions()!.MaxOutputTokens!.Value.ShouldBeLessThan(163_840);
+        tableOptions()!.MaxOutputTokens.ShouldBe(163_840);
     }
 
     /// <summary>

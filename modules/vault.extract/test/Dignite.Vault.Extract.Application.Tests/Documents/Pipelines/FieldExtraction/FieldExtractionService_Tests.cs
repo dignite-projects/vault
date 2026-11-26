@@ -307,6 +307,121 @@ public class FieldExtractionService_Tests
         doc.FieldSources.ShouldBeEmpty();
     }
 
+    // ─── an answer cut off at the output limit ───
+
+    private const string CutOffMarkdown = "# 請求書\n\n合計 1,500 円\n\nメモ 前回の記載";
+
+    private static FieldExtractionWorkflowResult CutOffAnswer(
+        IReadOnlyList<FieldValidationWarningResult>? warnings = null,
+        Dictionary<string, IReadOnlyList<string>>? sources = null) =>
+        new(
+            new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement, ["memo"] = null },
+            warnings ?? Array.Empty<FieldValidationWarningResult>(),
+            sources)
+        {
+            UnfinishedFields = new HashSet<string> { "memo" }
+        };
+
+    [Fact]
+    public async Task A_cut_off_answer_writes_its_finished_fields_keeps_the_rest_and_holds_the_document_from_Ready()
+    {
+        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
+        doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m, ["memo"] = "前回の記載" });
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CutOffAnswer());
+
+        var result = await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        result.Outcome.ShouldBe(FieldExtractionOutcome.Incomplete);
+        doc.FlexFields["amount"].ShouldBe(1500m);
+        doc.FlexFields["memo"].ShouldBe("前回の記載");
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldExtractionIncomplete).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_field_a_cut_off_answer_did_not_finish_keeps_its_sources()
+    {
+        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
+        doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m, ["memo"] = "前回の記載" });
+        var memoSpan = new DocumentTextSpan(CutOffMarkdown.IndexOf("メモ", StringComparison.Ordinal), 8);
+        doc.SetFieldSources(new Dictionary<string, IReadOnlyList<DocumentTextSpan>> { ["memo"] = [memoSpan] });
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CutOffAnswer(sources: new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["amount"] = ["合計 1,500 円"],
+                ["memo"] = ["請求書"]  // quoted before the cut, for a value the document does not get
+            }));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FieldSources["memo"].ShouldBe([memoSpan]);
+        doc.FieldSources["amount"].ShouldBe([new DocumentTextSpan(CutOffMarkdown.IndexOf("合計", StringComparison.Ordinal), 10)]);
+    }
+
+    [Fact]
+    public async Task A_source_quoted_for_a_field_the_cut_off_answer_did_not_finish_is_not_recorded()
+    {
+        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
+        doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m, ["memo"] = "前回の記載" });
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CutOffAnswer(sources: new Dictionary<string, IReadOnlyList<string>> { ["memo"] = ["請求書"] }));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FlexFields["memo"].ShouldBe("前回の記載");
+        doc.FieldSources.ContainsKey("memo").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_cut_off_answer_replaces_only_the_warnings_of_the_fields_it_finished()
+    {
+        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
+        doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m, ["memo"] = "前回の記載" });
+        doc.ReplaceFieldValidationWarnings(
+        [
+            new FieldValidationWarning(FieldId("amount"), "previous amount warning"),
+            new FieldValidationWarning(FieldId("memo"), "previous memo warning")
+        ]);
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CutOffAnswer(warnings:
+            [
+                new FieldValidationWarningResult("amount", "new amount warning"),
+                new FieldValidationWarningResult("memo", "a warning about a value the document does not get")
+            ]));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FieldValidationWarnings.ToDictionary(w => w.FieldDefinitionId, w => w.Message).ShouldBe(
+            new Dictionary<Guid, string>
+            {
+                [FieldId("amount")] = "new amount warning",
+                [FieldId("memo")] = "previous memo warning"
+            },
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task A_cut_off_answer_whose_warning_list_did_not_close_keeps_every_warning_and_blocks()
+    {
+        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
+        doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m });
+        doc.ReplaceFieldValidationWarnings([new FieldValidationWarning(FieldId("amount"), "previous amount warning")]);
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FieldExtractionWorkflowResult(
+                new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement, ["memo"] = null },
+                Array.Empty<FieldValidationWarningResult>())
+            {
+                ValidationWarningsUnfinished = true
+            });
+
+        var result = await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        result.Outcome.ShouldBe(FieldExtractionOutcome.Incomplete);
+        doc.FlexFields["amount"].ShouldBe(1500m);
+        doc.FieldValidationWarnings.Single().Message.ShouldBe("previous amount warning");
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldExtractionIncomplete).ShouldBeTrue();
+    }
+
     // ─── helpers ───────────────────────────────────────────────────────────
 
     private Document ArrangeAmountAndMemo(string markdown)

@@ -121,9 +121,10 @@ public class VaultExtractBehaviorOptions
     /// </para>
     /// <para>
     /// Set it to the structured model's maximum output tokens. It is a ceiling the model normally stops far short of;
-    /// a response that genuinely needs more ends with finish reason <c>Length</c>, which the workflow logs and
-    /// degrades (the fields that did not finish parse as null) instead of failing the call. Default 16,384. Must be
-    /// greater than zero.
+    /// a response that genuinely needs more (a long Table field) ends with finish reason <c>Length</c>. The fields that
+    /// finished before the cut are written, the others keep their earlier values, and the document gets the blocking
+    /// <c>DocumentReviewReasons.FieldExtractionIncomplete</c> review reason. A schema with a Table field always asks for
+    /// this ceiling, because a table has no row limit. Default 16,384. Must be greater than zero.
     /// </para>
     /// </summary>
     public int MaxFieldExtractionOutputTokens { get; set; } = 16_384;
