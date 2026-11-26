@@ -769,8 +769,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live in these tables, and none of their old digests was a verified checksum.
 
   ```sql
-  DELETE FROM BlobFileDescriptors WHERE IsDeleted = 1;  -- their bytes were already removed by the old version
-  UPDATE BlobFileDescriptors SET Hash = NULL;           -- 64-character digests do not fit the new column
+  DELETE FROM BlobFileDescriptors WHERE IsDeleted = 1;            -- their bytes were already removed by the old version
+  ALTER TABLE BlobFileDescriptors ALTER COLUMN Hash nvarchar(64) NULL;  -- still required here; the migration makes it optional
+  UPDATE BlobFileDescriptors SET Hash = NULL;                     -- 64-character digests do not fit the new column
   ```
 
 - **Document files move to Blob Management.** Back up the BLOB storage, then run `--migrate-database` as usual and
