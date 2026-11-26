@@ -252,6 +252,13 @@ public interface IDocumentRepository : IRepository<Document, Guid>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Whether any document of the current layer, in the recycle bin or not, still names <paramref name="blobName"/> in
+    /// Extract's own container. Sub-documents spawned under #481, or given their source's file by its backfill, name their
+    /// source's blob, and #487 left them as they were: deleting the blob for one of them deletes it for the other.
+    /// </summary>
+    Task<bool> AnyNamingBlobAsync(string blobName, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes the document's row for good, in the recycle bin or not (<c>IMultiTenant</c> stays on). With
     /// <paramref name="concurrencyStamp"/>, only the row as it was read: one changed since, or already gone, is not
     /// deleted and <see cref="Volo.Abp.Data.AbpDbConcurrencyException"/> is thrown, so the caller never reclaims a file the

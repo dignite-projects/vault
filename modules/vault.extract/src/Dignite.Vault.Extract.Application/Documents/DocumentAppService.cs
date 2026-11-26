@@ -719,9 +719,9 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
     /// <para>
     /// #508 guard, the strictly stronger twin of <see cref="DeleteAsync"/>'s: this blocks while <b>any</b>
     /// sub-document exists, including ones already in the recycle bin. Hard-deleting the source destroys the blob
-    /// its children reach through <see cref="Document.OriginDocumentId"/> (they carry no
-    /// <see cref="Document.FileOrigin"/> of their own since #487, and #487 also dropped the shared-blob reference
-    /// check on the grounds that no shared blobs remain) — and a recycle-bin child is restorable, so restoring it
+    /// its children reach through <see cref="Document.OriginDocumentId"/> (one seeded from its slice carries no
+    /// <see cref="Document.FileOrigin"/> of its own; one spawned under #481 may name the source's blob, which
+    /// <see cref="DocumentFileStore.DeletePermanentlyAsync"/> keeps while any document names it) — and a recycle-bin child is restorable, so restoring it
     /// afterwards would yield a document that can never reach its source. The existence check therefore runs
     /// inside the <see cref="ISoftDelete"/>-disabled scope below, which is exactly what makes it count recycle-bin
     /// children; <c>IMultiTenant</c> stays on, so it never leaves this document's layer.

@@ -143,6 +143,52 @@ public class LegacyDocumentFileMove_Tests : VaultExtractTestBase<DocumentSubmiss
         (await LoadOriginAsync(documentId)).FileId.ShouldBe(files.Items[0].Id);
     }
 
+    /// <summary>
+    /// A sub-document spawned under #481, or given its source's file by #481's backfill, names its source's blob, and #487
+    /// left it so. Each of the two gets a file of its own, and the blob goes only with the last one that names it.
+    /// </summary>
+    [Fact]
+    public async Task A_blob_two_documents_name_stays_until_the_second_one_has_moved()
+    {
+        var (sourceId, blobName) = await ArrangeLegacyDocumentAsync(Pdf);
+        var (childId, _) = await ArrangeLegacyDocumentAsync(Pdf, sharedBlobName: blobName);
+
+        (await _mover.MoveAsync(childId)).Outcome.ShouldBe(LegacyDocumentFileMoveOutcome.Moved);
+        (await _legacyContainer.ExistsAsync(blobName)).ShouldBeTrue();
+
+        (await _mover.MoveAsync(sourceId)).Outcome.ShouldBe(LegacyDocumentFileMoveOutcome.Moved);
+        (await _legacyContainer.ExistsAsync(blobName)).ShouldBeFalse();
+
+        var source = (await LoadOriginAsync(sourceId)).FileId!.Value;
+        var child = (await LoadOriginAsync(childId)).FileId!.Value;
+        source.ShouldNotBe(child);
+        (await ReadAsync(source)).ShouldBe(Pdf);
+        (await ReadAsync(child)).ShouldBe(Pdf);
+    }
+
+    [Fact]
+    public async Task A_permanent_delete_keeps_a_blob_another_document_names()
+    {
+        var (sourceId, blobName) = await ArrangeLegacyDocumentAsync(Pdf);
+        var (childId, _) = await ArrangeLegacyDocumentAsync(Pdf, deleted: true, sharedBlobName: blobName);
+        var files = GetRequiredService<DocumentFileStore>();
+
+        // As DocumentAppService.PermanentDeleteAsync does it: the row, then its file.
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await _documentRepository.HardDeleteAsync(childId);
+            await files.DeletePermanentlyAsync(new FileOrigin(blobName, "uploader", "application/pdf", Sha256Hex(Pdf), Pdf.Length));
+        });
+        (await _legacyContainer.ExistsAsync(blobName)).ShouldBeTrue();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await _documentRepository.HardDeleteAsync(sourceId);
+            await files.DeletePermanentlyAsync(new FileOrigin(blobName, "uploader", "application/pdf", Sha256Hex(Pdf), Pdf.Length));
+        });
+        (await _legacyContainer.ExistsAsync(blobName)).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task The_data_seed_starts_a_walk_that_moves_every_file_it_can()
     {
@@ -169,11 +215,11 @@ public class LegacyDocumentFileMove_Tests : VaultExtractTestBase<DocumentSubmiss
     }
 
     private async Task<(Guid DocumentId, string BlobName)> ArrangeLegacyDocumentAsync(
-        byte[] recorded, bool deleted = false, bool storeBlob = true, byte[]? storedBytes = null)
+        byte[] recorded, bool deleted = false, bool storeBlob = true, byte[]? storedBytes = null, string? sharedBlobName = null)
     {
         var documentId = Guid.NewGuid();
-        var blobName = $"{Guid.NewGuid():N}.pdf";
-        var stored = storeBlob ? storedBytes ?? recorded : null;
+        var blobName = sharedBlobName ?? $"{Guid.NewGuid():N}.pdf";
+        var stored = storeBlob && sharedBlobName is null ? storedBytes ?? recorded : null;
         if (stored != null)
         {
             await _legacyContainer.SaveAsync(blobName, stored);

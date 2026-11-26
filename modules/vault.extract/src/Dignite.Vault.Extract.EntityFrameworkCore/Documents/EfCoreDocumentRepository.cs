@@ -509,6 +509,17 @@ public class EfCoreDocumentRepository
         }
     }
 
+    public virtual async Task<bool> AnyNamingBlobAsync(string blobName, CancellationToken cancellationToken = default)
+    {
+        using (DataFilter.Disable<ISoftDelete>())
+        {
+            var dbSet = await GetDbSetAsync();
+            return await dbSet.AnyAsync(
+                d => d.FileOrigin != null && d.FileOrigin.BlobName == blobName,
+                GetCancellationToken(cancellationToken));
+        }
+    }
+
     public virtual async Task<List<DuplicateReconciliationRow>> GetDuplicateReconciliationPageAsync(
         Guid documentTypeId,
         Guid? afterId,
