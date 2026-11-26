@@ -16,7 +16,7 @@ export type LayoutBoxKind =
   | 'image'
   | 'field';
 
-/** A region of a page: its corners in PDF points from the page's bottom-left corner. */
+/** A region of a page: its corners in PDF points from the bottom-left corner of the page as it is shown. */
 export interface LayoutBox {
   pageNumber: number;
   kind: LayoutBoxKind;
@@ -50,6 +50,46 @@ export interface PageRegion {
 
 /** The most regions a link outlines; more are ignored. */
 export const MAX_LINKED_REGIONS = 64;
+
+/** A rectangle on a rendered page, in its pixels from the top-left corner. */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Where a layout box lands on a page rendered at `rendered` size. The PDF engine (PdfPig) reads a page as it is shown:
+ * its points start at the bottom-left corner of the visible page, after the page's CropBox and its /Rotate, and the
+ * page's width and height are the visible page's. So the box scales onto the rendered page as it is; pdf.js's viewport
+ * transform would crop and rotate it a second time. `page` is the layout's size of the page, or else pdf.js's size of
+ * the displayed page at scale 1, which is the same frame.
+ */
+export function boxOnScreen(
+  box: Pick<LayoutBox, 'left' | 'bottom' | 'right' | 'top'>,
+  page: { width: number; height: number },
+  rendered: { width: number; height: number },
+): ScreenRect {
+  const sx = rendered.width / page.width;
+  const sy = rendered.height / page.height;
+  return {
+    x: box.left * sx,
+    y: (page.height - box.top) * sy,
+    w: (box.right - box.left) * sx,
+    h: (box.top - box.bottom) * sy,
+  };
+}
+
+/** Where a region in fractions of the page (a Vault Index chunk's) lands on a page rendered at `rendered` size. */
+export function regionOnScreen(region: PageRegion, rendered: { width: number; height: number }): ScreenRect {
+  return {
+    x: region.left * rendered.width,
+    y: region.top * rendered.height,
+    w: region.width * rendered.width,
+    h: region.height * rendered.height,
+  };
+}
 
 /**
  * Reads the `regions` query parameter of the file preview: boxes `page,left,top,width,height` joined by `;`, such as

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_LINKED_REGIONS, layoutErrorCode, readLayout, readRegionsParam } from './layout-boxes';
+import {
+  MAX_LINKED_REGIONS,
+  boxOnScreen,
+  layoutErrorCode,
+  readLayout,
+  readRegionsParam,
+  regionOnScreen,
+} from './layout-boxes';
 
 const square = (left: number, bottom: number, right: number, top: number) => [
   [left, top],
@@ -134,5 +141,39 @@ describe('readRegionsParam', () => {
   it('reads at most the cap', () => {
     const many = Array.from({ length: MAX_LINKED_REGIONS + 5 }, () => '1,0,0,0.1,0.1').join(';');
     expect(readRegionsParam(many).length).toBe(MAX_LINKED_REGIONS);
+  });
+});
+
+describe('boxOnScreen', () => {
+  // Measured on a PDF whose page is 600 x 800 points, cropped to [50 100 550 700] and turned by /Rotate 90: pdf.js shows
+  // it 600 x 500, and PdfPig reads "ALPHA" at 60,420 - 125.6,434.4 on that page as shown. pdf.js draws the word's left
+  // edge at 10% of the page width and its baseline 16% from the top. Through pdf.js's viewport transform, as the viewer
+  // used to draw it, the same box landed at 53% across, turned on its side.
+  const page = { width: 600, height: 500 };
+  const alpha = { left: 60, bottom: 420, right: 125.6, top: 434.4 };
+
+  it('scales a box onto a rotated and cropped page as the page is shown', () => {
+    const box = boxOnScreen(alpha, page, { width: 900, height: 750 });
+
+    expect(box.x / 900).toBeCloseTo(0.1, 4);
+    expect((box.y + box.h) / 750).toBeCloseTo(1 - 420 / 500, 4);
+    expect(box.w).toBeCloseTo(98.4, 4);
+    expect(box.h).toBeCloseTo(21.6, 4);
+  });
+
+  it('measures from the top of the page, the origin of the screen', () => {
+    expect(boxOnScreen({ left: 0, bottom: 490, right: 10, top: 500 }, page, page)).toEqual({ x: 0, y: 0, w: 10, h: 10 });
+    expect(boxOnScreen({ left: 590, bottom: 0, right: 600, top: 10 }, page, page)).toEqual({ x: 590, y: 490, w: 10, h: 10 });
+  });
+});
+
+describe('regionOnScreen', () => {
+  it('takes the fractions of the page as it is rendered', () => {
+    expect(regionOnScreen({ page: 1, left: 0.1, top: 0.1309, width: 0.2186, height: 0.0291 }, { width: 900, height: 750 })).toEqual({
+      x: 90,
+      y: 0.1309 * 750,
+      w: 0.2186 * 900,
+      h: 0.0291 * 750,
+    });
   });
 });
