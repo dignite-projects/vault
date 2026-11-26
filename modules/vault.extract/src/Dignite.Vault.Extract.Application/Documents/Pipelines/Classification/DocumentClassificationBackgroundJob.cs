@@ -180,7 +180,12 @@ public class DocumentClassificationBackgroundJob
         bool hasFigures)
     {
         await using var documentLock = await DocumentWriteLock.AcquireAsync(workItem.DocumentId);
-        using var uow = UnitOfWorkManager.Begin(requiresNew: true);
+
+        // One transaction, as a re-parse's complete phase is: a container reclassified to a concrete type withdraws its
+        // sub-documents here (ContainerMarkerClearedEventHandler), and Blob Management saves the withdrawn cuts' recycle
+        // bin moves on its own. Without the transaction those would commit even when this save fails, leaving live
+        // sub-documents whose files are in the recycle bin.
+        using var uow = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: true);
 
         // includeFieldValues:true because the low-confidence path clears type-bound fields (#267
         // invariant), and EF needs the collection present to delete child rows.

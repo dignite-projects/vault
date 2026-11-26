@@ -124,11 +124,11 @@ Every chunk records the pages its text was read from, so a hit or a read can be 
 
 `regions` outlines a chunk on its pages, in reading order: boxes whose origin is the page's top-left corner, each value a fraction of the page's width (`left`, `width`) or height (`top`, `height`), the shape of Amazon Textract's `BoundingBox`. Draw one at `left × renderedWidth`, `top × renderedHeight` on the page at whatever size it is shown. Extract hands Index the region of every element of the Markdown (`DocumentIntegrationDto.Regions`, a table cell rather than its table), and Index joins those under the chunk's range: the cells of a row and a column of rows become one box, a paragraph and the next one under it (up to 3% of the page height below) too, while two columns of text, or text several lines apart, stay separate boxes. A chunk keeps at most 32 boxes; past that, one per page around all of its text there.
 
-`regions` is `null` where the pages are, and also when the parse reported no region: the PDF engine reads each element's place on a text-layer page, while a page read by a vision model (a scan, or a PDF page without usable text) names only the page. Then `firstPage` and `lastPage` are still set.
+`regions` is `null` where the pages are, and also when the parse reported no region: the PDF engine reads each element's place on a text-layer page, while a page read by an OCR engine or a vision model (a scan, or a PDF page without usable text), a slide, or a page of submitted Markdown names only the page. Then `firstPage` and `lastPage` are still set.
 
 ### Content
 
-`content` says what a chunk holds besides running text, as flags: `0` text only, `1` a table, `2` a figure (a transcribed image), `3` both. It is read from the part of the document's Markdown the chunk came from, since the chunker rewrites tables and figures: a GFM table or an HTML `<table>` counts as a table, a `<figure>` block (Azure Document Intelligence's figure markup, which Extract writes for an image) as a figure. It does not depend on a layout, and is `null` only for a chunk whose text was not found.
+`content` says what a chunk holds besides running text, as flags: `0` text only, `1` a table, `2` a figure (a transcribed image), `3` both. It is read from the part of the document's Markdown the chunk came from, since the chunker rewrites tables and figures: a GFM table or an HTML `<table>` counts as a table, a `<figure>` block (Azure Document Intelligence's figure markup, which Extract writes for an image) as a figure. It does not depend on a layout, and is `null` for a chunk whose text was not found, and for a chunk indexed before `content` existed until its document is next synchronized.
 
 ## Field values
 

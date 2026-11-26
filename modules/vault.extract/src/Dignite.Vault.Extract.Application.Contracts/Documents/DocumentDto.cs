@@ -10,7 +10,8 @@ namespace Dignite.Vault.Extract.Documents;
 public class DocumentDto : EntityDto<Guid>
 {
     public Guid? TenantId { get; set; }
-    public FileOriginDto FileOrigin { get; set; } = default!;
+    /// <summary>The document's original file; <c>null</c> for a document submitted as text without one.</summary>
+    public FileOriginDto? FileOrigin { get; set; }
 
     /// <summary>Owning cabinet (#194). null means uncategorized. The frontend maps cabinet names from the cabinet list.</summary>
     public Guid? CabinetId { get; set; }

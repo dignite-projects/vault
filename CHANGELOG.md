@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MCP tool `vault_extract_submit_document`, the MCP server's first write tool. The Markdown becomes the document's text
   and its `<!-- PageBreak -->` lines its pages; a declared type and field values complete classification and field
   extraction without a model call; whatever is left out runs on the server. The document has the usual lifecycle and
-  integration events, no original file, and `DocumentDto.TextOrigin = Submitted` (`Parsed` for every other document).
+  integration events, no original file (`DocumentDto.FileOrigin` and `DocumentListItemDto.FileOrigin` are `null`, and
+  are now declared nullable), and `DocumentDto.TextOrigin = Submitted` (`Parsed` for every other document).
   Needs the upload right for the type plus the new `VaultExtract.Documents.Submit` permission. The MCP tool asks the
   user to confirm first: through the client (elicitation over a Multi Round-Trip Request) where it can, otherwise by
   refusing until `userConfirmed=true`. `vault_extract_list_document_types` takes `includeExtractionSchema` and then
@@ -327,7 +328,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them: in every layer that has any, it queues a low-priority job that copies each file into `extract-files`,
   verified against the hash recorded at upload, points the document at it, and only then deletes the old blob
   (recycle-bin documents included, with their file in the recycle bin). A file that cannot be moved stays where it is,
-  still readable, with a logged reason; the next `--migrate-database` tries it again. `FileOriginDto` is unchanged. See
+  still readable, with a logged reason; the next `--migrate-database` tries it again. A permanent delete that read a
+  document before its file moved deletes nothing and fails with a concurrency conflict (`409`); calling it again
+  deletes the document and its new file. `FileOriginDto` is unchanged. See
   [Original File Storage](docs/en/deployment/deployment.md#original-file-storage) and
   [Moving Older Files](docs/en/deployment/deployment.md#moving-older-files-to-blob-management).
 

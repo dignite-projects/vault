@@ -257,7 +257,7 @@ public class EfCoreDocumentRepository
             .FirstOrDefaultAsync(d => d.Id == id, GetCancellationToken(cancellationToken));
     }
 
-    public virtual async Task HardDeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public virtual async Task HardDeleteAsync(Guid id, string? concurrencyStamp = null, CancellationToken cancellationToken = default)
     {
         // Traverse only soft delete to physically delete already-soft-deleted rows, while preserving the IMultiTenant tenant boundary.
         // Never use IgnoreQueryFilters(), because it would also disable IMultiTenant and allow future callers without app-layer tenant validation
@@ -268,9 +268,20 @@ public class EfCoreDocumentRepository
         using (DataFilter.Disable<ISoftDelete>())
         {
             var dbContext = await GetDbContextAsync();
-            await dbContext.Set<Document>()
-                .Where(d => d.Id == id)
-                .ExecuteDeleteAsync(GetCancellationToken(cancellationToken));
+            var query = dbContext.Set<Document>().Where(d => d.Id == id);
+            if (concurrencyStamp != null)
+            {
+                query = query.Where(d => d.ConcurrencyStamp == concurrencyStamp);
+            }
+
+            var deleted = await query.ExecuteDeleteAsync(GetCancellationToken(cancellationToken));
+
+            // ExecuteDelete skips EF's concurrency check, so the stamp is in the predicate: a row changed since it was
+            // read (its file moved to Blob Management, say) is not deleted on the strength of what was read.
+            if (deleted == 0 && concurrencyStamp != null)
+            {
+                throw new AbpDbConcurrencyException($"Document {id} changed after it was read, or is gone; it was not deleted.");
+            }
         }
     }
 

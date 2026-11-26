@@ -668,6 +668,32 @@ public class DocumentSegmentationJob
     protected const int MaxMovedCharacters = 40;
 
     /// <summary>
+    /// The source's file as the load phase read it or, when that one is gone, the file the source names now: an older
+    /// document's file can move to Blob Management while the split is detected (<c>LegacyDocumentFileMover</c>), and the
+    /// file it left is deleted once the source names the new one.
+    /// </summary>
+    protected virtual async Task<Stream?> OpenSourceFileAsync(
+        DetectionContext context, FileOrigin read, CancellationToken cancellationToken)
+    {
+        var stream = await _documentFiles.OpenOrNullAsync(read, cancellationToken);
+        if (stream is not null)
+        {
+            return stream;
+        }
+
+        FileOrigin? current;
+        using (var uow = _unitOfWorkManager.Begin(requiresNew: true))
+        {
+            current = (await _documentRepository.FindAsync(context.SourceDocumentId, includeDetails: false))?.FileOrigin;
+            await uow.CompleteAsync();
+        }
+
+        return current is not null && (current.FileId != read.FileId || current.BlobName != read.BlobName)
+            ? await _documentFiles.OpenOrNullAsync(current, cancellationToken)
+            : null;
+    }
+
+    /// <summary>
     /// A constituent's own file: its pages cut out of the source's file and stored as a file of this attempt's own, counted
     /// for the source's owner. Two runs that spawn the same segment at once both cut it; the one whose spawn does not
     /// claim the segment deletes its cut, which is never the file the other run's child is being committed with.
@@ -689,7 +715,7 @@ public class DocumentSegmentationJob
         byte[] bytes;
         try
         {
-            await using var stream = await _documentFiles.OpenOrNullAsync(source, cancellationToken);
+            await using var stream = await OpenSourceFileAsync(context, source, cancellationToken);
             if (stream is null)
             {
                 Logger.LogWarning(
