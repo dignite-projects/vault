@@ -318,6 +318,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The file goes to the recycle bin with its document (a sub-document withdrawn by a re-parse or reclassification too),
   comes back with a restore, and is deleted for good with it; it counts toward the tenant's `BlobManagement.StorageSize`,
   and a file whose bytes are not what its extension says is refused (`Dignite.Abp.BlobStoring:ContentTypeMismatch`).
+  A page-range cut Blob Management refuses (over the quota, or switched off for the tenant) leaves that sub-document
+  without a file of its own, seeded from its text. **Whoever holds `BlobManagement.Containers` can list and download
+  every document file**, whatever the document-type permissions say: grant it only to those who may read every document.
   **Every host now installs `Dignite.Abp.BlobManagement.Application` and `.EntityFrameworkCore`** (no longer only to
   take submissions) **and declares the container `extract-files` with the "any" preset**; without it, uploads fail.
   Files stored before name theirs by `FileOrigin.BlobName` in `extract-documents`, and `--migrate-database` moves

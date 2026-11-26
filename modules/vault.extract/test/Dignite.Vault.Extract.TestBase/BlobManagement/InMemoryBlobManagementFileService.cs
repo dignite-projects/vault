@@ -32,8 +32,20 @@ public class InMemoryBlobManagementFileService : IBlobManagementFileService
 
     public int Count => _files.Count;
 
+    /// <summary>
+    /// When set, <see cref="CreateAsync"/> throws it and stores nothing, as Blob Management refuses a file: the tenant is
+    /// over its storage quota (<see cref="BlobManagementErrorCodes.StorageQuotaExceeded"/>), or Blob Management is switched
+    /// off for it.
+    /// </summary>
+    public Exception? Refusal { get; set; }
+
     public Task<BlobManagementFileDto> CreateAsync(CreateBlobManagementFileInput input)
     {
+        if (Refusal != null)
+        {
+            throw Refusal;
+        }
+
         using var content = input.File;
         using var buffer = new MemoryStream();
         content.GetStream().CopyTo(buffer);

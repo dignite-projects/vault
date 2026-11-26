@@ -277,6 +277,8 @@ Grants are stored in **`AbpResourcePermissionGrants`**, an `IMultiTenant` table 
 
 Resource permissions on `Cabinet` or on an individual `Document` are out of scope, and rejected rather than deferred: cabinets are a filing dimension, not a security boundary, and per-document sharing is a different feature with a different resource. Every operation not listed in the table above stays governed by the module-wide permissions in `VaultExtractPermissions`: a caller without the full permission cannot do it at all.
 
+Document files are readable outside this rule. They are kept in Blob Management's container `extract-files`, and Blob Management's management permission (`BlobManagement.Containers`) lists and downloads every file there: the original of every document and the cut of every page-range sub-document, whatever their type or owner. Grant it only to those who may read every document of the tenant. See [Original File Storage](../deployment/deployment.md#original-file-storage).
+
 ## See Also
 
 - [Options and Features](options.md#permissions) — the full permission tree
