@@ -297,6 +297,21 @@ public class Document : FullAuditedAggregateRoot<Guid>, IMultiTenant, IHasFlexFi
         return document;
     }
 
+    /// <summary>
+    /// Moves the document's file from Extract's own container to Blob Management: <see cref="FileOrigin"/> names it by
+    /// <paramref name="fileId"/> from now on, and nothing else about it changes. Only a file still named by
+    /// <see cref="FileOrigin.BlobName"/> moves.
+    /// </summary>
+    public void MoveFileTo(Guid fileId)
+    {
+        if (FileOrigin?.BlobName is null)
+        {
+            throw new InvalidOperationException($"Document {Id} has no file in Extract's own container to move.");
+        }
+
+        FileOrigin = FileOrigin.KeptAs(fileId);
+    }
+
     /// <summary>Records <see cref="SubmittedTextHash"/>; once, and only on a document that has no text yet.</summary>
     public virtual void SetSubmittedTextHash(string hash)
     {

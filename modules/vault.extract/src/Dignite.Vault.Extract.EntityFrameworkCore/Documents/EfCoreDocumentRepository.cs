@@ -482,6 +482,22 @@ public class EfCoreDocumentRepository
             g => g.Count);
     }
 
+    public virtual async Task<List<Guid>> GetIdsWithLegacyFileAsync(
+        Guid? afterId,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        using (DataFilter.Disable<ISoftDelete>())
+        {
+            var dbSet = await GetDbSetAsync();
+            return await ApplyKeysetPage(
+                    dbSet.Where(d => d.FileOrigin != null && d.FileOrigin.BlobName != null),
+                    afterId,
+                    maxCount)
+                .ToListAsync(GetCancellationToken(cancellationToken));
+        }
+    }
+
     public virtual async Task<List<DuplicateReconciliationRow>> GetDuplicateReconciliationPageAsync(
         Guid documentTypeId,
         Guid? afterId,

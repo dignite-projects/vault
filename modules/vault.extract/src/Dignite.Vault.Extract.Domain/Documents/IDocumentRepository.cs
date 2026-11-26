@@ -240,6 +240,17 @@ public interface IDocumentRepository : IRepository<Document, Guid>
         int maxCount,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The documents whose file is still in Extract's own container (<c>FileOrigin.BlobName</c>), to move to Blob
+    /// Management: Ids only, keyset-paged (<c>Id &gt; afterId</c>, ordered by <c>Id</c>, at most
+    /// <paramref name="maxCount"/>). <b>Traverses soft delete</b>: a document in the recycle bin moves too, so it
+    /// still has its file when it is restored. <c>IMultiTenant</c> stays on.
+    /// </summary>
+    Task<List<Guid>> GetIdsWithLegacyFileAsync(
+        Guid? afterId,
+        int maxCount,
+        CancellationToken cancellationToken = default);
+
     Task HardDeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>

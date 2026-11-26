@@ -320,9 +320,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a file whose bytes are not what its extension says is refused (`Dignite.Abp.BlobStoring:ContentTypeMismatch`).
   **Every host now installs `Dignite.Abp.BlobManagement.Application` and `.EntityFrameworkCore`** (no longer only to
   take submissions) **and declares the container `extract-files` with the "any" preset**; without it, uploads fail.
-  Files stored before stay in `extract-documents` under `FileOrigin.BlobName` and are read and deleted there; moving
-  them is a separate step. `FileOriginDto` is unchanged. See
-  [Original File Storage](docs/en/deployment/deployment.md#original-file-storage).
+  Files stored before name theirs by `FileOrigin.BlobName` in `extract-documents`, and `--migrate-database` moves
+  them: in every layer that has any, it queues a low-priority job that copies each file into `extract-files`,
+  verified against the hash recorded at upload, points the document at it, and only then deletes the old blob
+  (recycle-bin documents included, with their file in the recycle bin). A file that cannot be moved stays where it is,
+  still readable, with a logged reason; the next `--migrate-database` tries it again. `FileOriginDto` is unchanged. See
+  [Original File Storage](docs/en/deployment/deployment.md#original-file-storage) and
+  [Moving Older Files](docs/en/deployment/deployment.md#moving-older-files-to-blob-management).
 
 - **BREAKING (`Document.Markdown`): an image is written as Azure Document Intelligence writes a figure.** The text
   read from an embedded image sits in a `<figure>` block, its caption in a `<figcaption>`, instead of between the
@@ -768,6 +772,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DELETE FROM BlobFileDescriptors WHERE IsDeleted = 1;  -- their bytes were already removed by the old version
   UPDATE BlobFileDescriptors SET Hash = NULL;           -- 64-character digests do not fit the new column
   ```
+
+- **Document files move to Blob Management.** Back up the BLOB storage, then run `--migrate-database` as usual and
+  keep the host running until its log shows `Document files moved to Blob Management` for every layer. Read any
+  `was not moved` warning: the file stays in `extract-documents` and works, but the release that drops
+  `FileOrigin.BlobName` will need it moved. A host that seeds its data elsewhere (its own DbMigrator) must load
+  `VaultExtractApplicationModule` there for `LegacyDocumentFileMoveDataSeedContributor` to run; the jobs it queues
+  are executed by the host, which holds the BLOB storage.
 
 - **Several host instances** now share the job queue safely, but every instance must run this release (an older one
   takes no SQL Server locks) and have the same `Vault:BackgroundJobs:MaxParallelJobExecutionCount`.

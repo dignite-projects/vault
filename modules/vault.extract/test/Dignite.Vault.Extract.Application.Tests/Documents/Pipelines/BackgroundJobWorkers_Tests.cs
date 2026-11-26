@@ -55,7 +55,7 @@ public class BackgroundJobWorkers_Tests : VaultExtractApplicationTestBase<VaultE
             .Where(j => j.ArgsType.Assembly == typeof(VaultExtractApplicationModule).Assembly)
             .ToList();
 
-        jobs.Count.ShouldBe(10);
+        jobs.Count.ShouldBe(11);
         jobs.ShouldAllBe(j => j.JobName.StartsWith("VaultExtract.") && j.JobName != j.ArgsType.FullName);
     }
 }

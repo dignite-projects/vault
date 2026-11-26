@@ -85,7 +85,26 @@ options.Containers.Configure(DocumentFileConsts.ContainerName, container =>
 
 Use the "any" preset: the images preset would store a JPEG or PNG as WebP, and the parse reads the original.
 
-Extract's own container `extract-documents` holds each document's parse layout (`layout/{id}`), and the originals of documents stored before the move to Blob Management, which name their file by `FileOrigin.BlobName`. Those are still read from it and deleted from it with their document; they have no recycle-bin state of their own.
+Extract's own container `extract-documents` holds each document's parse layout (`layout/{id}`), and the originals of documents stored before the move to Blob Management, which name their file by `FileOrigin.BlobName`. Until they move, those are read from it and deleted from it with their document.
+
+### Moving Older Files to Blob Management
+
+`--migrate-database` moves them. In every layer (the Host and each tenant) that still has a document naming its file by `BlobName`, it queues a low-priority background job, which the running host then works through a page of 50 documents at a time. For each document, recycle-bin ones included, it:
+
+1. reads the blob and checks its bytes against the SHA-256 recorded at upload (`FileOrigin.ContentHash`);
+2. stores them as a new file in `extract-files`, which Blob Management verifies against the same hash and counts for the document's owner;
+3. points the document at the new file, in one transaction under the document's write lock, after checking that the document still names the same blob; a document in the recycle bin gets its file in the recycle bin;
+4. once that has committed, deletes the blob.
+
+A file that cannot be moved stays where it is, still read from `extract-documents`, and the job logs a warning naming the document and the reason:
+
+| Reason | Meaning |
+|---|---|
+| `FileMissing` | The blob is not in the container. |
+| `ContentChanged` | Its bytes do not match the recorded hash. |
+| `Refused` with a code | Blob Management refused them: the tenant's storage is full (`BlobManagement:StorageQuotaExceeded`), Blob Management is switched off for it, or the bytes are not what the file name's extension says (`Dignite.Abp.BlobStoring:ContentTypeMismatch`). |
+
+Once the cause is fixed, the next `--migrate-database` tries again; a file already moved is not read again. Back up the BLOB storage before the first run: the bytes of a moved file live only in `extract-files` afterwards.
 
 Both containers use the storage provider beneath. The shipped host configures the **file system provider** as the default for every container, under `<content root>/App_Data/blobs`:
 
