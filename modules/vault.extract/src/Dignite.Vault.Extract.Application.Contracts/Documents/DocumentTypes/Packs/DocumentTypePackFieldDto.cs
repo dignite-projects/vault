@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Dignite.Abp.FlexFields;
 using Dignite.Vault.Extract.Documents.Fields;
@@ -14,7 +15,8 @@ namespace Dignite.Vault.Extract.Documents.DocumentTypes.Packs;
 /// exported and sitting in people's repositories — are still imported: their <see cref="DataType"/> /
 /// <see cref="AllowMultiple"/> / <see cref="Prompt"/> are upconverted to <see cref="FieldTypeName"/> +
 /// <see cref="Configuration"/> + <see cref="Description"/> on the way in, by the same mapping that
-/// migrated the live rows. Export only ever emits version 2, and never populates the legacy members.
+/// migrated the live rows. Version 3 added <see cref="ValidationRules"/>. Export only ever emits the current version, and
+/// never populates the legacy members.
 /// </para>
 /// </summary>
 public class DocumentTypePackFieldDto
@@ -44,6 +46,13 @@ public class DocumentTypePackFieldDto
     public bool IsSearchable { get; set; } = true;
 
     public bool IsUniqueKey { get; set; }
+
+    /// <summary>
+    /// The field's validation rules (pack schema version 3), each input naming another field of the same type by name.
+    /// Export always writes the list, empty when the field has none. On import <c>null</c> (every version-1 and
+    /// version-2 pack) leaves an existing field's rules as they are, and an empty list removes them.
+    /// </summary>
+    public List<DocumentTypePackValidationRuleDto>? ValidationRules { get; set; }
 
     // ── pack schema version 1 only, ignored when the pack declares version 2 ──────────────────────────
 

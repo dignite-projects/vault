@@ -22,12 +22,11 @@ using Xunit;
 namespace Dignite.Vault.Extract.Documents;
 
 /// <summary>
-/// Contract + normalization semantics for <see cref="FieldExtractionWorkflow"/> (#204 typed values, #527 §1/§3
-/// value+warning envelope). IChatClient is replaced with NSubstitute — no real LLM. The workflow now returns a
-/// <see cref="FieldExtractionWorkflowResult"/> (<c>{ values, validationWarnings }</c>): values keep the strict
-/// typed-validation behavior (matching types kept, mismatches nulled, now under the <c>values</c> key), and warnings are
-/// defensively normalized (undeclared / blank / malformed discarded, deduped per field, truncated, capped) without ever
-/// dropping a valid value. These tests exercise the server-side parser, not the JSON schema (the mock returns raw JSON).
+/// Contract semantics for <see cref="FieldExtractionWorkflow"/> (#204 typed values). IChatClient is replaced with
+/// NSubstitute — no real LLM. The workflow returns a <see cref="FieldExtractionWorkflowResult"/> (<c>{ values, sources }</c>):
+/// values pass through for the service's reader to validate, and sources are bounded. It returns no validation warnings:
+/// a field's validation rules are evaluated in code over the stored values. These tests exercise the server-side parser,
+/// not the JSON schema (the mock returns raw JSON).
 /// </summary>
 public class FieldExtractionWorkflow_Tests
 {
@@ -107,8 +106,7 @@ public class FieldExtractionWorkflow_Tests
             "active": true,
             "signed_on": "2024-01-15",
             "party": "Acme Corp"
-          },
-          "validationWarnings": []
+          }
         }
         """;
         var workflow = CreateWorkflow(json);
@@ -129,7 +127,6 @@ public class FieldExtractionWorkflow_Tests
         result.Values["active"]!.Value.GetBoolean().ShouldBeTrue();
         result.Values["signed_on"]!.Value.GetString().ShouldBe("2024-01-15");
         result.Values["party"]!.Value.GetString().ShouldBe("Acme Corp");
-        result.ValidationWarnings.ShouldBeEmpty();
     }
 
     /// <summary>
@@ -149,8 +146,7 @@ public class FieldExtractionWorkflow_Tests
           "values": {
             "amount": "about 100k",
             "party": 123
-          },
-          "validationWarnings": []
+          }
         }
         """;
         var workflow = CreateWorkflow(json);
@@ -173,8 +169,7 @@ public class FieldExtractionWorkflow_Tests
             "offset_free": "2024-01-01T10:00:00",
             "with_offset": "2024-01-01T10:00:00+08:00",
             "utc_z": "2024-01-01T10:00:00Z"
-          },
-          "validationWarnings": []
+          }
         }
         """;
         var workflow = CreateWorkflow(json);
@@ -200,7 +195,7 @@ public class FieldExtractionWorkflow_Tests
     public async Task Missing_or_explicit_null_becomes_null()
     {
         var workflow = CreateWorkflow(
-            """{ "values": { "present": "x", "explicit_null": null }, "validationWarnings": [] }""");
+            """{ "values": { "present": "x", "explicit_null": null } }""");
 
         var result = await workflow.ExtractAsync(
             new[]
@@ -217,7 +212,7 @@ public class FieldExtractionWorkflow_Tests
     }
 
     [Fact]
-    public async Task Non_json_output_nulls_all_fields_and_has_no_warnings()
+    public async Task Non_json_output_nulls_all_fields()
     {
         var workflow = CreateWorkflow("sorry, I can't do that");
 
@@ -226,14 +221,13 @@ public class FieldExtractionWorkflow_Tests
             "# doc");
 
         result.Values["amount"].ShouldBeNull();
-        result.ValidationWarnings.ShouldBeEmpty();
     }
 
     [Fact]
     public async Task Missing_values_key_nulls_all_fields()
     {
         // Schema drift: no `values` key -> every field is null (graceful degradation, like the old flat-shape miss).
-        var workflow = CreateWorkflow("""{ "validationWarnings": [] }""");
+        var workflow = CreateWorkflow("""{ "sources": {} }""");
 
         var result = await workflow.ExtractAsync(
             new[] { Field("amount", "Number"), Field("party", "Text") },
@@ -264,8 +258,7 @@ public class FieldExtractionWorkflow_Tests
           "values": {
             "tags": ["urgent", "legal", "2026"],
             "scalar_tags": "urgent"
-          },
-          "validationWarnings": []
+          }
         }
         """;
         var workflow = CreateWorkflow(json);
@@ -294,7 +287,6 @@ public class FieldExtractionWorkflow_Tests
         var result = await workflow.ExtractAsync(Array.Empty<FieldExtractionDescriptor>(), "# doc");
 
         result.Values.ShouldBeEmpty();
-        result.ValidationWarnings.ShouldBeEmpty();
     }
 
     [Fact]
@@ -326,144 +318,6 @@ public class FieldExtractionWorkflow_Tests
             Arg.Any<CancellationToken>());
     }
 
-    // ─── validationWarnings: server-side normalization (#527 §3) ───
-
-    [Fact]
-    public async Task Warning_is_returned_and_the_field_value_is_kept()
-    {
-        // The core #527 contract: a warned field KEEPS its value (never nulled), and the warning is returned separately.
-        var json = """
-        {
-          "values": { "transactions": "| Date | Balance |" },
-          "validationWarnings": [
-            { "fieldName": "transactions", "message": "Row 4 balance does not reconcile." }
-          ]
-        }
-        """;
-        var workflow = CreateWorkflow(json);
-
-        var result = await workflow.ExtractAsync(new[] { Field("transactions", "Text") }, "# doc");
-
-        result.Values["transactions"].ShouldNotBeNull();   // value preserved despite the warning
-        result.ValidationWarnings.Count.ShouldBe(1);
-        result.ValidationWarnings[0].FieldName.ShouldBe("transactions");
-        result.ValidationWarnings[0].Message.ShouldBe("Row 4 balance does not reconcile.");
-    }
-
-    [Fact]
-    public async Task Warning_for_undeclared_field_is_discarded()
-    {
-        var json = """
-        {
-          "values": { "amount": 100 },
-          "validationWarnings": [
-            { "fieldName": "amount", "message": "problem" },
-            { "fieldName": "not_a_field", "message": "should be dropped" }
-          ]
-        }
-        """;
-        var workflow = CreateWorkflow(json);
-
-        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
-
-        result.ValidationWarnings.Select(w => w.FieldName).ShouldBe(new[] { "amount" });
-    }
-
-    [Fact]
-    public async Task Blank_message_is_discarded()
-    {
-        var workflow = CreateWorkflow(
-            """{ "values": { "amount": 100 }, "validationWarnings": [ { "fieldName": "amount", "message": "   " } ] }""");
-
-        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
-
-        result.ValidationWarnings.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task Duplicate_warnings_for_one_field_are_merged_to_one()
-    {
-        var json = """
-        {
-          "values": { "amount": 100 },
-          "validationWarnings": [
-            { "fieldName": "amount", "message": "first" },
-            { "fieldName": "amount", "message": "second" }
-          ]
-        }
-        """;
-        var workflow = CreateWorkflow(json);
-
-        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
-
-        result.ValidationWarnings.Count.ShouldBe(1);
-        result.ValidationWarnings[0].Message.ShouldBe("first");   // first wins
-    }
-
-    [Fact]
-    public async Task Overlong_message_is_truncated_at_char_boundary()
-    {
-        var longMessage = new string('x', DocumentFieldValidationWarningConsts.MaxMessageLength + 50);
-        var workflow = CreateWorkflow(
-            $$"""{ "values": { "amount": 100 }, "validationWarnings": [ { "fieldName": "amount", "message": "{{longMessage}}" } ] }""");
-
-        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
-
-        result.ValidationWarnings.Single().Message.Length
-            .ShouldBe(DocumentFieldValidationWarningConsts.MaxMessageLength);
-    }
-
-    [Fact]
-    public async Task Excess_warnings_are_capped()
-    {
-        // More distinct warned fields than the cap -> only MaxWarningsPerExtraction warnings are kept.
-        var fields = Enumerable.Range(0, DocumentFieldValidationWarningConsts.MaxWarningsPerExtraction + 5)
-            .Select(i => Field($"f{i}", "Text")).ToArray();
-        var values = string.Join(",", fields.Select(f => $$""" "{{f.Name}}": "v" """));
-        var warnings = string.Join(",", fields.Select(f => $$"""{ "fieldName": "{{f.Name}}", "message": "bad" }"""));
-        var workflow = CreateWorkflow($$"""{ "values": { {{values}} }, "validationWarnings": [ {{warnings}} ] }""");
-
-        var result = await workflow.ExtractAsync(fields, "# doc");
-
-        result.ValidationWarnings.Count.ShouldBe(DocumentFieldValidationWarningConsts.MaxWarningsPerExtraction);
-    }
-
-    [Fact]
-    public async Task Malformed_warning_entries_do_not_drop_valid_values_or_the_valid_warning()
-    {
-        // A non-object entry, a missing-message entry, and a wrong-typed fieldName are all discarded; the valid value and
-        // the valid warning survive — a malformed warning never corrupts the values half (#527 §3).
-        var json = """
-        {
-          "values": { "amount": 100 },
-          "validationWarnings": [
-            "not-an-object",
-            { "fieldName": "amount" },
-            { "fieldName": 42, "message": "x" },
-            { "fieldName": "amount", "message": "valid" }
-          ]
-        }
-        """;
-        var workflow = CreateWorkflow(json);
-
-        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
-
-        result.Values["amount"]!.Value.GetInt64().ShouldBe(100);
-        result.ValidationWarnings.Count.ShouldBe(1);
-        result.ValidationWarnings[0].Message.ShouldBe("valid");
-    }
-
-    [Fact]
-    public async Task Missing_validationWarnings_key_yields_empty()
-    {
-        var workflow = CreateWorkflow("""{ "values": { "amount": 100 } }""");
-
-        var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
-
-        result.Values["amount"].ShouldNotBeNull();
-        result.ValidationWarnings.ShouldBeEmpty();
-    }
-
     // ─── MaxOutputTokens: reproduces a real silent-truncation incident on a many-row AllowMultiple field ───
     // (SiliconFlow's own default output cap, observed at ~4096 tokens, applies whenever the caller sends none;
     // the JSON gets cut off mid-generation and fails to parse, silently nulling every field on the call).
@@ -475,7 +329,7 @@ public class FieldExtractionWorkflow_Tests
     public async Task MaxOutputTokens_covers_an_AllowMultiple_fields_own_worst_case_when_the_model_allows_it()
     {
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "tags": [] }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
+            """{ "values": { "tags": [] } }""", behaviorOptions: UncappedOutput);
 
         await workflow.ExtractAsync(new[] { MultiField("tags") }, "# doc");
 
@@ -492,11 +346,11 @@ public class FieldExtractionWorkflow_Tests
     public async Task MaxOutputTokens_scales_up_when_an_AllowMultiple_field_is_requested_and_the_model_allows_it()
     {
         var (scalarWorkflow, scalarOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1 }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
+            """{ "values": { "amount": 1 } }""", behaviorOptions: UncappedOutput);
         await scalarWorkflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
 
         var (multiWorkflow, multiOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "tags": [] }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
+            """{ "values": { "tags": [] } }""", behaviorOptions: UncappedOutput);
         await multiWorkflow.ExtractAsync(new[] { MultiField("tags") }, "# doc");
 
         multiOptions()!.MaxOutputTokens!.Value.ShouldBeGreaterThan(scalarOptions()!.MaxOutputTokens!.Value);
@@ -512,7 +366,7 @@ public class FieldExtractionWorkflow_Tests
     public async Task MaxOutputTokens_never_exceeds_the_hosts_ceiling_for_a_default_Tags_schema()
     {
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "contract_keywords": [], "party_a_name": null }, "validationWarnings": [] }""");
+            """{ "values": { "contract_keywords": [], "party_a_name": null } }""");
 
         await workflow.ExtractAsync(
             new[] { MultiField("contract_keywords"), Field("party_a_name", TextFieldType.ControlName) }, "# doc");
@@ -525,24 +379,25 @@ public class FieldExtractionWorkflow_Tests
     public async Task MaxOutputTokens_follows_a_ceiling_the_host_configures()
     {
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1 }, "validationWarnings": [] }""",
-            behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = 8_192 });
+            """{ "values": { "amount": 1 } }""",
+            behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = 1_024 });
 
+        // One number's schema with its sources is estimated above 1,024 tokens, so the host's ceiling is what is sent.
         await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
 
-        capturedOptions()!.MaxOutputTokens.ShouldBe(8_192);
+        capturedOptions()!.MaxOutputTokens.ShouldBe(1_024);
     }
 
     [Fact]
     public async Task MaxOutputTokens_sends_an_estimate_below_the_ceiling_unchanged()
     {
         var (uncappedWorkflow, uncappedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1 }, "validationWarnings": [] }""", behaviorOptions: UncappedOutput);
+            """{ "values": { "amount": 1 } }""", behaviorOptions: UncappedOutput);
         await uncappedWorkflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
         var estimate = uncappedOptions()!.MaxOutputTokens!.Value;
 
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1 }, "validationWarnings": [] }""",
+            """{ "values": { "amount": 1 } }""",
             behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = estimate + 1 });
         await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
 
@@ -555,7 +410,7 @@ public class FieldExtractionWorkflow_Tests
     public async Task A_non_positive_output_ceiling_fails_before_calling_the_model(int ceiling)
     {
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1 }, "validationWarnings": [] }""",
+            """{ "values": { "amount": 1 } }""",
             behaviorOptions: new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = ceiling });
 
         await Should.ThrowAsync<InvalidOperationException>(
@@ -617,7 +472,6 @@ public class FieldExtractionWorkflow_Tests
         result.Values["closing_balance"]!.Value.GetDecimal().ShouldBe(1234567m);
         result.Values["transactions"].ShouldBeNull();
         result.UnfinishedFields.ShouldBe(["transactions"]);
-        result.ValidationWarningsUnfinished.ShouldBeTrue();
         result.IsIncomplete.ShouldBeTrue();
     }
 
@@ -636,14 +490,16 @@ public class FieldExtractionWorkflow_Tests
         result.UnfinishedFields.ShouldBe(["closing_balance", "transactions"], ignoreOrder: true);
     }
 
-    /// <summary>The order the measured provider wrote the answer in: sources and warnings first, values last.</summary>
+    /// <summary>
+    /// The order SiliconFlow writes the answer in whatever the schema says: its keys alphabetically, sources first and values
+    /// last (2026-11-26, every answer of DeepSeek-V3 and Qwen3-30B-A3B-Instruct).
+    /// </summary>
     [Fact]
-    public async Task A_cut_off_answer_written_values_last_keeps_its_sources_and_warnings()
+    public async Task A_cut_off_answer_written_values_last_keeps_its_sources()
     {
         var (workflow, _) = CreateWorkflowCapturingOptions(
             """
             { "sources": { "bank_name": ["銀行名 三井住友銀行"], "closing_balance": ["残高 1,234,567"], "transactions": ["10/01 12,000"] },
-              "validationWarnings": [ { "fieldName": "closing_balance", "message": "残高が取引の合計と一致しません。" } ],
               "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567, "transactions": [ { "values": { "date": "2026-10-01"
             """,
             ChatFinishReason.Length);
@@ -652,44 +508,16 @@ public class FieldExtractionWorkflow_Tests
 
         result.Values["closing_balance"]!.Value.GetDecimal().ShouldBe(1234567m);
         result.UnfinishedFields.ShouldBe(["transactions"]);
-        result.ValidationWarningsUnfinished.ShouldBeFalse();
-        result.ValidationWarnings.Single().FieldName.ShouldBe("closing_balance");
         result.Sources["bank_name"].ShouldBe(["銀行名 三井住友銀行"]);
     }
 
-    /// <summary>
-    /// Every value finished but the warnings did not: a balance check that failed may be among the missing warnings, so
-    /// the extraction is still incomplete.
-    /// </summary>
-    [Fact]
-    public async Task An_answer_cut_off_inside_its_warnings_has_every_value_and_is_still_incomplete()
-    {
-        var (workflow, _) = CreateWorkflowCapturingOptions(
-            """
-            { "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567,
-                          "transactions": [ { "values": { "date": "2026-10-01" } } ] },
-              "validationWarnings": [ { "fieldName": "closing_balance", "message": "残高が
-            """,
-            ChatFinishReason.Length);
-
-        var result = await workflow.ExtractAsync(StatementFields(), "# doc");
-
-        result.Values["bank_name"]!.Value.GetString().ShouldBe("三井住友銀行");
-        result.Values["transactions"]!.Value.GetArrayLength().ShouldBe(1);
-        result.UnfinishedFields.ShouldBeEmpty();
-        result.ValidationWarnings.ShouldBeEmpty();
-        result.ValidationWarningsUnfinished.ShouldBeTrue();
-        result.IsIncomplete.ShouldBeTrue();
-    }
-
-    /// <summary>Sources only locate values: an answer cut off inside them has still settled every value and warning.</summary>
+    /// <summary>Sources only locate values: an answer cut off inside them has still settled every value.</summary>
     [Fact]
     public async Task An_answer_cut_off_inside_its_sources_is_complete()
     {
         var (workflow, _) = CreateWorkflowCapturingOptions(
             """
             { "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567, "transactions": [] },
-              "validationWarnings": [],
               "sources": { "bank_name": ["銀行名 三井住友銀行"], "closing_balance": ["残高 1,23
             """,
             ChatFinishReason.Length);
@@ -719,7 +547,7 @@ public class FieldExtractionWorkflow_Tests
     }
 
     [Fact]
-    public async Task The_schema_asks_for_values_then_warnings_then_sources_and_a_table_last()
+    public async Task The_schema_asks_for_values_then_sources_and_a_table_last_and_no_validation()
     {
         var chatClient = Substitute.For<IChatClient>();
         List<ChatMessage>? sent = null;
@@ -740,7 +568,11 @@ public class FieldExtractionWorkflow_Tests
 
         var schema = ((ChatResponseFormatJson)options!.ResponseFormat!).Schema!.Value;
         schema.GetProperty("properties").EnumerateObject().Select(p => p.Name)
-            .ShouldBe(["values", "validationWarnings", "sources"]);
+            .ShouldBe(["values", "sources"]);
+
+        // The model judges no rules: a field's validation rules are evaluated in code over the stored values.
+        sent![0].Text.ShouldNotContain("validationWarnings");
+        sent[0].Text.ShouldNotContain("validation rule");
         schema.GetProperty("properties").GetProperty("values").GetProperty("properties").EnumerateObject()
             .Select(p => p.Name).Last().ShouldBe("transactions");
 
@@ -758,11 +590,11 @@ public class FieldExtractionWorkflow_Tests
         var ceiling = new VaultExtractBehaviorOptions { MaxFieldExtractionOutputTokens = 163_840 }; // DeepSeek-V3 on SiliconFlow
 
         var (scalarWorkflow, scalarOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "closing_balance": 1 }, "validationWarnings": [] }""", behaviorOptions: ceiling);
+            """{ "values": { "closing_balance": 1 } }""", behaviorOptions: ceiling);
         await scalarWorkflow.ExtractAsync(new[] { Field("closing_balance", "Number") }, "# doc");
 
         var (tableWorkflow, tableOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "closing_balance": 1, "transactions": [] }, "validationWarnings": [] }""", behaviorOptions: ceiling);
+            """{ "values": { "closing_balance": 1, "transactions": [] } }""", behaviorOptions: ceiling);
         await tableWorkflow.ExtractAsync(
             new[] { Field("closing_balance", "Number"), Field("transactions", TableFieldType.ControlName, TransactionColumns) },
             "# doc");
@@ -784,7 +616,7 @@ public class FieldExtractionWorkflow_Tests
                 Arg.Do<IEnumerable<ChatMessage>>(messages => sent = messages.ToList()),
                 Arg.Any<ChatOptions?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "{ \"values\": {}, \"validationWarnings\": [] }")])));
+            .Returns(Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "{ \"values\": {} }")])));
         var workflow = new FieldExtractionWorkflow(
             chatClient,
             NullLogger<FieldExtractionWorkflow>.Instance,
@@ -824,8 +656,7 @@ public class FieldExtractionWorkflow_Tests
                 "vendor": [],
                 "memo": ["何か"],
                 "undeclared": ["x"]
-              },
-              "validationWarnings": []
+              }
             }
             """);
 
@@ -839,7 +670,7 @@ public class FieldExtractionWorkflow_Tests
     [Fact]
     public async Task A_response_without_sources_still_yields_its_values()
     {
-        var workflow = CreateWorkflow("""{ "values": { "amount": 1 }, "validationWarnings": [] }""");
+        var workflow = CreateWorkflow("""{ "values": { "amount": 1 } }""");
 
         var result = await workflow.ExtractAsync(new[] { Field("amount", "Number") }, "# doc");
 
@@ -851,7 +682,7 @@ public class FieldExtractionWorkflow_Tests
     public async Task The_schema_asks_for_bounded_sources_for_every_field()
     {
         var (workflow, capturedOptions) = CreateWorkflowCapturingOptions(
-            """{ "values": { "amount": 1, "vendor": "x" }, "sources": {}, "validationWarnings": [] }""");
+            """{ "values": { "amount": 1, "vendor": "x" }, "sources": {} }""");
 
         await workflow.ExtractAsync(new[] { Field("amount", "Number"), Field("vendor", "Text") }, "# doc");
 

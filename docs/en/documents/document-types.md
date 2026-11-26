@@ -1,7 +1,7 @@
 ```json
 //[doc-seo]
 {
-    "Description": "Define document types and their fields in Dignite Vault: Host and tenant layers, field types, extraction prompts, duplicate detection, validation warnings and type packs."
+    "Description": "Define document types and their fields in Dignite Vault: Host and tenant layers, field types, extraction prompts, duplicate detection, validation rules and type packs."
 }
 ```
 
@@ -49,13 +49,14 @@ A type's fields are managed on its **Fields** page (`IFieldDefinitionAppService`
 | --- | --- | --- |
 | `Name` | Required, 1 to 64 letters, digits, `_` or `-`. Unique within the type | The key the value is stored and served under (`extractedFields.<name>`), and the name in field filters. Treat it as an API contract |
 | `DisplayName` | Required, at most 128 characters | Column header in the UI and in [Data Download](../egress/data-download.md) |
-| `Description` | Optional | **The extraction instruction** sent to the LLM for this field: what to look for, the expected format, and any validation rule (see [Validation Warnings](#validation-warnings)) |
+| `Description` | Optional | **The extraction instruction** sent to the LLM for this field: what to look for and the expected format. Checks the value must pass are [validation rules](#validation-rules), not part of the instruction |
 | `FieldTypeName` | One of the [field types](#field-types); default `Text` | What the field accepts, how it is validated, rendered and queried |
 | `Configuration` | Depends on the field type | Type-specific settings (options, limits, input mode, columns) |
 | `DisplayOrder` | Integer | Column order in the document list and in downloads (ties broken by `Name`) |
 | `IsRequired` | Default `false` | A missing value raises the non-blocking `MissingRequiredFields` review reason |
 | `IsSearchable` | Default `true` | Whether the values are written to the query index, so they can be [filtered](../egress/rest-api.md#listing-and-filtering-documents). Not available on long text and table fields |
 | `IsUniqueKey` | Default `false` | Part of the [duplicate detection](#duplicate-detection) key. Not available on long text and table fields |
+| `ValidationRules` | Up to 10 | Checks the value must pass, evaluated in code; see [Validation Rules](#validation-rules) |
 
 ### Field Types
 
@@ -112,11 +113,11 @@ A `Table` field's answer transcribes the table row by row, so a long table (a ba
 1. The Markdown is cut into excerpts of about that size. A cut falls only between lines, so never inside a table row, and never inside a table's header or between rows an HTML `rowspan` joins. A cut at a table's edge is preferred, so an excerpt rarely holds the end of one page's table and the start of the next. An excerpt that starts inside a table is shown that table's header. Where a cut falls between two lines of text (a table whose grid the parse flattened into lines), each excerpt is also shown the three lines across the cut, and a row belongs to the excerpt it begins in.
 2. One call per excerpt, a few in parallel, returns the rows that begin in it, in order. An excerpt is read once more, in two halves where it can be cut, when its answer was cut off or unreadable, or returned fewer rows than the excerpt's recognised tables hold; the fuller reading is kept. Fewer rows after that are kept as they are, because the excerpt may hold a table the field does not ask for.
 3. The rows are joined in document order. Nothing is deduplicated: the excerpts do not overlap, and a bank statement can hold two identical rows.
-4. One last call extracts the other fields over the whole document, as before, and is given the joined rows to check against the validation rules in their fields' descriptions. A check over the whole table (a running balance, the first and last rows against the opening and closing balance) still sees the whole table.
+4. One last call extracts the other fields over the whole document, as before. It is not given the joined rows: a check over the whole table (a running balance, the first and last rows against the opening and closing balance) is a [validation rule](#validation-rules), evaluated in code over the stored rows. Given the rows, the model copied a misread balance into the closing balance, so the error agreed with itself. A type whose only fields are tables makes no last call.
 
-The rows stay in the order the document prints them. A rule in a `Table` field's description that asks for the rows to be reordered (reversed when the statement runs newest first, say) is applied only when the table fits in one answer; for a table read in excerpts the last call reports the broken rule as a [validation warning](#validation-warnings) instead.
+The rows stay in the order the document prints them. An instruction in a `Table` field's description that asks for the rows to be reordered (reversed when the statement runs newest first, say) is applied only when the table fits in one answer; a table read in excerpts keeps the document's order. A rule such as `value.every((r, i) => i === 0 || value[i - 1].values.date <= r.values.date)` is what catches a table in the wrong order.
 
-A document read this way costs more input tokens: every excerpt call repeats the instructions and the `Table` fields' descriptions, and the last call reads the joined rows besides the document. For a 114-row statement over four pages that came to five excerpt calls and the last one: 30,000 to 38,000 input tokens where one call reads about 11,000, and about 10,000 output tokens, as one complete answer would write; one to two and a half minutes in all.
+A document read this way costs more input tokens: every excerpt call repeats the instructions and the `Table` fields' descriptions. For a 114-row statement over four pages that came to five excerpt calls and the last one: 30,000 to 38,000 input tokens where one call reads about 11,000, and about 10,000 output tokens, as one complete answer would write; one to two and a half minutes in all. Those figures were measured while the last call still read the joined rows.
 
 If an excerpt still has no answer, or the joined rows run past `MaxFieldExtractionMarkdownLength`, the `Table` fields keep the values the document already had and the document gets the blocking `FieldExtractionIncomplete` review reason. Each `Table` field's sources are the passages quoted from every excerpt; there is no source per row.
 
@@ -143,11 +144,47 @@ An operator resolves a suspected duplicate by **allowing** it (`AllowDuplicateAs
 
 > This is separate from the upload check, which refuses the exact same file uploaded twice by the same user. See [Documents and Review](documents.md#uploading).
 
-## Validation Warnings
+## Validation Rules
 
-A field's `Description` can state a validation rule ("the tax amount must equal 10% of the subtotal"). When an extracted value breaks it, the LLM returns the value **and** a warning. The value is stored; the warning raises the blocking `FieldValidationWarning` review reason and is shown on the document's detail page (`ReviewReasonDetails`). Warnings never appear on search results, downloads or events.
+A field can carry up to 10 **validation rules**: checks its value must pass, evaluated in code each time the document's values are written. A rule that does not hold puts the blocking `FieldValidationWarning` review reason on the document, worded with the rule's description and shown on the document's detail page (`ReviewReasonDetails`). The value itself is kept. Warnings never appear on search results, downloads or events.
 
-An operator dismisses warnings after checking the values (`ResolveFieldValidationWarningsAsync`); the reason clears when none remain. A clean re-extraction, a type change or deleting the field also clears them. Correcting a value does **not** clear its warning by itself, so the operator's dismissal stays an explicit act.
+| Property | Constraints | Used for |
+| --- | --- | --- |
+| `description` | Required, one line, at most 256 characters | What the rule requires, in your words. It is the warning the operator reads |
+| `expression` | Required, one JavaScript expression, at most 4,000 characters | Decides the rule |
+| `inputs` | At most 10, each an `alias` (a JavaScript identifier other than `value`) and another field of the same type | The other fields the expression reads |
+
+The expression sees the field's own value as `value` and each input under its alias, in the shape [`ExtractedFields`](../egress/rest-api.md) carries: a number as a number, a date as an ISO string in the field's format, a multi-valued field as an array of strings, a table as an array of rows with each row's cells under `values`. It returns `true` when the rule holds, `false` when it does not, or `[false, "detail"]` to say where; the detail is added to the warning.
+
+A bank statement's `transactions` table, with `openingBalance` and `closingBalance` fields:
+
+| Description | Expression | Inputs |
+| --- | --- | --- |
+| The first row's balance is the opening balance | `value[0].values.balance === opening` | `opening` → `openingBalance` |
+| The last row's balance is the closing balance | `value.at(-1).values.balance === closing` | `closing` → `closingBalance` |
+| Dates never go backwards | `value.every((r, i) => i === 0 \|\| value[i - 1].values.date <= r.values.date)` | none |
+| Each balance follows from the one before | `(() => { for (let i = 1; i < value.length; i++) { const p = value[i - 1].values, r = value[i].values; if (Math.abs(p.balance + (r.depositAmount ?? 0) - (r.withdrawalAmount ?? 0) - r.balance) > 0.005) return [false, `row ${i + 1}`]; } return true; })()` | none |
+
+- **Skipped**: a rule whose value or any input is absent says nothing. A missing required value already raises `MissingRequiredFields`.
+- **Could not be evaluated**: an expression that throws, returns anything else, or runs past the sandbox's limits counts as failing, and the warning says the rule could not be evaluated. A broken rule is seen rather than silently passed.
+- **Sandbox**: each rule runs in a JavaScript engine of its own ([Jint](https://github.com/sebastienros/jint)), in strict mode, with at most 200,000 statements, 250 ms, 16 MB and 64 levels of calls, and nothing of the host within reach: no .NET types, network or files. Rules are written by each layer's administrators, so these limits are fixed, not configuration.
+- **Numbers** are JavaScript doubles: compare a sum with a tolerance, `Math.abs(a - b) < 0.005`.
+- **Inputs are bound by field id**: renaming the field an input reads keeps the rule working. Deleting a field that another field's rule reads is refused (`Extract:FieldReadByValidationRule`) until that rule changes, so no check stops checking unnoticed. The field API (`FieldDefinitionDto.validationRules`) gives an input's `fieldId`; a [type pack](#importing-and-exporting-types) gives its `fieldName`.
+- **Saving** a field checks that every expression parses as one expression and every input is another field of the same type. On `UpdateFieldDefinitionDto`, `validationRules: null` leaves the rules as they are and an empty list removes them, so a client that does not know about rules does not erase them.
+
+When the rules run:
+
+| The values are written by | Rules evaluated |
+| --- | --- |
+| Field extraction | Every rule of the type; the result replaces the document's warnings |
+| An operator's edit (`POST extracted-fields`) | Only the rules that read a value the edit changed, their own field's or an input's. A value corrected to pass clears its warning; a warning on a field whose rules read nothing the edit changed stays |
+| [Submitted content](submitting-content.md) | Every rule of the type |
+
+Changing a rule does not re-check the documents that already exist: it applies at their next extraction or edit.
+
+An operator who checks a value and accepts it as it stands dismisses its warning (`ResolveFieldValidationWarningsAsync`); the reason clears when none remain. A clean re-extraction, a type change or deleting the field also clears warnings.
+
+The extraction model is not asked to judge any rule, and a check written into a field's description no longer produces a warning. Measured on a 114-row bank statement whose values were all extracted correctly, the model warned on 4 of 19 runs (claiming, for example, that 100000 does not equal 100000) and caught 4 of 9 real mismatches; rephrasing the instructions or asking in a separate call did not bring it below that, and a separate call warned on 14 of 19. The same checks in code warned on none of 103 runs and caught every mismatch.
 
 ## Importing and Exporting Types
 
@@ -158,11 +195,11 @@ A **type pack** is a JSON description of one type and its fields, without ids or
   - `CreateOrUpdate` (default): creates missing types and fields, overwrites existing ones (matched by type code and field name).
   - `CreateOnly`: creates missing ones and skips existing ones.
 
-Import never deletes anything. Every pack is validated (version, field types, prompt budget) before anything is written, and a type or field whose code or name belongs to a soft-deleted row is refused. Packs written by older versions (pack version 1, with `dataType` instead of `fieldTypeName`) are converted on import. Importing needs `VaultExtract.DocumentTypes.Create` and `VaultExtract.FieldDefinitions.Create`, plus the matching `.Update` permissions to overwrite.
+Import never deletes anything. Every pack is validated (version, field types, prompt budget, validation rules) before anything is written, and a type or field whose code or name belongs to a soft-deleted row is refused. A field's `validationRules` (pack version 3) name the fields their inputs read by `fieldName`, a field of the same pack or of the existing type; a pack without them (every version 1 and 2 pack) leaves an existing field's rules as they are, and an empty list removes them. Packs written by older versions (pack version 1, with `dataType` instead of `fieldTypeName`) are converted on import. Importing needs `VaultExtract.DocumentTypes.Create` and `VaultExtract.FieldDefinitions.Create`, plus the matching `.Update` permissions to overwrite.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "typeCode": "invoice.standard",
   "displayName": "Invoice",
   "description": "A supplier invoice requesting payment.",
@@ -179,7 +216,25 @@ Import never deletes anything. Every pack is validated (version, field types, pr
       "displayOrder": 0,
       "isRequired": true,
       "isSearchable": true,
-      "isUniqueKey": true
+      "isUniqueKey": true,
+      "validationRules": []
+    },
+    {
+      "name": "tax",
+      "displayName": "Tax",
+      "fieldTypeName": "Number",
+      "configuration": {},
+      "displayOrder": 1,
+      "isRequired": false,
+      "isSearchable": true,
+      "isUniqueKey": false,
+      "validationRules": [
+        {
+          "description": "Tax is 10% of the subtotal",
+          "expression": "Math.abs(value - subtotal * 0.1) < 1",
+          "inputs": [ { "alias": "subtotal", "fieldName": "subtotal" } ]
+        }
+      ]
     }
   ]
 }

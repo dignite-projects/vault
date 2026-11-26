@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Dignite.Abp.FlexFields;
 using Volo.Abp.Validation;
@@ -45,4 +46,10 @@ public class UpdateFieldDefinitionDto
 
     /// <summary>Whether this field is part of the type's duplicate-detection unique key (#411). The normalized values of all unique-key fields are hashed into the document's fingerprint to flag duplicate re-uploads.</summary>
     public bool IsUniqueKey { get; set; }
+
+    /// <summary>
+    /// The field's validation rules, replacing the ones it has; an empty list removes them all. <c>null</c> leaves them
+    /// as they are, so a client written before rules existed does not erase them by saving the field.
+    /// </summary>
+    public List<FieldValidationRuleDto>? ValidationRules { get; set; }
 }

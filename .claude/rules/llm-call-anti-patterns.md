@@ -103,7 +103,7 @@ Each path picks one bound:
 | `CabinetSuggestionWorkflow` | no | truncate at `MaxTextLengthPerExtraction` |
 | `DocumentSegmentationJob` | yes | gate at `MaxSegmentationMarkdownLength` → `SegmentationIncomplete` |
 | `FieldExtractionService` | yes | gate at `MaxFieldExtractionMarkdownLength` → `FieldExtractionIncomplete` |
-| `FieldExtractionWorkflow` excerpt calls (long tables) | yes | each excerpt sized from `MaxFieldExtractionOutputTokens`; the joined rows sent to the last call gate at `MaxFieldExtractionMarkdownLength` → `Table` fields unfinished → `FieldExtractionIncomplete` |
+| `FieldExtractionWorkflow` excerpt calls (long tables) | yes | each excerpt sized from `MaxFieldExtractionOutputTokens`; an excerpt still unread after a second call → `Table` fields unfinished → `FieldExtractionIncomplete`. The joined rows go to no model |
 | Field schema (`Σ FieldDefinition.Prompt`) | yes | reject the configuration write at the per-type `MaxFieldSchemaPromptLength`; assert again at the call site with `InvalidDataException`, so the run ends instead of retrying |
 | MCP `vault_extract_get_document` / `documents/{id}` | no | truncate at `VaultExtractMcpConsts.MaxDocumentMarkdownChars` and announce it |
 

@@ -17,6 +17,8 @@
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Markdig.Signed" />
     <PackageReference Include="ClosedXML" />
+    <!-- Field validation rules: their JavaScript expressions run in a Jint sandbox. -->
+    <PackageReference Include="Jint" />
     <!-- #680: the notification framework's contracts (definitions + INotificationPublisher; no ASP.NET, no
          distributor). The channel and the inbox are the host's choice - see
          VaultExtractNotificationConsts.SignalRChannelName. -->

@@ -29,8 +29,11 @@ namespace Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
 /// Design points:
 /// <list type="bullet">
 ///   <item>Extract all fields in one call, reducing LLM round-trips and repeated context. The exception is a table too
-///         long for one answer: the <c>Table</c> fields are then read in excerpts first (<see cref="MarkdownExcerptSplitter"/>),
-///         and the one call extracts the rest and checks their rows.</item>
+///         long for one answer: the <c>Table</c> fields are then read in excerpts (<see cref="MarkdownExcerptSplitter"/>),
+///         and one call extracts the rest.</item>
+///   <item>The model judges no validation rules: a field's rules are evaluated in code over the stored values
+///         (<c>FieldValidationRuleEvaluator</c>). Measured on a bank statement, the model warned on correct values and
+///         missed broken ones; the same checks in code did neither.</item>
 ///   <item>Constrain output schema with <c>ChatResponseFormat.ForJsonSchema</c>.</item>
 ///   <item>Normalization is requested in the prompt: the AI should output canonical shapes by field type
 ///         (bare JSON number for numbers, ISO-8601 string for dates, JSON true/false for booleans). Parsing then runs strict validation through
@@ -65,12 +68,10 @@ public class FieldExtractionWorkflow : ITransientDependency
     }
 
     /// <summary>
-    /// Extracts fields in batch from one LLM call, returning both the field values and any field validation warnings
-    /// (#527 §1) in a single <see cref="FieldExtractionWorkflowResult"/>. Missing or unparseable values appear as null;
-    /// a warned field still keeps its value (a warning is never a null value). Warnings are defensively normalized (#527 §3).
-    /// When the Markdown's table rows are longer than one answer is sized for, or the one answer was cut off inside a
-    /// <c>Table</c> field, the <c>Table</c> fields are read in excerpts before that call (see
-    /// <see cref="ExtractTablesInExcerptsAsync"/>); the result has the same shape either way.
+    /// Extracts fields in batch from one LLM call, returning the field values and the passages they were found in.
+    /// Missing or unparseable values appear as null. When the Markdown's table rows are longer than one answer is sized
+    /// for, or the one answer was cut off inside a <c>Table</c> field, the <c>Table</c> fields are read in excerpts and the
+    /// other fields in one call (see <see cref="ExtractTablesInExcerptsAsync"/>); the result has the same shape either way.
     /// </summary>
     public virtual async Task<FieldExtractionWorkflowResult> ExtractAsync(
         IReadOnlyList<FieldExtractionDescriptor> fields,
@@ -79,8 +80,7 @@ public class FieldExtractionWorkflow : ITransientDependency
     {
         if (fields.Count == 0)
         {
-            return new FieldExtractionWorkflowResult(
-                new Dictionary<string, JsonElement?>(), Array.Empty<FieldValidationWarningResult>());
+            return new FieldExtractionWorkflowResult(new Dictionary<string, JsonElement?>());
         }
 
         // Observability: after removing truncation, field extraction feeds full text. Log input size here (character count + field count)
@@ -117,7 +117,7 @@ public class FieldExtractionWorkflow : ITransientDependency
         var tables = fields.Where(IsTable).ToList();
         if (tables.Count == 0)
         {
-            return await CallAsync(fields, Array.Empty<ExtractedTable>(), markdown, cancellationToken);
+            return await CallAsync(fields, markdown, cancellationToken);
         }
 
         // A table's answer transcribes its rows, so rows longer than one excerpt are longer than one answer can be relied
@@ -134,7 +134,7 @@ public class FieldExtractionWorkflow : ITransientDependency
             return await ExtractTablesInExcerptsAsync(fields, tables, markdown, cancellationToken);
         }
 
-        var result = await CallAsync(fields, Array.Empty<ExtractedTable>(), markdown, cancellationToken);
+        var result = await CallAsync(fields, markdown, cancellationToken);
         if (!tables.Any(table => result.UnfinishedFields.Contains(table.Name)))
         {
             return result;
@@ -149,32 +149,20 @@ public class FieldExtractionWorkflow : ITransientDependency
     }
 
     /// <summary>
-    /// One call: the values, validation warnings and sources of <paramref name="fields"/> over the whole document, and the
-    /// validation warnings of the <paramref name="extracted"/> tables, whose rows were read in excerpts before it and are
-    /// given to it as data. With no extracted tables this is the single call field extraction has always made.
+    /// One call: the values and sources of <paramref name="fields"/> over the whole document. Every field when no table was
+    /// read in excerpts; the fields other than the tables when they were.
     /// </summary>
     private async Task<FieldExtractionWorkflowResult> CallAsync(
         IReadOnlyList<FieldExtractionDescriptor> fields,
-        IReadOnlyList<ExtractedTable> extracted,
         string markdown,
         CancellationToken cancellationToken)
     {
-        var extractedFields = extracted.Select(table => table.Field).ToList();
-        var warned = fields.Concat(extractedFields).ToList();
-        var schemaMessage = BuildSchemaUserMessage(fields, extractedFields);
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System,
-                (extracted.Count == 0 ? SystemInstructions : SystemInstructions + ExtractedTablesInstructions) +
-                "\n\n" + PromptBoundary.BoundaryRule),
-            new(ChatRole.User, schemaMessage),
+            new(ChatRole.System, SystemInstructions + "\n\n" + PromptBoundary.BoundaryRule),
+            new(ChatRole.User, BuildSchemaUserMessage(fields)),
             new(ChatRole.User, PromptBoundary.WrapDocument(markdown))
         };
-
-        if (extracted.Count > 0)
-        {
-            messages.Add(new ChatMessage(ChatRole.User, ExtractedRowsLabel + "\n" + PromptBoundary.WrapDocument(ExtractedRowsJson(extracted))));
-        }
 
         // The schema's worst case, capped at what the host says the structured model accepts: a max-tokens value above
         // the model's limit is refused outright (400) on every retry, which is worse than a rare Length cut-off below.
@@ -190,7 +178,7 @@ public class FieldExtractionWorkflow : ITransientDependency
 
         var options = new ChatOptions
         {
-            ResponseFormat = BuildResponseFormat(fields, warned),
+            ResponseFormat = BuildResponseFormat(fields),
             MaxOutputTokens = (int)Math.Min(estimatedOutputTokens, outputTokenCeiling)
         };
 
@@ -202,10 +190,10 @@ public class FieldExtractionWorkflow : ITransientDependency
             // The provider stopped generation at the output limit: a long Table field written out row by row is the
             // usual cause (a 114-row bank statement ran past 8,192 and 16,384 tokens), and reasoning tokens count
             // against the same limit. The answer is incomplete, never an empty extraction.
-            return ParseCutOffResult(rawJson, fields, warned, options.MaxOutputTokens!.Value);
+            return ParseCutOffResult(rawJson, fields, options.MaxOutputTokens!.Value);
         }
 
-        return ParseResult(rawJson, fields, warned);
+        return ParseResult(rawJson, fields);
     }
 
     /// <summary>
@@ -220,10 +208,11 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// </para>
     /// <para>
     /// The rows are merged in document order, with no deduplication: the excerpts do not overlap. Then one call extracts
-    /// the other fields over the whole document, as before, and is given the merged rows to judge against the validation
-    /// rules in their fields' prompts, so a rule over the whole table (a running balance, the first and last rows against
-    /// the opening and closing balance) is still judged over the whole table, where Extend verifies its merged array and
-    /// Reducto's Deep Extract reconciles totals.
+    /// the other fields over the whole document, as before. It is not given the merged rows: a rule over the whole table
+    /// (a running balance, the first and last rows against the opening and closing balance) is a validation rule judged in
+    /// code over the stored values, where Extend verifies its merged array with code blocks. Given the rows, the model
+    /// copied a misread row's balance into the closing balance (2026-11-26: 4 of 10 runs on DeepSeek-V3, 7 of 10 on
+    /// Qwen3-30B-A3B-Instruct), making the error agree with itself.
     /// </para>
     /// </summary>
     private async Task<FieldExtractionWorkflowResult> ExtractTablesInExcerptsAsync(
@@ -252,25 +241,12 @@ public class FieldExtractionWorkflow : ITransientDependency
         {
             var read = answers.SelectMany(answer => answer!).ToList();
             extracted.AddRange(tables.Select(table => MergeRows(table, read)));
-
-            // The merged rows go into the last call as data, so they are held to the same ceiling as the document itself.
-            var rowsChars = ExtractedRowsJson(extracted).Length;
-            if (rowsChars > _behaviorOptions.MaxFieldExtractionMarkdownLength)
-            {
-                _logger.LogWarning(
-                    "Field extraction read the table fields ({TableFields}) in {ExcerptCount} excerpts, but their rows run to " +
-                    "{RowsChars} characters, over the MaxFieldExtractionMarkdownLength ceiling of {Ceiling} for checking them " +
-                    "in one call: the table fields are unfinished and keep the document's earlier values.",
-                    string.Join(", ", tables.Select(table => table.Name)), excerpts.Count, rowsChars,
-                    _behaviorOptions.MaxFieldExtractionMarkdownLength);
-                extracted.Clear();
-            }
         }
 
         var others = fields.Where(field => !IsTable(field)).ToList();
-        var rest = others.Count == 0 && extracted.Count == 0
-            ? new FieldExtractionWorkflowResult(new Dictionary<string, JsonElement?>(), Array.Empty<FieldValidationWarningResult>())
-            : await CallAsync(others, extracted, markdown, cancellationToken);
+        var rest = others.Count == 0
+            ? new FieldExtractionWorkflowResult(new Dictionary<string, JsonElement?>())
+            : await CallAsync(others, markdown, cancellationToken);
 
         var values = new Dictionary<string, JsonElement?>(rest.Values);
         var sources = new Dictionary<string, IReadOnlyList<string>>(rest.Sources, StringComparer.Ordinal);
@@ -289,10 +265,9 @@ public class FieldExtractionWorkflow : ITransientDependency
             }
         }
 
-        return new FieldExtractionWorkflowResult(values, rest.ValidationWarnings, sources)
+        return new FieldExtractionWorkflowResult(values, sources)
         {
-            UnfinishedFields = unfinished,
-            ValidationWarningsUnfinished = rest.ValidationWarningsUnfinished
+            UnfinishedFields = unfinished
         };
     }
 
@@ -361,7 +336,7 @@ public class FieldExtractionWorkflow : ITransientDependency
         var messages = new List<ChatMessage>
         {
             new(ChatRole.System, ExcerptInstructions + "\n\n" + PromptBoundary.BoundaryRule),
-            new(ChatRole.User, BuildSchemaUserMessage(tables, Array.Empty<FieldExtractionDescriptor>())),
+            new(ChatRole.User, BuildSchemaUserMessage(tables)),
             new(ChatRole.User, BuildExcerptMessage(excerpt))
         };
 
@@ -466,34 +441,6 @@ public class FieldExtractionWorkflow : ITransientDependency
         }
 
         return new ExtractedTable(table, answered ? JsonSerializer.SerializeToElement(rows) : null, sources);
-    }
-
-    /// <summary>
-    /// The merged rows as the last call reads them: a JSON object keyed by field name, each row's cells without the
-    /// <c>"values"</c> wrapper the stored shape has.
-    /// </summary>
-    private static string ExtractedRowsJson(IReadOnlyList<ExtractedTable> extracted)
-    {
-        var tables = new JsonObject();
-        foreach (var table in extracted)
-        {
-            if (table.Rows is not { } rows)
-            {
-                tables[table.Field.Name] = null;
-                continue;
-            }
-
-            var cells = new JsonArray();
-            foreach (var row in rows.EnumerateArray())
-            {
-                cells.Add(JsonNode.Parse(
-                    row.ValueKind == JsonValueKind.Object && row.TryGetProperty("values", out var inner) ? inner.GetRawText() : row.GetRawText()));
-            }
-
-            tables[table.Field.Name] = cells;
-        }
-
-        return tables.ToJsonString();
     }
 
     private static string BuildExcerptMessage(MarkdownExcerpt excerpt)
@@ -614,9 +561,6 @@ public class FieldExtractionWorkflow : ITransientDependency
         // The quoted sources: up to MaxSourcesPerField passages per field, each a JSON string of quoted document text.
         chars += fields.Count * MaxSourcesPerField * ((MaxSourceLength * CjkTokenSafetyMultiplier) + 4);
 
-        chars += DocumentFieldValidationWarningConsts.MaxWarningsPerExtraction *
-            ((DocumentFieldValidationWarningConsts.MaxMessageLength * CjkTokenSafetyMultiplier) + 60); // + fieldName enum value + JSON overhead
-
         return chars + 2048; // + fixed margin for JSON structure (braces, field-name keys repeated per property).
     }
 
@@ -707,25 +651,11 @@ public class FieldExtractionWorkflow : ITransientDependency
         "A field whose schema type is array accepts multiple values: return a JSON array of strings (each a distinct value found in the document), or an empty array when none apply. " +
         TableReadingInstructions +
         "Set a field to null only when its information is genuinely absent from the document — not merely because the text is unformatted, split across lines, or lacks table syntax. " +
-        "Return the result as an object with three keys, in this order: \"values\" (one key per requested field, as described above), \"validationWarnings\" and \"sources\". " +
-        "A field's prompt may declare validation rules for its own extracted value (for example a running-balance or total check). " +
-        "When a field's value fails such a rule, still return the value in \"values\" exactly as found in the document, and additionally add one entry to \"validationWarnings\" naming that field and giving a concise, human-readable explanation of the mismatch. " +
-        "Never invent, alter, or fabricate data to make a rule pass, and never drop a value merely because it failed validation — the value stays, the warning is reported separately. " +
-        "When every value passes, or a field declares no validation rule, return an empty \"validationWarnings\" array. " +
+        "Return the result as an object with two keys, in this order: \"values\" (one key per requested field, as described above) and \"sources\". " +
+        "Return each value as found in the document: never invent, alter, or fabricate data, and never drop a value because it looks inconsistent with another. " +
         "\"sources\" has one key per requested field: an array of up to three short passages copied character for character from the document body where that field's value appears, " +
         "as written in the document and not normalized (the date, amount or name exactly as printed, with its label when the label fits), one passage per distinct place, " +
         "and an empty array when the value is null.";
-
-    /// <summary>
-    /// Appended to <see cref="SystemInstructions"/> for the call that follows the excerpts: the table fields read in
-    /// excerpts are given to it as data, to check and not to extract again.
-    /// </summary>
-    private const string ExtractedTablesInstructions =
-        " Fields listed under \"Already extracted\" in the first user message are not extracted again: they are tables whose rows were read from the document in parts and merged in document order, " +
-        "and the third user message gives those rows as a JSON object keyed by field name. " +
-        "Leave them out of \"values\" and \"sources\", but judge each against the validation rules its prompt declares, including rules that relate it to other fields, " +
-        "and report every mismatch in \"validationWarnings\" as for any other field. " +
-        "Rules in such a prompt about reordering or deduplicating the rows have not been applied to them: when the rows as given break such a rule, report that as a warning too.";
 
     /// <summary>The instructions for one excerpt's call: the rows that begin in it, nothing reordered or checked.</summary>
     private const string ExcerptInstructions =
@@ -741,15 +671,12 @@ public class FieldExtractionWorkflow : ITransientDependency
         "A row that begins in the context before the excerpt was read with the previous excerpt: leave it out. " +
         "A row that begins inside the excerpt and continues into the context after it: return it whole. Never return a table header as a row. " +
         "Rules in a field's prompt about the order of the whole table (sorting or reversing it) or about checking its values (totals, running balances, the first and last rows) " +
-        "apply to the whole table and are applied after every excerpt has been read: do not reorder, reverse, deduplicate or check the rows here. " +
+        "apply to the whole table, not to one excerpt: do not reorder, reverse, deduplicate or check the rows here. " +
         "Follow the rest of the prompt (which table, which columns, how to read each cell) as written. " +
         ValueNormalizationInstructions +
         TableReadingInstructions +
         "Write \"rows\" in full before \"sources\". \"sources\" has one key per requested field: an array of up to three short passages copied character for character from the excerpt where that field's rows appear, " +
         "and an empty array when no row of it begins in the excerpt.";
-
-    private const string ExtractedRowsLabel =
-        "Rows of the fields under \"Already extracted\", merged from every part of the document in document order, as a JSON object keyed by field name:";
 
     private const string ExcerptTableHeaderLabel = "Header of the table the excerpt starts inside:";
 
@@ -777,28 +704,11 @@ public class FieldExtractionWorkflow : ITransientDependency
         "a line of column labels followed by one or more lines of space- or tab-separated values is still a table — read each such line as a row and align its cells to the column labels from left to right. " +
         "Use headings, tables, and lists as structure signals, but never require Markdown table syntax: extract tabular values even when the pipes and separators have been stripped during extraction. ";
 
-    /// <summary>
-    /// The schema message: the fields to extract, then, for the call after the excerpts, the table fields already
-    /// extracted, which it only checks.
-    /// </summary>
-    private static string BuildSchemaUserMessage(
-        IReadOnlyList<FieldExtractionDescriptor> fields,
-        IReadOnlyList<FieldExtractionDescriptor> alreadyExtracted)
+    /// <summary>The schema message: the fields to extract, each with its type and prompt.</summary>
+    private static string BuildSchemaUserMessage(IReadOnlyList<FieldExtractionDescriptor> fields)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(fields.Count == 0 ? "Fields to extract: none." : "Fields to extract:");
-        AppendSchemaLines(sb, fields);
-        if (alreadyExtracted.Count > 0)
-        {
-            sb.AppendLine("Already extracted (check against their validation rules only):");
-            AppendSchemaLines(sb, alreadyExtracted);
-        }
-
-        return sb.ToString();
-    }
-
-    private static void AppendSchemaLines(StringBuilder sb, IReadOnlyList<FieldExtractionDescriptor> fields)
-    {
+        sb.AppendLine("Fields to extract:");
         foreach (var f in fields)
         {
             // f.Name has already been allow-list regex validated in the FieldDefinition entity layer and contains only [A-Za-z0-9_-].
@@ -815,6 +725,8 @@ public class FieldExtractionWorkflow : ITransientDependency
                 ? header
                 : $"{header}: {PromptBoundary.WrapField(f.Prompt)}");
         }
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -838,61 +750,22 @@ public class FieldExtractionWorkflow : ITransientDependency
         };
     }
 
-    private ChatResponseFormat BuildResponseFormat(
-        IReadOnlyList<FieldExtractionDescriptor> fields,
-        IReadOnlyList<FieldExtractionDescriptor> warned)
+    private ChatResponseFormat BuildResponseFormat(IReadOnlyList<FieldExtractionDescriptor> fields)
     {
-        // #527 §1/§3: the response is an envelope { values, validationWarnings }. `values` is the existing per-field
-        // typed object; `validationWarnings` is a bounded array whose fieldName is constrained to the declared field
-        // names (an enum) and whose message length is capped, so the model cannot emit warnings for unknown fields or
-        // unbounded text. additionalProperties:false + `required` at every level keeps the shape strict. The tables read
-        // in excerpts are among the names a warning may carry, though not among the values.
-        var fieldNameEnum = new JsonArray();
-        foreach (var field in warned)
-        {
-            fieldNameEnum.Add(field.Name);
-        }
-
-        var warningsSchema = new JsonObject
-        {
-            ["type"] = "array",
-            ["maxItems"] = DocumentFieldValidationWarningConsts.MaxWarningsPerExtraction,
-            ["description"] = "One entry per field whose extracted value fails a validation rule declared in its prompt; empty when all values pass.",
-            ["items"] = new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["fieldName"] = new JsonObject
-                    {
-                        ["type"] = "string",
-                        ["enum"] = fieldNameEnum,
-                        ["description"] = "The name of the field whose value failed validation."
-                    },
-                    ["message"] = new JsonObject
-                    {
-                        ["type"] = "string",
-                        ["maxLength"] = DocumentFieldValidationWarningConsts.MaxMessageLength,
-                        ["description"] = "A concise, human-readable explanation of the mismatch."
-                    }
-                },
-                ["required"] = new JsonArray { "fieldName", "message" },
-                ["additionalProperties"] = false
-            }
-        };
-
-        // Values, then warnings, then sources: an answer cut off at the output limit is still complete when only its
-        // sources are missing, because they only locate values (see FieldExtractionWorkflowResult.IsIncomplete).
+        // Values, then sources: a provider that writes the schema's keys in order finishes every value before the sources,
+        // and an answer cut off in its sources is complete, because they only locate values (see
+        // FieldExtractionWorkflowResult.IsIncomplete). SiliconFlow writes an answer's keys alphabetically whatever the
+        // schema's order (2026-11-26: "sources" first in every answer), so there a cut lands in the values.
+        // additionalProperties:false + `required` at every level keeps the shape strict.
         var schema = new JsonObject
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
                 ["values"] = BuildValuesSchema(fields),
-                ["validationWarnings"] = warningsSchema,
                 ["sources"] = BuildSourcesSchema(fields)
             },
-            ["required"] = new JsonArray { "values", "validationWarnings", "sources" },
+            ["required"] = new JsonArray { "values", "sources" },
             ["additionalProperties"] = false
         };
 
@@ -900,7 +773,7 @@ public class FieldExtractionWorkflow : ITransientDependency
         return ChatResponseFormat.ForJsonSchema(
             document.RootElement.Clone(),
             schemaName: "ExtractFieldExtraction",
-            schemaDescription: "Extracted field values plus field validation warnings.");
+            schemaDescription: "Extracted field values and the passages they were found in.");
     }
 
     private JsonObject BuildValuesSchema(IReadOnlyList<FieldExtractionDescriptor> fields)
@@ -950,8 +823,7 @@ public class FieldExtractionWorkflow : ITransientDependency
 
     private FieldExtractionWorkflowResult ParseResult(
         string rawJson,
-        IReadOnlyList<FieldExtractionDescriptor> fields,
-        IReadOnlyList<FieldExtractionDescriptor> warned)
+        IReadOnlyList<FieldExtractionDescriptor> fields)
     {
         if (string.IsNullOrWhiteSpace(rawJson))
         {
@@ -970,17 +842,16 @@ public class FieldExtractionWorkflow : ITransientDependency
             return AllNull(fields);
         }
 
-        // Envelope (#527 §1): { "values": { ... }, "validationWarnings": [ ... ] }. The two halves are parsed
-        // independently, so a malformed warning can never drop a valid value (and vice versa).
-        return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseWarnings(root, warned), ParseSources(root, fields));
+        // Envelope: { "values": { ... }, "sources": { ... } }, parsed independently, so a malformed source can never drop a
+        // valid value.
+        return new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseSources(root, fields));
     }
 
     /// <summary>
     /// An answer the provider stopped at the output limit. What closed before the cut is kept: every field whose value
-    /// finished, the warnings if their list closed, and each field's sources whose list closed. The field the cut fell
-    /// inside, and every field after it, is unfinished: not a <c>null</c> the model wrote but no answer at all, so a
-    /// half-written table never reaches the document. A cut that spared every value and the warnings (only sources were
-    /// lost) is a complete extraction.
+    /// finished, and each field's sources whose list closed. The field the cut fell inside, and every field after it, is
+    /// unfinished: not a <c>null</c> the model wrote but no answer at all, so a half-written table never reaches the
+    /// document. A cut that spared every value (only sources were lost) is a complete extraction.
     /// <para>
     /// Instructor raises on this finish reason and keeps nothing; LangExtract and Reducto split the document so no answer
     /// grows that long, which <see cref="ExtractAsync"/> also does for tables. Keeping the closed fields is what lets a
@@ -989,12 +860,10 @@ public class FieldExtractionWorkflow : ITransientDependency
     /// </summary>
     /// <param name="rawJson">The answer as far as it was written.</param>
     /// <param name="fields">The fields whose values the call asked for.</param>
-    /// <param name="warned">The fields a validation warning may name: <paramref name="fields"/>, and the tables read in excerpts before the call.</param>
     /// <param name="maxOutputTokens">The output limit the answer was cut off at.</param>
     protected virtual FieldExtractionWorkflowResult ParseCutOffResult(
         string rawJson,
         IReadOnlyList<FieldExtractionDescriptor> fields,
-        IReadOnlyList<FieldExtractionDescriptor> warned,
         int maxOutputTokens)
     {
         var answer = TruncatedJsonObject.Read(rawJson);
@@ -1007,24 +876,18 @@ public class FieldExtractionWorkflow : ITransientDependency
             : fields.Where(f => writtenValues == null || !writtenValues.ContainsKey(f.Name))
                 .Select(f => f.Name)
                 .ToHashSet(StringComparer.Ordinal);
-        var warningsClosed = answer.ClosedMembers.Contains("validationWarnings");
 
-        var result = new FieldExtractionWorkflowResult(
-            ParseValues(root, fields),
-            warningsClosed ? ParseWarnings(root, warned) : Array.Empty<FieldValidationWarningResult>(),
-            ParseSources(root, fields))
+        var result = new FieldExtractionWorkflowResult(ParseValues(root, fields), ParseSources(root, fields))
         {
-            UnfinishedFields = unfinished,
-            ValidationWarningsUnfinished = !warningsClosed
+            UnfinishedFields = unfinished
         };
 
         _logger.LogWarning(
             "Field extraction answer was cut off at the output limit (MaxOutputTokens={MaxOutputTokens}): " +
-            "{UnfinishedCount} of {FieldCount} fields unfinished ({UnfinishedFields}), warnings {WarningsState}. " +
+            "{UnfinishedCount} of {FieldCount} fields unfinished ({UnfinishedFields}). " +
             "Unfinished fields keep the document's earlier values. If the structured model allows more output, " +
             "raise Vault:ExtractBehavior:MaxFieldExtractionOutputTokens.",
-            maxOutputTokens, unfinished.Count, fields.Count, string.Join(", ", unfinished),
-            warningsClosed ? "complete" : "unfinished");
+            maxOutputTokens, unfinished.Count, fields.Count, string.Join(", ", unfinished));
 
         return result;
     }
@@ -1033,7 +896,7 @@ public class FieldExtractionWorkflow : ITransientDependency
     {
         var values = new Dictionary<string, JsonElement?>(fields.Count);
         foreach (var f in fields) values[f.Name] = null;
-        return new FieldExtractionWorkflowResult(values, Array.Empty<FieldValidationWarningResult>());
+        return new FieldExtractionWorkflowResult(values);
     }
 
     private IReadOnlyDictionary<string, JsonElement?> ParseValues(
@@ -1071,7 +934,7 @@ public class FieldExtractionWorkflow : ITransientDependency
     }
 
     /// <summary>
-    /// The quoted passages per declared field, as untrusted as the warnings: undeclared fields, non-strings and blanks are
+    /// The quoted passages per declared field, untrusted model output: undeclared fields, non-strings and blanks are
     /// dropped, and the count and length are held to the schema's bounds whether or not the provider enforced them.
     /// </summary>
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> ParseSources(
@@ -1107,78 +970,4 @@ public class FieldExtractionWorkflow : ITransientDependency
         return result;
     }
 
-    /// <summary>
-    /// Defensively normalizes the untrusted <c>validationWarnings</c> array (#527 §3): the JSON schema already constrains
-    /// the shape (fieldName enum + message maxLength + maxItems), but the server does not trust it. Discards warnings for
-    /// undeclared fields and blank / malformed entries, deduplicates to one warning per field (first wins), truncates an
-    /// overlong message at a valid UTF-16 boundary, caps the count, and logs what it dropped or cut — <b>never</b> failing
-    /// the extraction and never touching the parsed values, so a malformed warning cannot lose a valid field value.
-    /// </summary>
-    private IReadOnlyList<FieldValidationWarningResult> ParseWarnings(
-        JsonElement root,
-        IReadOnlyList<FieldExtractionDescriptor> fields)
-    {
-        if (!root.TryGetProperty("validationWarnings", out var warnings) || warnings.ValueKind != JsonValueKind.Array)
-        {
-            return Array.Empty<FieldValidationWarningResult>();
-        }
-
-        var declaredNames = new HashSet<string>(fields.Select(f => f.Name), StringComparer.Ordinal);
-        var byField = new Dictionary<string, FieldValidationWarningResult>(StringComparer.Ordinal);
-        var discarded = 0;
-        var truncated = 0;
-
-        foreach (var item in warnings.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.Object
-                || !item.TryGetProperty("fieldName", out var nameEl) || nameEl.ValueKind != JsonValueKind.String
-                || !item.TryGetProperty("message", out var msgEl) || msgEl.ValueKind != JsonValueKind.String)
-            {
-                discarded++;
-                continue;
-            }
-
-            var fieldName = nameEl.GetString()!;
-            if (!declaredNames.Contains(fieldName))
-            {
-                discarded++;   // warning for a field the caller never asked about — must not create review state (#527 §3).
-                continue;
-            }
-
-            var message = (msgEl.GetString() ?? string.Empty).Trim();
-            if (message.Length == 0)
-            {
-                discarded++;   // blank message.
-                continue;
-            }
-
-            if (byField.ContainsKey(fieldName))
-            {
-                continue;      // one merged warning per field (first wins); duplicates are silently collapsed.
-            }
-
-            if (byField.Count >= DocumentFieldValidationWarningConsts.MaxWarningsPerExtraction)
-            {
-                discarded++;   // over the count cap.
-                continue;
-            }
-
-            if (message.Length > DocumentFieldValidationWarningConsts.MaxMessageLength)
-            {
-                message = TextTruncator.AtCharBoundary(message, DocumentFieldValidationWarningConsts.MaxMessageLength);
-                truncated++;
-            }
-
-            byField[fieldName] = new FieldValidationWarningResult(fieldName, message);
-        }
-
-        if (discarded > 0 || truncated > 0)
-        {
-            _logger.LogWarning(
-                "Field extraction normalized model validation warnings: {Discarded} discarded (undeclared / blank / malformed / over-cap), {Truncated} truncated to {MaxLength} chars.",
-                discarded, truncated, DocumentFieldValidationWarningConsts.MaxMessageLength);
-        }
-
-        return byField.Values.ToList();
-    }
 }

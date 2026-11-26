@@ -165,6 +165,25 @@ public class DocumentSubmission_Tests : VaultExtractTestBase<DocumentSubmissionT
         dto.LifecycleStatus.ShouldBe(DocumentLifecycleStatus.Ready);
     }
 
+    /// <summary>A submitted value is held to the type's validation rules like an extracted one, and a broken rule blocks Ready.</summary>
+    [Fact]
+    public async Task A_submitted_value_that_breaks_its_fields_validation_rule_holds_the_document_for_review()
+    {
+        await ArrangeTypeAsync(totalRule: new FieldValidationRule("合計は 1,000 以下", "value <= 1000", []));
+
+        var dto = await _appService.SubmitAsync(new SubmitDocumentInput
+        {
+            Markdown = "# Invoice",
+            DocumentTypeCode = TypeCode,
+            Fields = Fields(("invoice_no", "\"INV-7\""), ("total", "1200"))
+        });
+
+        dto.ReviewReasons.ShouldBe(DocumentReviewReasons.FieldValidationWarning);
+        dto.LifecycleStatus.ShouldNotBe(DocumentLifecycleStatus.Ready);
+        await WithUnitOfWorkAsync(async () =>
+            (await _documentRepository.FindWithFieldValuesAsync(dto.Id))!.FieldValidationWarnings.Single().Message.ShouldBe("合計は 1,000 以下"));
+    }
+
     [Fact]
     public async Task A_type_without_fields_leaves_field_extraction_to_the_server()
     {
@@ -306,7 +325,7 @@ public class DocumentSubmission_Tests : VaultExtractTestBase<DocumentSubmissionT
         await _extractionClient.DidNotReceiveWithAnyArgs().ExtractAsync(default!, default!, default!);
     }
 
-    private async Task<Guid> ArrangeTypeAsync()
+    private async Task<Guid> ArrangeTypeAsync(FieldValidationRule? totalRule = null)
     {
         var typeId = Guid.NewGuid();
         await WithUnitOfWorkAsync(async () =>
@@ -317,8 +336,13 @@ public class DocumentSubmission_Tests : VaultExtractTestBase<DocumentSubmissionT
             await fields.InsertAsync(new Field(
                 Guid.NewGuid(), tenantId: null, typeId, "invoice_no", "Invoice No", TextFieldType.ControlName,
                 isRequired: true, isUniqueKey: true), autoSave: true);
-            await fields.InsertAsync(new Field(
-                Guid.NewGuid(), tenantId: null, typeId, "total", "Total", NumberFieldType.ControlName), autoSave: true);
+            var total = new Field(Guid.NewGuid(), tenantId: null, typeId, "total", "Total", NumberFieldType.ControlName);
+            if (totalRule != null)
+            {
+                total.SetValidationRules([totalRule]);
+            }
+
+            await fields.InsertAsync(total, autoSave: true);
         });
         return typeId;
     }

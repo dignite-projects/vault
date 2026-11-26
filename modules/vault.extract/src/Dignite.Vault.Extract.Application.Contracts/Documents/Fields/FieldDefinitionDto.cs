@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Dignite.Abp.FlexFields;
 using Volo.Abp.Application.Dtos;
 
@@ -47,4 +48,7 @@ public class FieldDefinitionDto : EntityDto<Guid>
 
     /// <summary>Whether this field is part of the type's duplicate-detection unique key (#411). The normalized values of all unique-key fields are hashed into the document's fingerprint to flag duplicate re-uploads.</summary>
     public bool IsUniqueKey { get; set; }
+
+    /// <summary>The checks this field's stored value must pass; empty when it has none.</summary>
+    public List<FieldValidationRuleDto> ValidationRules { get; set; } = new();
 }

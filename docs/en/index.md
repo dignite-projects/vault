@@ -56,7 +56,7 @@ scans · photos · PDFs · Office files
 ### Documents
 
 - [Documents and Review](documents/documents.md) — uploading, lifecycle statuses, review reasons, operator actions, recycle bin
-- [Document Types and Fields](documents/document-types.md) — the Host and tenant layers, field types, duplicate detection, validation warnings, type packs
+- [Document Types and Fields](documents/document-types.md) — the Host and tenant layers, field types, duplicate detection, validation rules, type packs
 - [Sub-Documents](documents/sub-documents.md) — splitting bundles and embedded documents
 - [Cabinets](documents/cabinets.md) — the manual filing dimension
 

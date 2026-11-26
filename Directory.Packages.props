@@ -206,6 +206,9 @@
         <!-- ElBruno.MarkItDotNet.Excel 0.6.0 requires ClosedXML >= 0.105.0. Keep the
              application export writer and XLSX Markdown converter on one resolved version. -->
         <PackageVersion Include="ClosedXML" Version="0.105.0" />
+        <!-- Jint: evaluates the JavaScript expressions of field validation rules in a sandbox (Vault Extract Application).
+             BSD-2-Clause; Elsa Workflows and Orchard Core run user scripts on it. -->
+        <PackageVersion Include="Jint" Version="4.18.1" />
         <PackageVersion Include="IdentityModel" Version="7.0.0" />
         <PackageVersion Include="KubernetesClient" Version="19.0.2" />
         <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />

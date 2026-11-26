@@ -471,8 +471,9 @@ public class DocumentAppService_ExtractedFields_Tests
     [Fact]
     public async Task Manual_Field_Edit_Does_Not_Clear_Validation_Warnings()
     {
-        // #527 §9: saving a manual correction leaves the warning visible until the operator explicitly resolves it —
-        // UpdateExtractedFieldsAsync must not clear the warning or its blocking bit.
+        // #527 §9: a correction leaves a warning alone unless a validation rule reads the value it changed. Here no rule
+        // does (the warning came from elsewhere, an extraction before rules existed), so it stays until the operator
+        // resolves it.
         var amountFieldId = Guid.NewGuid();
         var doc = CreateClassifiedDocument("host.contract");
         doc.ReplaceFieldValidationWarnings(new[] { new FieldValidationWarning(amountFieldId, "does not reconcile") });
@@ -486,6 +487,105 @@ public class DocumentAppService_ExtractedFields_Tests
 
         doc.FieldValidationWarnings.Count.ShouldBe(1);
         doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeTrue();
+    }
+
+    // ─── validation rules judged again by an edit ───
+
+    [Fact]
+    public async Task An_edit_that_corrects_a_value_to_pass_its_rule_clears_the_warning_and_the_blocking_reason()
+    {
+        var (doc, amount, _) = ArrangeRuledAmount(amountValue: "1500");
+        doc.ReplaceFieldValidationWarnings([new FieldValidationWarning(amount.Id, "金額は 1,000 以下")]);
+
+        await _appService.UpdateExtractedFieldsAsync(doc.Id, new UpdateExtractedFieldsInput
+        {
+            Fields = new Dictionary<string, JsonElement> { ["amount"] = JsonString("900") }
+        });
+
+        doc.FieldValidationWarnings.ShouldBeEmpty();
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task An_edit_that_breaks_a_rule_raises_its_warning()
+    {
+        var (doc, amount, _) = ArrangeRuledAmount(amountValue: "900");
+
+        await _appService.UpdateExtractedFieldsAsync(doc.Id, new UpdateExtractedFieldsInput
+        {
+            Fields = new Dictionary<string, JsonElement> { ["amount"] = JsonString("1500") }
+        });
+
+        doc.FieldValidationWarnings.Single().FieldDefinitionId.ShouldBe(amount.Id);
+        doc.FieldValidationWarnings.Single().Message.ShouldBe("金額は 1,000 以下");
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task An_edit_judges_again_a_rule_that_reads_the_changed_field_as_an_input()
+    {
+        var (doc, _, memo) = ArrangeRuledAmount(amountValue: "900", memoValue: "900 円");
+
+        await _appService.UpdateExtractedFieldsAsync(doc.Id, new UpdateExtractedFieldsInput
+        {
+            Fields = new Dictionary<string, JsonElement> { ["amount"] = JsonString("800"), ["memo"] = JsonString("900 円") }
+        });
+
+        doc.FieldValidationWarnings.Single().FieldDefinitionId.ShouldBe(memo.Id);
+        doc.FieldValidationWarnings.Single().Message.ShouldBe("メモに金額を書く");
+    }
+
+    [Fact]
+    public async Task A_warning_the_operator_accepted_is_not_raised_again_by_an_edit_no_rule_reads()
+    {
+        // The amount breaks its rule, and the operator accepted it (resolved the warning). Correcting the note afterwards
+        // changes nothing the amount's rule reads, so the accepted warning does not come back.
+        var (doc, _, _) = ArrangeRuledAmount(amountValue: "1500", memoValue: "1500 円", withNote: true);
+
+        await _appService.UpdateExtractedFieldsAsync(doc.Id, new UpdateExtractedFieldsInput
+        {
+            Fields = new Dictionary<string, JsonElement>
+            {
+                ["amount"] = JsonString("1500"),
+                ["memo"] = JsonString("1500 円"),
+                ["note"] = JsonString("corrected")
+            }
+        });
+
+        doc.FieldValidationWarnings.ShouldBeEmpty();
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// A classified document holding <c>amount</c> (rule: at most 1,000) and <c>memo</c> (rule: mentions the amount, read as
+    /// the input <c>a</c>), both Text, and optionally <c>note</c>, which no rule reads.
+    /// </summary>
+    private (Document Doc, Field Amount, Field Memo) ArrangeRuledAmount(string amountValue, string? memoValue = null, bool withNote = false)
+    {
+        var doc = CreateClassifiedDocument("host.contract");
+        var amount = new Field(Guid.NewGuid(), tenantId: null, documentTypeId: TypeId("host.contract"),
+            name: "amount", displayName: "amount", fieldTypeName: TextFieldType.ControlName, configuration: TextConfig());
+        var memo = new Field(Guid.NewGuid(), tenantId: null, documentTypeId: TypeId("host.contract"),
+            name: "memo", displayName: "memo", fieldTypeName: TextFieldType.ControlName, configuration: TextConfig());
+        amount.SetValidationRules([new FieldValidationRule("金額は 1,000 以下", "Number(value) <= 1000", [])]);
+        memo.SetValidationRules([new FieldValidationRule("メモに金額を書く", "value.includes(a)", [new FieldValidationRuleInput("a", amount.Id)])]);
+        var fields = new List<Field> { amount, memo };
+        if (withNote)
+        {
+            fields.Add(new Field(Guid.NewGuid(), tenantId: null, documentTypeId: TypeId("host.contract"),
+                name: "note", displayName: "note", fieldTypeName: TextFieldType.ControlName, configuration: TextConfig()));
+        }
+
+        var values = new Dictionary<string, object?> { ["amount"] = amountValue };
+        if (memoValue != null)
+        {
+            values["memo"] = memoValue;
+        }
+
+        doc.SetFlexFields(values);
+        StubGet(doc);
+        _fieldRepository.GetListAsync(TypeId("host.contract"), Arg.Any<CancellationToken>()).Returns(fields);
+        return (doc, amount, memo);
     }
 
     [Fact]

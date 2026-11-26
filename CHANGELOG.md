@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Field validation rules.** A field carries up to 10 checks its value must pass, each a one-line description and a
+  JavaScript expression over the field's value (`value`) and the other fields it names (`inputs`, bound by field id),
+  returning `true`, `false` or `[false, "detail"]`. They are evaluated in code, in a sandboxed Jint engine per rule
+  (strict mode, 200,000 statements, 250 ms, 16 MB, no host objects), whenever field extraction, an operator's edit or
+  submitted content writes the document's values, and a rule that does not hold sets the blocking
+  `FieldValidationWarning` with the rule's description. A rule whose value or input is absent is skipped; one that
+  throws or returns anything else counts as failing. `FieldDefinitionDto`, `CreateFieldDefinitionDto` and
+  `UpdateFieldDefinitionDto` gain `validationRules` (`null` on update keeps them), and type packs move to **version 3**
+  with each field's `validationRules`, inputs named by field name; version 1 and 2 packs still import. Deleting a field
+  another field's rule reads is refused until that rule changes. New error codes `Extract:TooManyFieldValidationRules`,
+  `Extract:InvalidFieldValidationRule`, `Extract:InvalidFieldValidationRuleInput`, `Extract:UnparsableFieldValidationRule`
+  and `Extract:FieldReadByValidationRule`. A field with several failed rules shows one line per rule on the detail page.
+  See [Validation Rules](docs/en/documents/document-types.md#validation-rules).
+
 - **Submitting processed content.** A caller that converted, classified and extracted a document itself submits the
   result instead of the file: `POST /api/vault-extract/documents/submit` (`IDocumentAppService.SubmitAsync`) and the
   MCP tool `vault_extract_submit_document`, the MCP server's first write tool. The Markdown becomes the document's text
@@ -313,19 +327,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The extraction model no longer reports validation warnings.** The field-extraction call asks for values and
+  sources only, and `FieldValidationWarning` comes from validation rules alone. A check written into a field's
+  description no longer produces a warning (see the deploy note). Measured on a 114-row bank statement extracted
+  correctly, the model warned on 4 of 19 runs, and on 14 of 19 when asked in a separate call, and caught 4 of 9 real
+  mismatches; the same checks in code warned on none of 103 runs and caught all. An operator's edit now judges again
+  the rules that read a value it changed, so a value corrected to pass clears its warning; before, only dismissing
+  did. Submitted values are held to the rules too.
+
 - **A long table is extracted in excerpts, so it is complete instead of cut off.** When the rows of the tables in a
   document's Markdown run past what one answer is sized for (half of `MaxFieldExtractionOutputTokens` at 4 tokens a
   character: 2,048 characters at the default), the type's `Table` fields are read in excerpts, one call each, a few in
   parallel: cut only between lines, preferably at a table's edge, with a table's header shown to an excerpt that
   starts inside it and the lines across a cut between lines of text shown to both sides. An excerpt whose answer has
   fewer rows than its recognised tables hold is read again in halves and the fuller reading kept. The rows are joined
-  in document order without deduplication, and one last call extracts the other fields and checks the joined rows
-  against their fields' validation rules. A single answer cut off inside a `Table` field is redone this way too. The
+  in document order without deduplication, and one last call extracts the other fields; it is not given the joined
+  rows, which validation rules check in code. A single answer cut off inside a `Table` field is redone this way too. The
   measured 114-row statement now comes back with every row on Qwen3-30B-A3B-Instruct and DeepSeek-V3 (five of five
   runs after the last change), at about three times the input tokens of one call (30,000 to 38,000) and the same
   output (about 10,000). A `Table` field rule that reorders the rows (reversing a newest-first statement) applies
-  only to a table that fits in one answer; a table read in excerpts keeps the document's order and the broken rule
-  becomes a validation warning. An excerpt still unread after a second call leaves the `Table` fields with their
+  only to a table that fits in one answer; a table read in excerpts keeps the document's order, which a validation
+  rule can check. An excerpt still unread after a second call leaves the `Table` fields with their
   earlier values and the document with `FieldExtractionIncomplete`. See
   [Long Tables](docs/en/documents/document-types.md#long-tables).
 
@@ -763,6 +785,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in half a surrogate pair), and the PaddleOCR HTTP response is disposed.
 
 ### Deploy note
+
+- **Validation checks written into field descriptions stop producing warnings.** Rewrite each such check as a
+  validation rule of its field (through the field API or a version 3 type pack) and remove the check from the
+  description. Warnings documents already hold stay until
+  they are dismissed, re-extracted or corrected. The Extract migration `Added_Field_ValidationRules` adds the not-null
+  `VaultFields.ValidationRules` column (default empty, read as no rules).
 
 - **Figures in stored Markdown.** Documents parsed before this release keep the `*[Image OCR]*` lines in their
   Markdown, and classification and sub-document segmentation no longer read those as figures. **Re-parse** such a

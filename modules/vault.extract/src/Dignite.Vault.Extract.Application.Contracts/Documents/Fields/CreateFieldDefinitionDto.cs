@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Dignite.Abp.FlexFields;
 using Volo.Abp.Validation;
@@ -40,6 +41,9 @@ public class CreateFieldDefinitionDto
 
     /// <summary>Whether this field is part of the type's duplicate-detection unique key (#411). The normalized values of all unique-key fields are hashed into the document's fingerprint to flag duplicate re-uploads.</summary>
     public bool IsUniqueKey { get; set; }
+
+    /// <summary>The field's validation rules; <c>null</c> or empty for none.</summary>
+    public List<FieldValidationRuleDto>? ValidationRules { get; set; }
 
     // The type a field takes when the caller states none, the same default the v2 DataType enum carried.
     // A literal rather than TextFieldType.ControlName: Application.Contracts must not depend on the field-type

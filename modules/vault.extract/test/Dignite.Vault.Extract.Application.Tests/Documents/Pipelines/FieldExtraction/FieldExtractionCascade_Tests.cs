@@ -442,7 +442,7 @@ public class FieldExtractionCascade_Tests
         (doc.ReviewReasons & DocumentReviewReasons.DuplicateSuspected).ShouldBe(DocumentReviewReasons.DuplicateSuspected);
     }
 
-    // ─── #527 §5/§7: field validation warning persistence ───────────────────
+    // ─── #527 §5/§7: field validation warning persistence, from the fields' validation rules ───
 
     [Fact]
     public async Task Warning_Is_Persisted_Alongside_The_Kept_Value_And_Sets_The_Bit()
@@ -451,12 +451,13 @@ public class FieldExtractionCascade_Tests
         SetupType("bank.statement");
         _documentRepository.FindAsync(doc.Id, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(doc);
         _documentRepository.FindWithFieldValuesAsync(doc.Id, Arg.Any<CancellationToken>()).Returns(doc);
+        var transactions = CreateFieldDefinition("bank.statement", "transactions", TextFieldType.ControlName);
+        transactions.SetValidationRules([new FieldValidationRule("Row 4 balance does not reconcile.", "!value.includes('| a |')", [])]);
         _fieldRepository.GetListAsync(TypeId("bank.statement"), Arg.Any<CancellationToken>())
-            .Returns(new List<Field> { CreateFieldDefinition("bank.statement", "transactions", TextFieldType.ControlName) });
+            .Returns(new List<Field> { transactions });
         _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(WorkflowResultWith(
-                new Dictionary<string, JsonElement?> { ["transactions"] = JsonDocument.Parse("\"| a | b |\"").RootElement },
-                new FieldValidationWarningResult("transactions", "Row 4 balance does not reconcile.")));
+            .Returns(WorkflowResult(
+                new Dictionary<string, JsonElement?> { ["transactions"] = JsonDocument.Parse("\"| a | b |\"").RootElement }));
 
         await Extract(doc.Id, null, "bank.statement");
 
@@ -495,20 +496,21 @@ public class FieldExtractionCascade_Tests
     [Fact]
     public async Task Warning_For_Field_Whose_Shape_Changed_MidFlight_Is_Discarded()
     {
-        // Mirrors the value in-flight guard: while the LLM was in flight the field's DataType changed, so both the value
-        // and its warning are stale and discarded (§7).
+        // Mirrors the value in-flight guard: while the LLM was in flight the field's type changed, so the value is stale
+        // and discarded (§7), and a rule over a value the document does not hold is skipped, never warned.
         var doc = CreateDocument(tenantId: null, typeCode: "bank.statement");
         SetupType("bank.statement");
         _documentRepository.FindAsync(doc.Id, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(doc);
         _documentRepository.FindWithFieldValuesAsync(doc.Id, Arg.Any<CancellationToken>()).Returns(doc);
         var initialDefs = new List<Field> { CreateFieldDefinition("bank.statement", "amount", NumberFieldType.ControlName) };
-        var currentDefs = new List<Field> { CreateFieldDefinition("bank.statement", "amount", TextFieldType.ControlName) };
+        var current = CreateFieldDefinition("bank.statement", "amount", TextFieldType.ControlName);
+        current.SetValidationRules([new FieldValidationRule("some rule failed", "false", [])]);
+        var currentDefs = new List<Field> { current };
         _fieldRepository.GetListAsync(TypeId("bank.statement"), Arg.Any<CancellationToken>())
             .Returns(initialDefs, currentDefs);
         _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(WorkflowResultWith(
-                new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement },
-                new FieldValidationWarningResult("amount", "some rule failed")));
+            .Returns(WorkflowResult(
+                new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement }));
 
         await Extract(doc.Id, null, "bank.statement");
 
@@ -536,12 +538,7 @@ public class FieldExtractionCascade_Tests
 
     // ─── helpers ───────────────────────────────────────────────────────────
 
-    private static FieldExtractionWorkflowResult WorkflowResult(Dictionary<string, JsonElement?> values) =>
-        new(values, Array.Empty<FieldValidationWarningResult>());
-
-    private static FieldExtractionWorkflowResult WorkflowResultWith(
-        Dictionary<string, JsonElement?> values, params FieldValidationWarningResult[] warnings) =>
-        new(values, warnings);
+    private static FieldExtractionWorkflowResult WorkflowResult(Dictionary<string, JsonElement?> values) => new(values);
 
     private Task<FieldExtractionResult> Extract(Guid documentId, Guid? tenantId, string eventTypeCode)
         => _service.ExtractAsync(documentId, tenantId, expectedEventTypeCode: eventTypeCode);

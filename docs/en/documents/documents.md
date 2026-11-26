@@ -84,7 +84,7 @@ A document carries a set of **review reasons**, each raised and cleared by one s
 | `UnresolvedClassification` | Yes | Classification confidence is below the type's threshold, no type fits, or the LLM output was unusable | A confident re-classification; an operator confirming or assigning a type |
 | `DuplicateSuspected` | Yes | Another document of the type has the same [unique-key values](document-types.md#duplicate-detection) | Allowing the duplicate; a type change; the type losing its unique keys |
 | `FieldExtractionIncomplete` | Yes | Field extraction was declined because the Markdown exceeds `MaxFieldExtractionMarkdownLength`, the model's answer was cut off at `MaxFieldExtractionOutputTokens` before it settled every value (see [Answers cut off at the output limit](document-types.md#answers-cut-off-at-the-output-limit)), or a long table could not be read in excerpts (see [Long Tables](document-types.md#long-tables)) | An operator confirming the field entry; a later successful extraction (for example after a type change) |
-| `FieldValidationWarning` | Yes | An extracted value broke a rule stated in its field's instruction ([Validation Warnings](document-types.md#validation-warnings)) | An operator dismissing the warnings; a clean re-extraction; a type change |
+| `FieldValidationWarning` | Yes | A value broke one of its field's [validation rules](document-types.md#validation-rules) | An operator dismissing the warnings; an edit correcting the value; a clean re-extraction; a type change |
 | `MissingRequiredFields` | No | A required field has no value | The value being supplied, by extraction or by an operator |
 | `SegmentationIncomplete` | No | A container could not be split reliably (see [Sub-Documents](sub-documents.md)) | A later successful split; a type change |
 
@@ -113,7 +113,7 @@ Rejecting, allowing a duplicate, dismissing warnings and confirming the field en
 
 | Action | Endpoint | Effect |
 | --- | --- | --- |
-| Edit field values | `POST extracted-fields` | Replaces the whole value set after validating each value against its field type. Re-evaluates required fields and the duplicate key; does not clear validation warnings. A document that stays Ready re-publishes `DocumentReadyEto` |
+| Edit field values | `POST extracted-fields` | Replaces the whole value set after validating each value against its field type. Re-evaluates required fields, the duplicate key and the validation rules that read a changed value. A document that stays Ready re-publishes `DocumentReadyEto` |
 | Correct the Markdown | `POST markdown` | Overwrites the Markdown only (the title, language and fields stay). On a Ready document this re-fires `DocumentReadyEto`. With `Reprocess` set, also re-extracts the fields from the corrected text, and the event fires when the document is Ready again. Not available on containers |
 | Re-extract fields | `POST reextract-fields` | Runs field extraction again on the current Markdown and type |
 | Re-parse | `POST reparse` | Extracts the text again from the original file and re-runs the whole pipeline. See [Reprocessing](../pipeline/reprocessing.md#single-document-re-parse) |

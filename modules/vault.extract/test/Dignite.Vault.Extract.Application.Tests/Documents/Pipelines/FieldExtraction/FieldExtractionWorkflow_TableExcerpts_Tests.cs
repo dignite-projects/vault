@@ -90,6 +90,11 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
     private static bool IsExcerptCall(ChatOptions? options)
         => options?.ResponseFormat is ChatResponseFormatJson { SchemaName: ExcerptSchemaName };
 
+    /// <summary>Whether the call's schema asks for a value of <paramref name="field"/>.</summary>
+    private static bool AsksFor(ChatOptions? options, string field)
+        => ((ChatResponseFormatJson)options!.ResponseFormat!).Schema!.Value
+            .GetProperty("properties").GetProperty("values").GetProperty("properties").TryGetProperty(field, out _);
+
     /// <summary>The excerpt the call shows, unwrapped from its document boundary.</summary>
     private static string ExcerptOf(IReadOnlyList<ChatMessage> messages)
     {
@@ -131,7 +136,6 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
     private const string RestAnswer =
         """
         { "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567 },
-          "validationWarnings": [ { "fieldName": "transactions", "message": "残高の推移が一致しません。" } ],
           "sources": { "bank_name": ["銀行名 三井住友銀行"], "closing_balance": [] } }
         """;
 
@@ -196,8 +200,12 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
         excerptCall.Options.MaxOutputTokens.ShouldBe(new VaultExtractBehaviorOptions().MaxFieldExtractionOutputTokens);
     }
 
+    /// <summary>
+    /// The last call is not given the merged rows: given them, the model copied a misread row's balance into the closing
+    /// balance, so the error agreed with itself. A rule over the whole table is a validation rule judged in code.
+    /// </summary>
     [Fact]
-    public async Task The_last_call_extracts_the_other_fields_and_checks_the_merged_rows()
+    public async Task The_last_call_extracts_the_other_fields_and_is_not_given_the_rows()
     {
         var model = new ScriptedChatClient((messages, options) => IsExcerptCall(options) ? Transcribe(messages) : Answer(RestAnswer));
 
@@ -205,36 +213,24 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
 
         var last = model.Calls.Single(call => !IsExcerptCall(call.Options));
         var schema = ((ChatResponseFormatJson)last.Options!.ResponseFormat!).Schema!.Value;
+        schema.GetProperty("properties").EnumerateObject().Select(p => p.Name).ShouldBe(["values", "sources"]);
         schema.GetProperty("properties").GetProperty("values").GetProperty("properties").EnumerateObject()
             .Select(p => p.Name).ShouldBe(["bank_name", "closing_balance"], ignoreOrder: true);
-        schema.GetProperty("properties").GetProperty("validationWarnings").GetProperty("items").GetProperty("properties")
-            .GetProperty("fieldName").GetProperty("enum").EnumerateArray().Select(e => e.GetString())
-            .ShouldBe(["bank_name", "closing_balance", "transactions"], ignoreOrder: true);
 
-        last.Messages.Count.ShouldBe(4);
-        last.Messages[1].Text.ShouldContain("Already extracted");
-        last.Messages[1].Text.ShouldContain("\"transactions\"");
-        var rows = JsonNode.Parse(Unwrap(last.Messages[3].Text))!["transactions"]!.AsArray();
-        rows.Count.ShouldBe(300);
-        rows[0]!["date"]!.GetValue<string>().ShouldBe(Date(0));
-        rows[299]!["amount"]!.GetValue<decimal>().ShouldBe(300_000m);
+        last.Messages.Count.ShouldBe(3);
+        last.Messages[1].Text.ShouldNotContain("transactions");
+        last.Messages[0].Text.ShouldNotContain("validationWarnings");
 
-        result.ValidationWarnings.Single().FieldName.ShouldBe("transactions");
+        Dates(result.Values["transactions"]).Count.ShouldBe(300);
         result.Sources["transactions"].Count.ShouldBeGreaterThan(1);
         result.Sources["bank_name"].ShouldBe(["銀行名 三井住友銀行"]);
-    }
-
-    private static string Unwrap(string text)
-    {
-        var start = text.IndexOf("<document>\n", StringComparison.Ordinal) + "<document>\n".Length;
-        return text[start..text.LastIndexOf("\n</document>", StringComparison.Ordinal)].Replace("&lt;", "<");
     }
 
     [Fact]
     public async Task A_short_table_is_extracted_with_the_other_fields_in_one_call()
     {
         var model = new ScriptedChatClient((_, _) => Answer(
-            """{ "values": { "bank_name": "x", "closing_balance": 1, "transactions": [ { "values": { "date": "2025/01/01", "amount": 1000 } } ] }, "validationWarnings": [], "sources": {} }"""));
+            """{ "values": { "bank_name": "x", "closing_balance": 1, "transactions": [ { "values": { "date": "2025/01/01", "amount": 1000 } } ] }, "sources": {} }"""));
 
         var result = await Workflow(model).ExtractAsync(StatementFields(), Statement(rows: 12));
 
@@ -332,11 +328,10 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
         result.IsIncomplete.ShouldBeTrue();
         result.Values["bank_name"]!.Value.GetString().ShouldBe("三井住友銀行");
 
-        // With no rows to check, the last call neither checks the table nor names it in a warning.
+        // The last call extracts the other fields only.
         var last = model.Calls.Single(call => !IsExcerptCall(call.Options));
         last.Messages.Count.ShouldBe(3);
         last.Messages[1].Text.ShouldNotContain("transactions");
-        result.ValidationWarnings.ShouldBeEmpty();
     }
 
     [Fact]
@@ -365,7 +360,7 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
         // The flattened table is not recognised as one, so nothing predicts its length: the one answer runs out inside it.
         var model = new ScriptedChatClient((messages, options) =>
             IsExcerptCall(options) ? Transcribe(messages)
-            : messages.Count == 4 ? Answer(RestAnswer)
+            : !AsksFor(options, "transactions") ? Answer(RestAnswer)
             : Answer("""{ "values": { "bank_name": "三井住友銀行", "closing_balance": 1234567, "transactions": [ { "values": { "date": "2025/0""",
                 ChatFinishReason.Length));
         var markdown = FlattenedStatement(rows: 200);
@@ -381,31 +376,29 @@ public class FieldExtractionWorkflow_TableExcerpts_Tests
             .ShouldAllBe(call => call.Messages[2].Text.Contains("Context before the excerpt"));
     }
 
+    /// <summary>The merged rows go to no model, so no prompt ceiling applies to them; the document's own ceiling gates the run.</summary>
     [Fact]
-    public async Task Merged_rows_over_the_markdown_ceiling_leave_the_table_unfinished()
+    public async Task Merged_rows_are_kept_whatever_their_length()
     {
         var model = new ScriptedChatClient((messages, options) => IsExcerptCall(options) ? Transcribe(messages) : Answer(RestAnswer));
-        var markdown = Statement(rows: 300);
 
         var result = await Workflow(model, new VaultExtractBehaviorOptions { MaxFieldExtractionMarkdownLength = 5_000 })
-            .ExtractAsync(StatementFields(), markdown);
+            .ExtractAsync(StatementFields(), Statement(rows: 300));
 
-        result.UnfinishedFields.ShouldBe(["transactions"]);
-        result.Values["transactions"].ShouldBeNull();
-        model.Calls.Single(call => !IsExcerptCall(call.Options)).Messages.Count.ShouldBe(3);
+        result.UnfinishedFields.ShouldBeEmpty();
+        Dates(result.Values["transactions"]).Count.ShouldBe(300);
     }
 
     [Fact]
-    public async Task A_type_with_only_a_table_still_has_its_rows_checked()
+    public async Task A_type_with_only_a_table_makes_no_call_after_its_excerpts()
     {
         var model = new ScriptedChatClient((messages, options) => IsExcerptCall(options)
             ? Transcribe(messages)
-            : Answer("""{ "values": {}, "validationWarnings": [ { "fieldName": "transactions", "message": "合計が一致しません。" } ], "sources": {} }"""));
+            : throw new InvalidOperationException("No call is expected after the excerpts."));
 
         var result = await Workflow(model).ExtractAsync([Field("transactions", TableFieldType.ControlName, TransactionColumns)], Statement(rows: 300));
 
-        model.Calls.Single(call => !IsExcerptCall(call.Options)).Messages[1].Text.ShouldStartWith("Fields to extract: none.");
-        result.ValidationWarnings.Single().FieldName.ShouldBe("transactions");
+        model.Calls.ShouldAllBe(call => IsExcerptCall(call.Options));
         Dates(result.Values["transactions"]).Count.ShouldBe(300);
     }
 

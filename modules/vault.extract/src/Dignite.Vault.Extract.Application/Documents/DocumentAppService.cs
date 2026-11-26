@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Extract.Documents;
 using Dignite.Vault.Extract.Documents.Duplicates;
+using Dignite.Vault.Extract.Documents.Fields.Validation;
 using Dignite.Vault.Extract.Documents.Pipelines;
 using Dignite.Vault.Extract.Documents.Pipelines.Classification;
 using Dignite.Vault.Extract.Documents.Pipelines.FieldExtraction;
@@ -105,6 +106,12 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
     /// Resolved lazily so the constructor a subclass calls stays as it was.
     /// </summary>
     protected DocumentReferenceMaps ReferenceMaps => LazyServiceProvider.LazyGetRequiredService<DocumentReferenceMaps>();
+
+    /// <summary>
+    /// Judges the type's validation rules again after an operator's edit. Resolved lazily for the same reason as
+    /// <see cref="ReferenceMaps"/>.
+    /// </summary>
+    protected FieldValidationRuleEvaluator RuleEvaluator => LazyServiceProvider.LazyGetRequiredService<FieldValidationRuleEvaluator>();
 
     public virtual async Task<DocumentDto> GetAsync(Guid id)
     {
@@ -1127,7 +1134,8 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // Tenant isolation is enforced by the ambient IMultiTenant filter (a cross-tenant id resolves to null below).
         // #527: load the field-stage children (values + warnings), not the lean includeDetails set — otherwise the returned
         // DTO omits warning details while the blocking bit stays set, so the operator's page loses the warnings (and the
-        // "Mark resolved" button goes inert) until a manual refresh. Editing values does not itself clear warnings (#527 §9).
+        // "Mark resolved" button goes inert) until a manual refresh. The edit judges again only the validation rules that
+        // read a value it changed (below).
         var document = await _documentRepository.FindWithFieldValuesAsync(id);
         if (document == null)
         {
@@ -1161,9 +1169,29 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
         // logged-and-skipped there.
         var fieldValues = FlexFieldInputReader.Read(
             input.Fields ?? new Dictionary<string, JsonElement>(), definitions, documentTypeCode, _fieldTypeExtensionRegistry);
+        var valuesBefore = RuleEvaluator.Snapshot(document, definitions);
 
         // Whole-set replacement, consistent with FieldExtractionService: empty means clear every value.
         document.SetFlexFields(fieldValues);
+
+        // The validation rules are judged again only where the edit changed a value a rule reads, its own field's or an
+        // input's. A corrected value that now passes clears its warning; a warning on a field whose rules read nothing the
+        // edit touched stays as it is, so one the operator accepted is not raised again by an unrelated correction.
+        var valuesAfter = RuleEvaluator.Snapshot(document, definitions);
+        var changedFieldIds = valuesAfter
+            .Where(pair => !string.Equals(pair.Value, valuesBefore.GetValueOrDefault(pair.Key), StringComparison.Ordinal))
+            .Select(pair => pair.Key)
+            .ToHashSet();
+        var rejudged = RuleEvaluator.FieldsReading(definitions, changedFieldIds);
+        if (rejudged.Count > 0)
+        {
+            document.ReplaceFieldValidationWarnings(
+                document.FieldValidationWarnings
+                    .Where(warning => !rejudged.Contains(warning.FieldDefinitionId))
+                    .Select(warning => new FieldValidationWarning(warning.FieldDefinitionId, warning.Message))
+                    .Concat(RuleEvaluator.Evaluate(document, definitions, rejudged))
+                    .ToList());
+        }
 
         // #284: after operator entry, reevaluate missing required fields. If filled, clear MissingRequiredFields to close the review-queue loop;
         // if still missing, keep it. Reuse loaded definitions filtered by IsRequired plus the keys now in the bag.
@@ -1392,8 +1420,10 @@ public class DocumentAppService : VaultExtractAppService, IDocumentAppService
     /// fields. Removes those warnings and clears the blocking <see cref="DocumentReviewReasons.FieldValidationWarning"/>
     /// reason only when none remain, then re-derives lifecycle so the document may transition to Ready (emitting
     /// <c>DocumentReadyEto</c>) when no other blocking reason is left. Rejected while field extraction is
-    /// pending/running, so an in-flight result cannot overwrite the human decision. Manual field edits
-    /// (<see cref="UpdateExtractedFieldsAsync"/>) do <b>not</b> clear warnings — only this explicit action does. The call
+    /// pending/running, so an in-flight result cannot overwrite the human decision. A manual field edit
+    /// (<see cref="UpdateExtractedFieldsAsync"/>) judges the validation rules again only where it changed a value they
+    /// read, so a value corrected to pass clears its warning there, while accepting a value as it stands is this explicit
+    /// action. The call
     /// (user, time, document, selected fields) is captured by ABP audit logging, and the warning-row removals by entity
     /// change tracking — no parallel warning-history table (#527 §9).
     /// </summary>
