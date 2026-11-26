@@ -137,6 +137,22 @@ public class IndexChunk_Tests : VaultIndexTestBase<VaultIndexIngestionTestModule
     }
 
     [Fact]
+    public async Task Disabling_keeps_a_read_scope_a_sync_wrote_after_the_chunk_was_loaded()
+    {
+        await IndexAsync(Lease);
+        var rent = await RentChunkAsync();
+
+        // A sync that reclassified the document commits after this request loaded the chunk and before it saves.
+        _store.BeforeChunkDisabled = () => GetRequiredService<IChunkRepository>()
+            .UpdateDocumentFiltersAsync(LeaseDoc, InvoiceType, Alice, isHidden: false);
+        await _chunks.DisableAsync(rent.Id);
+
+        var chunk = await WithUnitOfWorkAsync(() => GetRequiredService<IChunkRepository>().GetAsync(rent.Id));
+        chunk.IsDisabled.ShouldBeTrue();
+        chunk.DocumentTypeId.ShouldBe(InvoiceType);
+    }
+
+    [Fact]
     public async Task A_hidden_documents_chunks_are_still_listed()
     {
         await IndexAsync(Lease);

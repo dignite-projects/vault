@@ -166,14 +166,23 @@ public sealed class InMemoryChunkSearchIndex : IChunkSearchIndex
         return Task.CompletedTask;
     }
 
-    public Task SetChunkDisabledAsync(Guid chunkId, bool isDisabled, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Runs when a disable mark reaches the store, inside the caller's unit of work, after it loaded the chunk and before
+    /// it saves: a test's stand-in for another writer that commits in between.
+    /// </summary>
+    public Func<Task>? BeforeChunkDisabled { get; set; }
+
+    public async Task SetChunkDisabledAsync(Guid chunkId, bool isDisabled, CancellationToken cancellationToken = default)
     {
+        if (BeforeChunkDisabled is { } writer)
+        {
+            await writer();
+        }
+
         foreach (var pair in Vectors.Where(p => p.Key.ChunkId == chunkId).ToList())
         {
             Vectors[pair.Key] = pair.Value with { IsDisabled = isDisabled };
         }
-
-        return Task.CompletedTask;
     }
 
     public Task DeleteDocumentAsync(Guid documentId, CancellationToken cancellationToken = default)
