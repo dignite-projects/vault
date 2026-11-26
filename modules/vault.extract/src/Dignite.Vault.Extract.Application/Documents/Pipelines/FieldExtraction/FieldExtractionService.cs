@@ -298,7 +298,8 @@ public class FieldExtractionService : ITransientDependency
                     documentId);
             }
 
-            // #527 §1: one LLM call returns both the field values and the field validation warnings.
+            // #527 §1: the workflow returns both the field values and the field validation warnings, from one call, or, for
+            // a table too long for one answer, from that table's excerpts and then one call.
             var extractionResult = await _workflow.ExtractAsync(descriptors, markdown, _cancellationTokenProvider.Token);
             var extracted = extractionResult.Values;
 

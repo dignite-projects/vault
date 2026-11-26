@@ -313,6 +313,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A long table is extracted in excerpts, so it is complete instead of cut off.** When the rows of the tables in a
+  document's Markdown run past what one answer is sized for (half of `MaxFieldExtractionOutputTokens` at 4 tokens a
+  character: 2,048 characters at the default), the type's `Table` fields are read in excerpts, one call each, a few in
+  parallel: cut only between lines, preferably at a table's edge, with a table's header shown to an excerpt that
+  starts inside it and the lines across a cut between lines of text shown to both sides. An excerpt whose answer has
+  fewer rows than its recognised tables hold is read again in halves and the fuller reading kept. The rows are joined
+  in document order without deduplication, and one last call extracts the other fields and checks the joined rows
+  against their fields' validation rules. A single answer cut off inside a `Table` field is redone this way too. The
+  measured 114-row statement now comes back with every row on Qwen3-30B-A3B-Instruct and DeepSeek-V3 (five of five
+  runs after the last change), at about three times the input tokens of one call (30,000 to 38,000) and the same
+  output (about 10,000). A `Table` field rule that reorders the rows (reversing a newest-first statement) applies
+  only to a table that fits in one answer; a table read in excerpts keeps the document's order and the broken rule
+  becomes a validation warning. An excerpt still unread after a second call leaves the `Table` fields with their
+  earlier values and the document with `FieldExtractionIncomplete`. See
+  [Long Tables](docs/en/documents/document-types.md#long-tables).
+
 - **Documents keep their files in Blob Management.** An upload's original, a submitted original and a page-range
   sub-document's cut are stored by Dignite Blob Management in the managed container `extract-files`
   (`DocumentFileConsts.ContainerName`), by id: `FileOrigin.FileId`, a new column (migration `Added_FileOrigin_FileId`).

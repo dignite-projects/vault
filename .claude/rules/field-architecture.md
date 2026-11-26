@@ -69,7 +69,7 @@ Classification schedules one field-extraction run in the same transaction as its
 
 1. reads the `Field` rows of the document's own layer;
 2. builds the response schema from type and configuration;
-3. makes one LLM call;
+3. makes one LLM call, or, when the rows of the Markdown's tables are longer than one answer is sized for (or that one answer was cut off inside a `Table` field), reads the `Table` fields in excerpts first (`MarkdownExcerptSplitter`: cuts only between lines, header carried, no overlap, so no deduplication) and then makes one call for the other fields that also checks the joined rows against their validation rules;
 4. re-reads the definitions and discards any value whose field was deleted, renamed or retyped while the call was in flight (the guards compare both `FieldTypeName` and `Name`);
 5. validates and converts each value with `FlexFieldValueReader`;
 6. writes the whole set and synchronizes the index. No event is published here: egress is `DocumentReadyEto`;
