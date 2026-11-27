@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `Extract:FieldReadByValidationRule`. A field with several failed rules shows one line per rule on the detail page.
   See [Validation Rules](docs/en/documents/document-types.md#validation-rules).
 
+- **Drafting and trying validation rules.** `IFieldValidationRuleDraftAppService` (`/api/vault-extract/field-validation-rule-draft`)
+  drafts a saved field's rules with the structured LLM client, from a requirement in words (`draft`) or from the checks
+  the field's description states (`draft-from-prompt`, at most 10), and tries rules not yet saved on one document's
+  stored values (`test`), returning each rule's outcome and detail without calling a model. A draft is returned only
+  when it passes the checks saving applies; the model sees the type's fields and their value schemas, never document
+  content. All three need `FieldDefinitions.Create` or `.Update`; trying also needs read access to the document, which
+  must be of the field's type (new error code `Extract:FieldValidationRuleTestDocumentOfAnotherType`). An expression
+  that closes the parenthesis it is evaluated in to add a statement (`true); (false`), or that is a function rather than
+  its result (`() => ...`), is now refused as not one expression. See [Drafting and Trying Rules](docs/en/documents/document-types.md#drafting-and-trying-rules).
+
 - **Submitting processed content.** A caller that converted, classified and extracted a document itself submits the
   result instead of the file: `POST /api/vault-extract/documents/submit` (`IDocumentAppService.SubmitAsync`) and the
   MCP tool `vault_extract_submit_document`, the MCP server's first write tool. The Markdown becomes the document's text
@@ -788,7 +798,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Validation checks written into field descriptions stop producing warnings.** Rewrite each such check as a
   validation rule of its field (through the field API or a version 3 type pack) and remove the check from the
-  description. Warnings documents already hold stay until
+  description. `draft-from-prompt` drafts the rules from the description; try them on a processed document with `test`
+  before saving. Warnings documents already hold stay until
   they are dismissed, re-extracted or corrected. The Extract migration `Added_Field_ValidationRules` adds the not-null
   `VaultFields.ValidationRules` column (default empty, read as no rules).
 

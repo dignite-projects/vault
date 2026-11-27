@@ -444,52 +444,18 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
     }
 
     /// <summary>
-    /// <paramref name="rules"/> as the field will hold them, once each is known to work there: every input is another
-    /// active field of the same document type (and layer, through the repository's filters), the rule's shape passes
-    /// <see cref="Field.CheckValidationRules"/>, and every expression parses. Changes nothing, so the caller can check
-    /// before it touches the entity.
+    /// <paramref name="rules"/> as the field will hold them, once each is known to work there (see
+    /// <see cref="FieldValidationRuleChecker"/>). Changes nothing, so the caller can check before it touches the entity.
     /// </summary>
-    protected virtual async Task<IReadOnlyList<FieldValidationRule>> CheckValidationRulesAsync(
+    protected virtual Task<IReadOnlyList<FieldValidationRule>> CheckValidationRulesAsync(
         Guid documentTypeId,
         Guid fieldId,
         string fieldName,
         IReadOnlyList<FieldValidationRuleDto> rules)
-    {
-        var siblingIds = (await _repository.GetListAsync(documentTypeId))
-            .Where(field => field.Id != fieldId)
-            .Select(field => field.Id)
-            .ToHashSet();
+        => RuleChecker.CheckAsync(documentTypeId, fieldId, fieldName, rules);
 
-        for (var i = 0; i < rules.Count; i++)
-        {
-            foreach (var input in rules[i]?.Inputs ?? new List<FieldValidationRuleInputDto>())
-            {
-                if (input != null && input.FieldId != fieldId && !siblingIds.Contains(input.FieldId))
-                {
-                    throw Field.InvalidInput(fieldName, i + 1, input.Alias);
-                }
-            }
-        }
-
-        var checkedRules = Field.CheckValidationRules(fieldName, fieldId, rules.Select(rule => rule == null
-            ? null!
-            : new FieldValidationRule(
-                rule.Description,
-                rule.Expression,
-                (rule.Inputs ?? new List<FieldValidationRuleInputDto>())
-                    .Select(input => input == null ? null! : new FieldValidationRuleInput(input.Alias, input.FieldId))
-                    .ToList())));
-
-        for (var i = 0; i < checkedRules.Count; i++)
-        {
-            RuleEvaluator.CheckExpression(fieldName, i + 1, checkedRules[i].Expression);
-        }
-
-        return checkedRules;
-    }
-
-    /// <summary>Checks that a rule's expression parses. Resolved lazily, so the constructor a subclass calls stays as it was.</summary>
-    protected FieldValidationRuleEvaluator RuleEvaluator => LazyServiceProvider.LazyGetRequiredService<FieldValidationRuleEvaluator>();
+    /// <summary>Checks rules before they are saved. Resolved lazily, so the constructor a subclass calls stays as it was.</summary>
+    protected FieldValidationRuleChecker RuleChecker => LazyServiceProvider.LazyGetRequiredService<FieldValidationRuleChecker>();
 
     protected virtual async Task EnsureSchemaPromptBudgetAsync(
         DocumentType type,

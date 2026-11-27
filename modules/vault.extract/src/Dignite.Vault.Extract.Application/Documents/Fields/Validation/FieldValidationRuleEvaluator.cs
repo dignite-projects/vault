@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Acornima.Ast;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.FlexFields;
 using Dignite.Vault.Extract.Localization;
@@ -111,6 +112,27 @@ public class FieldValidationRuleEvaluator : ITransientDependency
     }
 
     /// <summary>
+    /// <paramref name="rules"/> over the stored values of <paramref name="document"/> as rules of the field
+    /// <paramref name="fieldId"/>, one result each, in order: what a dry run shows before the rules are saved. Changes
+    /// nothing on the document.
+    /// </summary>
+    /// <param name="document">The document whose stored values are read.</param>
+    /// <param name="definitions">The active fields of the document's type, <paramref name="fieldId"/> among them.</param>
+    /// <param name="fieldId">The field the rules belong to: its value is <c>value</c>.</param>
+    /// <param name="rules">The rules, already checked as a field's rules are before they are saved.</param>
+    public virtual IReadOnlyList<FieldValidationRuleResult> EvaluateRules(
+        Document document,
+        IReadOnlyList<Field> definitions,
+        Guid fieldId,
+        IReadOnlyList<FieldValidationRule> rules)
+    {
+        var values = Values(document, definitions);
+        return rules
+            .Select(rule => EvaluateRule(rule, values.GetValueOrDefault(fieldId), id => values.GetValueOrDefault(id)))
+            .ToList();
+    }
+
+    /// <summary>
     /// The fields whose rules read any of <paramref name="changedFieldIds"/>: their own value, or an input. An operator's
     /// edit re-evaluates only these, so a warning the operator accepted on a field the edit did not touch stays accepted.
     /// </summary>
@@ -200,16 +222,72 @@ public class FieldValidationRuleEvaluator : ITransientDependency
     /// <param name="expression">The expression.</param>
     public virtual void CheckExpression(string fieldName, int position, string expression)
     {
+        string? error;
         try
         {
-            Engine.PrepareScript(AsExpression(expression), null, true);
+            var program = Engine.PrepareScript(AsExpression(expression), null, true).Program;
+
+            // In parentheses a statement list does not parse, but text that closes the parenthesis itself can still add
+            // statements: "true); (false" parses as two. A rule is exactly one expression statement, and not a function,
+            // whose value is never true or false.
+            error = program.Body.Count == 1 && program.Body[0] is ExpressionStatement statement
+                ? statement.Expression is IFunction
+                    ? _localizer["FieldValidationRule:IsAFunction"].Value
+                    : null
+                : _localizer["FieldValidationRule:NotOneExpression"].Value;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            error = ex.Message;
+        }
+
+        if (error != null)
         {
             throw new BusinessException(VaultExtractErrorCodes.FieldDefinition.UnparsableValidationRule)
                 .WithData("Name", fieldName)
                 .WithData("Index", position)
-                .WithData("Error", Clip(ex.Message));
+                .WithData("Error", Clip(error));
+        }
+    }
+
+    /// <summary>
+    /// <paramref name="expression"/> called, when it is a function that takes no parameters: a rule's body written
+    /// without the call that runs it, as <c>() =&gt; value.length &gt; 0</c>, or with a call an arrow function cannot
+    /// take without parentheses, as <c>() =&gt; { ... }()</c>, which does not parse. Anything else is returned as it is.
+    /// </summary>
+    public virtual string CallIfFunction(string expression)
+    {
+        if (IsFunctionWithoutParameters(expression, out var parses))
+        {
+            // On a line of its own, so a line comment at the end of the function cannot swallow the call.
+            return "(" + expression + "\n)()";
+        }
+
+        var trimmed = expression.TrimEnd();
+        if (!parses
+            && trimmed.EndsWith("()", StringComparison.Ordinal)
+            && IsFunctionWithoutParameters(trimmed[..^2], out _))
+        {
+            return "(" + trimmed[..^2] + "\n)()";
+        }
+
+        return expression;
+    }
+
+    private static bool IsFunctionWithoutParameters(string expression, out bool parses)
+    {
+        try
+        {
+            var program = Engine.PrepareScript(AsExpression(expression), null, true).Program;
+            parses = true;
+            return program.Body.Count == 1
+                && program.Body[0] is ExpressionStatement { Expression: IFunction { Params.Count: 0, Async: false, Generator: false } };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Does not parse: the checks that follow refuse it with the parser's words.
+            parses = false;
+            return false;
         }
     }
 
@@ -251,8 +329,9 @@ public class FieldValidationRuleEvaluator : ITransientDependency
     }
 
     /// <summary>
-    /// The expression in parentheses, on lines of its own: a statement list or a second expression does not parse, and a
-    /// line comment at its end cannot swallow the closing parenthesis.
+    /// The expression in parentheses, on lines of its own: a statement list does not parse, and a line comment at its end
+    /// cannot swallow the closing parenthesis. <see cref="CheckExpression"/> also refuses text that closes the parenthesis
+    /// itself to add statements.
     /// </summary>
     private static string AsExpression(string expression) => "(\n" + expression + "\n)";
 
@@ -287,22 +366,6 @@ public class FieldValidationRuleEvaluator : ITransientDependency
         var oneLine = new string(text.Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim();
         return TextTruncator.AtCharBoundary(oneLine, MaxDetailLength);
     }
-}
-
-/// <summary>What became of one rule over one document's values.</summary>
-public enum FieldValidationRuleOutcome
-{
-    /// <summary>The rule holds.</summary>
-    Passed,
-
-    /// <summary>The rule does not hold.</summary>
-    Failed,
-
-    /// <summary>The value or an input is absent, so the rule says nothing.</summary>
-    Skipped,
-
-    /// <summary>The expression threw, ran past a sandbox limit or returned something else: counted as not holding.</summary>
-    NotEvaluated
 }
 
 /// <summary>One rule's outcome, with the detail a failing rule returned or why it could not be evaluated.</summary>

@@ -144,6 +144,12 @@ public static class VaultExtractErrorCodes
         public const string ReadByValidationRule = "Extract:FieldReadByValidationRule";
 
         /// <summary>
+        /// A field's rules were tried on a document of another document type, which holds no value of that field for
+        /// them to read.
+        /// </summary>
+        public const string ValidationRuleTestDocumentOfAnotherType = "Extract:FieldValidationRuleTestDocumentOfAnotherType";
+
+        /// <summary>
         /// The submitted <c>FieldTypeName</c> matches no registered field type (#559). A registration key
         /// rather than a closed enum is what buys v3 its extensibility, and this is the cost: the value is
         /// only checkable at runtime, so it is checked at the write boundary.

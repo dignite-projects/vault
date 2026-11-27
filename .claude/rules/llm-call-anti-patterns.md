@@ -105,6 +105,7 @@ Each path picks one bound:
 | `FieldExtractionService` | yes | gate at `MaxFieldExtractionMarkdownLength` → `FieldExtractionIncomplete` |
 | `FieldExtractionWorkflow` excerpt calls (long tables) | yes | each excerpt sized from `MaxFieldExtractionOutputTokens`; an excerpt still unread after a second call → `Table` fields unfinished → `FieldExtractionIncomplete`. The joined rows go to no model |
 | Field schema (`Σ FieldDefinition.Prompt`) | yes | reject the configuration write at the per-type `MaxFieldSchemaPromptLength`; assert again at the call site with `InvalidDataException`, so the run ends instead of retrying |
+| `FieldValidationRuleDraftAppService` | yes | the requirement at `FieldValidationRuleConsts.MaxDescriptionLength` (DTO); the field's description by the type's `MaxFieldSchemaPromptLength`, asserted again before the call |
 | MCP `vault_extract_get_document` / `documents/{id}` | no | truncate at `VaultExtractMcpConsts.MaxDocumentMarkdownChars` and announce it |
 
 ```csharp
