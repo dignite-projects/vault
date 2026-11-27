@@ -1,4 +1,5 @@
 import type { EntityDto } from '@abp/ng.core';
+import type { FieldValidationRuleOutcome } from './field-validation-rule-outcome.enum';
 
 export interface CreateFieldDefinitionDto {
   documentTypeId: string;
@@ -11,11 +12,21 @@ export interface CreateFieldDefinitionDto {
   isRequired?: boolean;
   isSearchable?: boolean;
   isUniqueKey?: boolean;
+  validationRules?: FieldValidationRuleDto[] | null;
 }
 
 export interface DraftFieldDefinitionInput {
   prompt: string;
   forNewField?: boolean;
+}
+
+export interface DraftFieldValidationRuleInput {
+  fieldId?: string;
+  description: string;
+}
+
+export interface DraftFieldValidationRulesFromPromptInput {
+  fieldId?: string;
 }
 
 export interface FieldDefinitionDraftDto {
@@ -38,6 +49,7 @@ export interface FieldDefinitionDto extends EntityDto<string> {
   isRequired?: boolean;
   isSearchable?: boolean;
   isUniqueKey?: boolean;
+  validationRules?: FieldValidationRuleDto[];
 }
 
 export interface FieldPromptPolishInput {
@@ -53,9 +65,31 @@ export interface FieldTypeDto {
   indexable?: boolean;
 }
 
+export interface FieldValidationRuleDto {
+  description: string;
+  expression: string;
+  inputs?: FieldValidationRuleInputDto[];
+}
+
+export interface FieldValidationRuleInputDto {
+  alias: string;
+  fieldId: string;
+}
+
+export interface FieldValidationRuleTestResultDto {
+  outcome?: FieldValidationRuleOutcome;
+  detail?: string | null;
+}
+
 export interface GetFieldDefinitionListInput {
   documentTypeId?: string | null;
   onlyDeleted?: boolean;
+}
+
+export interface TestFieldValidationRulesInput {
+  fieldId?: string;
+  documentId?: string;
+  rules: FieldValidationRuleDto[];
 }
 
 export interface UpdateFieldDefinitionDto {
@@ -68,4 +102,5 @@ export interface UpdateFieldDefinitionDto {
   isRequired?: boolean;
   isSearchable?: boolean;
   isUniqueKey?: boolean;
+  validationRules?: FieldValidationRuleDto[] | null;
 }

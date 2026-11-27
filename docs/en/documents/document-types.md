@@ -204,6 +204,8 @@ Both drafting actions return `items`: the drafts, in the shape `validationRules`
 - **Permissions**: all three need `VaultExtract.FieldDefinitions.Create` or `.Update`. Trying rules also needs read access to the document ([Per-Document-Type Permissions](../configuration/document-type-permissions.md)), and the document must be of the field's type (`Extract:FieldValidationRuleTestDocumentOfAnotherType`). The rules tried are checked as saving checks them, with the same error codes.
 - **Saved values**: drafting reads the field's saved definition, so save a new field, or a changed description or table column, before drafting its rules.
 
+In the field editor of the Angular UI, the **Validation rules** section does all of this. Each rule has its description, its expression and the other fields it reads (an alias and a field). **Draft with AI** adds a rule from the sentence typed beside it, and **Draft rules from prompt** adds one for each check the saved extraction prompt states; both wait until the field is saved, and the second also until the prompt has no unsaved changes. Drafted rules are marked until the field is saved. **Try** runs the rules as they stand, unsaved changes included, on one of the type's 20 newest documents, and shows each rule's outcome beside it until a rule changes. The rules are saved with the field.
+
 ## Importing and Exporting Types
 
 A **type pack** is a JSON description of one type and its fields, without ids or tenant, so a schema can move between layers or deployments.

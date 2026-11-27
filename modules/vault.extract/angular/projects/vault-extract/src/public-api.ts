@@ -24,6 +24,7 @@ export * from './lib/proxy/http-api/documents/fields/field-draft-suggestion.serv
 // #447: was a hand-written wrapper under ./lib/services, added back when `npm run generate-proxy` could
 // not run at all. Generation works, so the wrapper is gone and this is the real generated service.
 export * from './lib/proxy/http-api/documents/fields/field-prompt-polish.service';
+export * from './lib/proxy/http-api/documents/fields/field-validation-rule-draft.service';
 export * from './lib/proxy/http-api/documents/pipelines/document-pipeline-run.service';
 export * from './lib/proxy/http-api/documents/reprocessing/document-reprocessing.service';
 export * from './lib/proxy/http-api/slugging/slug-suggestion.service';
@@ -57,5 +58,6 @@ export * from './lib/proxy/documents/document-types/packs/pack-import-mode.enum'
 export * from './lib/proxy/documents/document-types/packs/pack-item-action.enum';
 export * from './lib/proxy/documents/exports/export-format.enum';
 export * from './lib/proxy/documents/fields/field-data-type.enum';
+export * from './lib/proxy/documents/fields/field-validation-rule-outcome.enum';
 export * from './lib/proxy/documents/pipelines/pipeline-run-status.enum';
 export * from './lib/proxy/documents/reprocessing/reclassification-scope.enum';

@@ -44,6 +44,8 @@ import {
 } from '../../shared/extensible-table';
 import { FieldReextractionModalComponent } from '../../reprocessing/field-reextraction-modal/field-reextraction-modal.component';
 import { SlugSuggestionHandle, wireSlugSuggestion } from '../../shared/slug-suggestion';
+import { FieldValidationRulesComponent } from '../field-validation-rules/field-validation-rules.component';
+import { RuleForm, resetRulesForm, toRuleDtos } from '../field-validation-rules/field-validation-rules.form';
 
 // Mirrors FieldDefinitionConsts (Domain.Shared): Name whitelist + length caps.
 // #447: Prompt has no length cap — it is admin-authored Markdown configuration, persisted uncapped.
@@ -72,6 +74,7 @@ const FIELD_DEFINITION_SORTS: SortAccessors<FieldDefinitionDto> = {
     NgbDropdownModule,
     FieldReextractionModalComponent,
     FlexFieldConfigComponent,
+    FieldValidationRulesComponent,
   ],
   providers: [
     ListService,
@@ -168,6 +171,8 @@ export class FieldDefinitionListComponent implements OnInit {
     isSearchable: [true],
     // #411: whether this field participates in the type's duplicate-detection unique key.
     isUniqueKey: [false],
+    // The checks the field's stored value must pass, edited by <lib-field-validation-rules> and saved with the field.
+    validationRules: this.fb.array<RuleForm>([]),
   });
 
   // The field-type picker's vocabulary: every type flex-fields has registered (built-ins + bolt-ons)
@@ -487,6 +492,7 @@ export class FieldDefinitionListComponent implements OnInit {
     // applySearchableAvailability below misread it as "locked by this field's own type".
     this.form.controls.isSearchable.enable({ emitEvent: false });
     this.form.controls.isUniqueKey.enable({ emitEvent: false });
+    resetRulesForm(this.form.controls.validationRules);
     this.configSeed.set(undefined);
     this.applySearchableAvailability(fieldTypeName);
     this.applyUniqueKeyAvailability(fieldTypeName);
@@ -520,6 +526,7 @@ export class FieldDefinitionListComponent implements OnInit {
     // applySearchableAvailability below stomp this field's own real IsSearchable back to true.
     this.form.controls.isSearchable.enable({ emitEvent: false });
     this.form.controls.isUniqueKey.enable({ emitEvent: false });
+    resetRulesForm(this.form.controls.validationRules, field.validationRules ?? []);
     // The stored field, not just its type: <ff-flex-field-config> only restores saved configuration
     // values when selected.fieldTypeName matches the type currently being rendered, so handing it the
     // whole field lets it patch what an admin previously set instead of quietly re-defaulting. Rebuilt
@@ -731,6 +738,7 @@ export class FieldDefinitionListComponent implements OnInit {
         // set it to false.
         isSearchable: raw.isSearchable,
         isUniqueKey: raw.isUniqueKey,
+        validationRules: toRuleDtos(this.form.controls.validationRules),
       };
       this.service.create(input)
         .pipe(takeUntilDestroyed(this.destroyRef))
@@ -749,6 +757,8 @@ export class FieldDefinitionListComponent implements OnInit {
         isRequired: raw.isRequired,
         isSearchable: raw.isSearchable,
         isUniqueKey: raw.isUniqueKey,
+        // Always the full list: this editor shows every rule, so what it sends replaces what the field has.
+        validationRules: toRuleDtos(this.form.controls.validationRules),
       })
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({

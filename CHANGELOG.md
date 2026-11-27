@@ -31,7 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content. All three need `FieldDefinitions.Create` or `.Update`; trying also needs read access to the document, which
   must be of the field's type (new error code `Extract:FieldValidationRuleTestDocumentOfAnotherType`). An expression
   that closes the parenthesis it is evaluated in to add a statement (`true); (false`), or that is a function rather than
-  its result (`() => ...`), is now refused as not one expression. See [Drafting and Trying Rules](docs/en/documents/document-types.md#drafting-and-trying-rules).
+  its result (`() => ...`), is now refused as not one expression. The field editor of `@dignite/ng.vault-extract` gains
+  a **Validation rules** section that edits, drafts and tries them, and the package exports
+  `FieldValidationRuleDraftService` and `FieldValidationRuleOutcome`. See [Drafting and Trying Rules](docs/en/documents/document-types.md#drafting-and-trying-rules).
 
 - **Submitting processed content.** A caller that converted, classified and extracted a document itself submits the
   result instead of the file: `POST /api/vault-extract/documents/submit` (`IDocumentAppService.SubmitAsync`) and the
