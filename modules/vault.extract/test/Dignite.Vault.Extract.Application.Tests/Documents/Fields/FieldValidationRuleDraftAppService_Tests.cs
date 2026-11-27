@@ -18,6 +18,7 @@ using NSubstitute.ExceptionExtensions;
 using Shouldly;
 using Volo.Abp;
 using Volo.Abp.Authorization;
+using Volo.Abp.Validation;
 using Xunit;
 
 namespace Dignite.Vault.Extract.Documents.Fields;
@@ -84,6 +85,20 @@ public class FieldValidationRuleDraftAppService_Tests : DocumentAccessTestBase
 
         (await _service.DraftAsync(new DraftFieldValidationRuleInput { FieldId = _transactions.Id, Description = "r" }))
             .Items.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task A_requirement_longer_than_a_rule_description_is_refused_before_the_model_is_called()
+    {
+        GrantFieldWrites();
+
+        await Should.ThrowAsync<AbpValidationException>(() => _service.DraftAsync(new DraftFieldValidationRuleInput
+        {
+            FieldId = _transactions.Id,
+            Description = new string('長', FieldValidationRuleConsts.MaxDescriptionLength + 1)
+        }));
+
+        await _chatClient.DidNotReceiveWithAnyArgs().GetResponseAsync(default!, default, default);
     }
 
     // ─── what reaches the model ───
