@@ -193,7 +193,10 @@ public class IndexDocumentJob : AsyncBackgroundJob<IndexDocumentJobArgs>, ITrans
         var now = _clock.Now;
         var row = await _documentRepository.FindAsync(args.DocumentId);
 
-        if (row is not null && args.EventTime is { } eventTime && !row.IsNewerThanApplied(eventTime))
+        // A sync reads the document as it is now, so an event that is not newer has nothing to add, unless an earlier
+        // attempt failed transiently: then it is the retry the cap counts, and dropping it would leave the document
+        // pending with no job left to index it.
+        if (row is not null && args.EventTime is { } eventTime && !row.IsNewerThanApplied(eventTime) && !row.AwaitsRetry)
         {
             await uow.CompleteAsync();
             return null;

@@ -128,6 +128,13 @@ public class IndexedDocument : AggregateRoot<Guid>, IMultiTenant, IHasCreationTi
     /// <summary>Whether an event stamped <paramref name="eventTime"/> is newer than everything applied so far.</summary>
     public virtual bool IsNewerThanApplied(DateTime eventTime) => LastEventTime is null || eventTime > LastEventTime;
 
+    /// <summary>
+    /// Whether a transient failure since the last success left this document to be indexed again. The claim records
+    /// its event before the work, so ABP's retry of the failed job, which carries the same event time, is no newer than
+    /// the mark: this is what tells that retry from a redelivered event.
+    /// </summary>
+    public virtual bool AwaitsRetry => FailedAttempts > 0 && Status != IndexedDocumentStatus.Failed;
+
     /// <summary>Records an applied event; an older one never moves the mark back.</summary>
     public virtual void RecordEvent(DateTime? eventTime)
     {
