@@ -509,12 +509,72 @@ public class IndexDocumentJob_Tests : VaultIndexTestBase<VaultIndexIngestionTest
         document.Status.ShouldBe(IndexedDocumentStatus.Pending);
         document.FailedAttempts.ShouldBe(1);
 
-        // ABP retries the same job arguments; the second failure reaches MaxFailedAttempts (2 in this host).
-        await RunAsync(IndexDocumentJobKind.Sync, null);
+        // ABP retries the same job arguments, event time included; the second failure reaches MaxFailedAttempts (2 in
+        // this host).
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
 
         document = await Repo<IndexedDocument>().GetAsync(DocumentId);
         document.Status.ShouldBe(IndexedDocumentStatus.Failed);
         (await Repo<IndexRun>().GetListAsync()).Select(r => r.AttemptNumber).OrderBy(n => n).ShouldBe([1, 2]);
+
+        // Once the document has failed for good, the same event redelivered is dropped like any other.
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+        (await Repo<IndexRun>().GetCountAsync()).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task The_retry_of_a_transient_failure_indexes_the_document_and_a_later_redelivery_is_dropped()
+    {
+        ExtractReturns(Contract, TypeA);
+        _model.FailWith = new TimeoutException("model timed out");
+        await Should.ThrowAsync<TimeoutException>(() => RunAsync(IndexDocumentJobKind.Sync, T1));
+
+        _model.FailWith = null;
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        var document = await Repo<IndexedDocument>().GetAsync(DocumentId);
+        document.Status.ShouldBe(IndexedDocumentStatus.Indexed);
+        document.FailedAttempts.ShouldBe(0);
+        (await ChunksAsync()).ShouldNotBeEmpty();
+        var calls = _model.Calls;
+
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        _model.Calls.ShouldBe(calls);
+        (await Repo<IndexRun>().GetCountAsync()).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_new_version_that_fails_transiently_keeps_serving_the_old_one_until_its_retry_indexes_it()
+    {
+        ExtractReturns(Contract, TypeA);
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        ExtractReturns(Contract + "\n\n## 第3条（解除）\n\n乙が賃料を滞納したときは解除できる。", TypeA);
+        _model.FailWith = new TimeoutException("model timed out");
+        await Should.ThrowAsync<TimeoutException>(() => RunAsync(IndexDocumentJobKind.Sync, T2));
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).Status.ShouldBe(IndexedDocumentStatus.Indexed);
+
+        _model.FailWith = null;
+        await RunAsync(IndexDocumentJobKind.Sync, T2);
+
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).FailedAttempts.ShouldBe(0);
+        (await ChunksAsync()).ShouldContain(c => c.Text.Contains("解除"));
+    }
+
+    [Fact]
+    public async Task The_retry_of_a_transient_failure_still_runs_after_a_newer_lifecycle_event()
+    {
+        ExtractReturns(Contract, TypeA);
+        _model.FailWith = new TimeoutException("model timed out");
+        await Should.ThrowAsync<TimeoutException>(() => RunAsync(IndexDocumentJobKind.Sync, T1));
+        await RunAsync(IndexDocumentJobKind.Withhold, T2);
+
+        _model.FailWith = null;
+        await RunAsync(IndexDocumentJobKind.Sync, T1);
+
+        (await Repo<IndexedDocument>().GetAsync(DocumentId)).Status.ShouldBe(IndexedDocumentStatus.Indexed);
+        (await ChunksAsync()).ShouldNotBeEmpty();
     }
 
     [Fact]
