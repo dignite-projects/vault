@@ -274,7 +274,6 @@ public class FieldExtractionService_Tests
         _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new FieldExtractionWorkflowResult(
                 new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement, ["memo"] = null },
-                Array.Empty<FieldValidationWarningResult>(),
                 new Dictionary<string, IReadOnlyList<string>>
                 {
                     ["amount"] = ["合計 1,500 円", "どこにもない"],
@@ -297,7 +296,6 @@ public class FieldExtractionService_Tests
                 doc.CorrectMarkdown("# 請求書\n\n小計 1,000 円\n\n合計 1,500 円");
                 return new FieldExtractionWorkflowResult(
                     new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement },
-                    Array.Empty<FieldValidationWarningResult>(),
                     new Dictionary<string, IReadOnlyList<string>> { ["amount"] = ["合計 1,500 円"] });
             });
 
@@ -312,11 +310,9 @@ public class FieldExtractionService_Tests
     private const string CutOffMarkdown = "# 請求書\n\n合計 1,500 円\n\nメモ 前回の記載";
 
     private static FieldExtractionWorkflowResult CutOffAnswer(
-        IReadOnlyList<FieldValidationWarningResult>? warnings = null,
         Dictionary<string, IReadOnlyList<string>>? sources = null) =>
         new(
             new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement, ["memo"] = null },
-            warnings ?? Array.Empty<FieldValidationWarningResult>(),
             sources)
         {
             UnfinishedFields = new HashSet<string> { "memo" }
@@ -373,74 +369,117 @@ public class FieldExtractionService_Tests
     }
 
     [Fact]
-    public async Task A_cut_off_answer_replaces_only_the_warnings_of_the_fields_it_finished()
+    public async Task The_rules_judge_the_value_a_cut_off_answer_kept_for_an_unfinished_field()
     {
-        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
+        var doc = ArrangeAmountAndMemo(
+            CutOffMarkdown,
+            ("memo", Rule("メモは 3 文字未満", "value.length < 3")));
         doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m, ["memo"] = "前回の記載" });
-        doc.ReplaceFieldValidationWarnings(
-        [
-            new FieldValidationWarning(FieldId("amount"), "previous amount warning"),
-            new FieldValidationWarning(FieldId("memo"), "previous memo warning")
-        ]);
         _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CutOffAnswer(warnings:
-            [
-                new FieldValidationWarningResult("amount", "new amount warning"),
-                new FieldValidationWarningResult("memo", "a warning about a value the document does not get")
-            ]));
+            .Returns(CutOffAnswer());
 
         await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
 
-        doc.FieldValidationWarnings.ToDictionary(w => w.FieldDefinitionId, w => w.Message).ShouldBe(
-            new Dictionary<Guid, string>
-            {
-                [FieldId("amount")] = "new amount warning",
-                [FieldId("memo")] = "previous memo warning"
-            },
-            ignoreOrder: true);
+        doc.FlexFields["memo"].ShouldBe("前回の記載");
+        doc.FieldValidationWarnings.Single().FieldDefinitionId.ShouldBe(FieldId("memo"));
+        doc.FieldValidationWarnings.Single().Message.ShouldBe("メモは 3 文字未満");
+    }
+
+    // ─── validation rules ───
+
+    [Fact]
+    public async Task A_value_that_breaks_its_fields_rule_is_kept_and_warned_with_the_rules_description()
+    {
+        var doc = ArrangeAmountAndMemo(
+            CutOffMarkdown,
+            ("amount", Rule("金額は 1,000 以下", "value <= 1000")));
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(WorkflowResult(new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement }));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FlexFields["amount"].ShouldBe(1500m);
+        doc.FieldValidationWarnings.Single().FieldDefinitionId.ShouldBe(FieldId("amount"));
+        doc.FieldValidationWarnings.Single().Message.ShouldBe("金額は 1,000 以下");
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeTrue();
     }
 
     [Fact]
-    public async Task A_cut_off_answer_whose_warning_list_did_not_close_keeps_every_warning_and_blocks()
+    public async Task A_rule_reads_another_field_by_its_input_and_says_where_it_fails()
     {
-        var doc = ArrangeAmountAndMemo(CutOffMarkdown);
-        doc.SetFlexFields(new Dictionary<string, object?> { ["amount"] = 900m });
+        var doc = ArrangeAmountAndMemo(
+            CutOffMarkdown,
+            ("memo", Rule("メモに金額を書く", "value.includes(String(amount)) || [false, `金額 ${amount} がない`]", ("amount", "amount"))));
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(WorkflowResult(new Dictionary<string, JsonElement?>
+            {
+                ["amount"] = JsonDocument.Parse("1500").RootElement,
+                ["memo"] = JsonDocument.Parse("\"前回の記載\"").RootElement
+            }));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FieldValidationWarnings.Single().FieldDefinitionId.ShouldBe(FieldId("memo"));
+        doc.FieldValidationWarnings.Single().Message.ShouldContain("メモに金額を書く");
+        doc.FieldValidationWarnings.Single().Message.ShouldContain("金額 1500 がない");
+    }
+
+    [Fact]
+    public async Task An_extraction_whose_values_pass_their_rules_clears_the_warnings_the_document_had()
+    {
+        var doc = ArrangeAmountAndMemo(
+            CutOffMarkdown,
+            ("amount", Rule("金額は 1,000 以下", "value <= 1000")));
         doc.ReplaceFieldValidationWarnings([new FieldValidationWarning(FieldId("amount"), "previous amount warning")]);
         _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new FieldExtractionWorkflowResult(
-                new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement, ["memo"] = null },
-                Array.Empty<FieldValidationWarningResult>())
-            {
-                ValidationWarningsUnfinished = true
-            });
+            .Returns(WorkflowResult(new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("900").RootElement }));
 
-        var result = await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
 
-        result.Outcome.ShouldBe(FieldExtractionOutcome.Incomplete);
-        doc.FlexFields["amount"].ShouldBe(1500m);
-        doc.FieldValidationWarnings.Single().Message.ShouldBe("previous amount warning");
-        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldExtractionIncomplete).ShouldBeTrue();
+        doc.FieldValidationWarnings.ShouldBeEmpty();
+        doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_rule_whose_value_is_absent_is_skipped()
+    {
+        var doc = ArrangeAmountAndMemo(
+            CutOffMarkdown,
+            ("memo", Rule("メモは空でない", "value.length > 0")));
+        _workflow.ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(WorkflowResult(new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("900").RootElement, ["memo"] = null }));
+
+        await _service.ExtractAsync(doc.Id, tenantId: null, expectedEventTypeCode: null);
+
+        doc.FieldValidationWarnings.ShouldBeEmpty();
     }
 
     // ─── helpers ───────────────────────────────────────────────────────────
 
-    private Document ArrangeAmountAndMemo(string markdown)
+    private Document ArrangeAmountAndMemo(string markdown, params (string Field, FieldValidationRule Rule)[] rules)
     {
         var doc = CreateClassifiedDocument(typeCode: "invoice.sources", markdown: markdown);
         SetupType("invoice.sources");
         _documentRepository.FindAsync(doc.Id, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(doc);
         _documentRepository.FindWithFieldValuesAsync(doc.Id, Arg.Any<CancellationToken>()).Returns(doc);
-        _fieldRepository.GetListAsync(TypeId("invoice.sources"), Arg.Any<CancellationToken>())
-            .Returns(new List<Field>
-            {
-                CreateField("invoice.sources", "amount", NumberFieldType.ControlName),
-                CreateField("invoice.sources", "memo", "Text")
-            });
+        var fields = new List<Field>
+        {
+            CreateField("invoice.sources", "amount", NumberFieldType.ControlName),
+            CreateField("invoice.sources", "memo", "Text")
+        };
+        foreach (var field in fields)
+        {
+            field.SetValidationRules(rules.Where(rule => rule.Field == field.Name).Select(rule => rule.Rule));
+        }
+
+        _fieldRepository.GetListAsync(TypeId("invoice.sources"), Arg.Any<CancellationToken>()).Returns(fields);
         return doc;
     }
 
-    private static FieldExtractionWorkflowResult WorkflowResult(Dictionary<string, JsonElement?> values) =>
-        new(values, Array.Empty<FieldValidationWarningResult>());
+    private static FieldValidationRule Rule(string description, string expression, params (string Alias, string FieldName)[] inputs) =>
+        new(description, expression, inputs.Select(input => new FieldValidationRuleInput(input.Alias, FieldId(input.FieldName))).ToList());
+
+    private static FieldExtractionWorkflowResult WorkflowResult(Dictionary<string, JsonElement?> values) => new(values);
 
     private void SetupType(string code, Guid? typeId = null)
     {

@@ -8,6 +8,7 @@ using Dignite.Vault.Extract.FlexFields;
 using Dignite.Vault.Extract.Documents.Duplicates;
 using Dignite.Vault.Extract.Documents.Fields;
 using Dignite.Vault.Extract.Documents.Fields.Cleanup;
+using Dignite.Vault.Extract.Documents.Fields.Validation;
 using Dignite.Vault.Extract.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Volo.Abp;
@@ -156,6 +157,10 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
         // no-partial-write guarantee even in the non-transactional test harness.
         await ValidateSchemaPromptBudgetsAsync(input.Packs, input.Mode);
 
+        // The same no-partial-write guarantee for the fields' validation rules: every rule a pack would write is checked
+        // against the type's projected fields before anything is stored.
+        await ValidateValidationRulesAsync(input.Packs, input.Mode);
+
         var result = new DocumentTypePackImportResultDto();
         var searchabilityChanged = false;
         foreach (var pack in input.Packs)
@@ -223,6 +228,85 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
             _schemaPromptBudget.EnsureCanPersist(pack.TypeCode, projectedFields.Values);
         }
     }
+
+    /// <summary>
+    /// Checks every validation rule the import would write, in request order, against the fields its type will have
+    /// (the existing ones and the packs' own): each input names another of those fields, the rule's shape passes
+    /// <see cref="Field.CheckValidationRules"/>, and each expression parses. A field an import leaves alone (an existing
+    /// one under <see cref="PackImportMode.CreateOnly"/>) and a field whose pack carries no rules are not checked.
+    /// </summary>
+    protected virtual async Task ValidateValidationRulesAsync(List<DocumentTypePackDto> packs, PackImportMode mode)
+    {
+        var namesByTypeCode = new Dictionary<string, (HashSet<string> Existing, HashSet<string> Projected)>(StringComparer.Ordinal);
+        foreach (var pack in packs)
+        {
+            if (!namesByTypeCode.TryGetValue(pack.TypeCode, out var names))
+            {
+                names = (new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
+                var existingType = await _documentTypeRepository.FindByTypeCodeAsync(pack.TypeCode);
+                if (existingType != null)
+                {
+                    foreach (var field in await _fieldDefinitionRepository.GetListAsync(existingType.Id))
+                    {
+                        names.Existing.Add(field.Name);
+                        names.Projected.Add(field.Name);
+                    }
+                }
+
+                namesByTypeCode[pack.TypeCode] = names;
+            }
+
+            foreach (var field in pack.Fields)
+            {
+                names.Projected.Add(field.Name);
+            }
+        }
+
+        foreach (var pack in packs)
+        {
+            var names = namesByTypeCode[pack.TypeCode];
+
+            // Stand-in ids, one per field name, so the shape check can tell a field reading itself or reading one field
+            // twice from two different fields.
+            var standIns = new Dictionary<string, Guid>(StringComparer.Ordinal);
+            Guid StandIn(string name) => standIns.TryGetValue(name, out var id) ? id : standIns[name] = Guid.NewGuid();
+
+            foreach (var field in pack.Fields)
+            {
+                if (field.ValidationRules == null || (names.Existing.Contains(field.Name) && mode == PackImportMode.CreateOnly))
+                {
+                    continue;
+                }
+
+                var rules = new List<FieldValidationRule>(field.ValidationRules.Count);
+                for (var i = 0; i < field.ValidationRules.Count; i++)
+                {
+                    var rule = field.ValidationRules[i];
+                    var inputs = new List<FieldValidationRuleInput>();
+                    foreach (var input in rule?.Inputs ?? new List<DocumentTypePackValidationRuleInputDto>())
+                    {
+                        if (input?.FieldName == null || !names.Projected.Contains(input.FieldName))
+                        {
+                            throw Field.InvalidInput(field.Name, i + 1, input?.Alias);
+                        }
+
+                        inputs.Add(new FieldValidationRuleInput(input.Alias, StandIn(input.FieldName)));
+                    }
+
+                    rules.Add(rule == null ? null! : new FieldValidationRule(rule.Description, rule.Expression, inputs));
+                }
+
+                var checkedRules = Field.CheckValidationRules(field.Name, StandIn(field.Name), rules);
+                for (var i = 0; i < checkedRules.Count; i++)
+                {
+                    RuleEvaluator.CheckExpression(field.Name, i + 1, checkedRules[i].Expression);
+                }
+            }
+        }
+    }
+
+    /// <summary>Checks that a rule's expression parses. Resolved lazily, so the constructor a subclass calls stays as it was.</summary>
+    protected FieldValidationRuleEvaluator RuleEvaluator => LazyServiceProvider.LazyGetRequiredService<FieldValidationRuleEvaluator>();
 
     protected virtual async Task<(DocumentTypePackItemResultDto Item, bool SearchabilityChanged)> ImportPackAsync(
         DocumentTypePackDto pack, PackImportMode mode)
@@ -294,6 +378,7 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
     {
         var searchabilityChanged = false;
         var uniqueKeyCleared = false;
+        var written = new List<DocumentTypePackFieldDto>();
 
         foreach (var f in fields)
         {
@@ -321,6 +406,7 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
                 StampProvenance(field, version);
                 await _fieldDefinitionRepository.InsertAsync(field, autoSave: true);
                 item.FieldsCreated++;
+                written.Add(f);
                 // Never needs a rebuild: a field that did not exist a moment ago cannot have values on any
                 // existing document to backfill.
             }
@@ -346,12 +432,30 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
                 StampProvenance(existing, version);
                 await _fieldDefinitionRepository.UpdateAsync(existing, autoSave: true);
                 item.FieldsUpdated++;
+                written.Add(f);
                 searchabilityChanged |= wasSearchable != existing.IsSearchable;
                 uniqueKeyCleared |= wasUniqueKey && !existing.IsUniqueKey;
             }
             else
             {
                 item.FieldsSkipped++;
+            }
+        }
+
+        // Rules last: an input may name a field the same pack creates after the one whose rule reads it. ValidateValidationRulesAsync
+        // has already checked every one of them, so each input resolves. A pack without rules for a field (null, every
+        // version-1 and version-2 pack) leaves that field's rules as they are.
+        if (written.Any(f => f.ValidationRules != null))
+        {
+            var byName = (await _fieldDefinitionRepository.GetListAsync(documentTypeId)).ToDictionary(f => f.Name, StringComparer.Ordinal);
+            foreach (var f in written.Where(f => f.ValidationRules != null))
+            {
+                var target = byName[f.Name];
+                target.SetValidationRules(f.ValidationRules!.Select(rule => new FieldValidationRule(
+                    rule.Description,
+                    rule.Expression,
+                    rule.Inputs.Select(input => new FieldValidationRuleInput(input.Alias, byName[input.FieldName].Id)).ToList())));
+                await _fieldDefinitionRepository.UpdateAsync(target, autoSave: true);
             }
         }
 
@@ -526,8 +630,13 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
         entity.SetProperty(DocumentTypePackConsts.ProvenanceVersionKey, version);
     }
 
+    /// <summary>
+    /// The type and its fields as a pack. A rule input is written as the name of the field it reads; a rule reading a field
+    /// that is no longer among <paramref name="fields"/> (deleted) is left out, since no import could resolve it.
+    /// </summary>
     protected virtual DocumentTypePackDto MapToPack(DocumentType type, List<Field> fields)
     {
+        var namesById = fields.ToDictionary(f => f.Id, f => f.Name);
         return new DocumentTypePackDto
         {
             Version = DocumentTypePackConsts.CurrentVersion,
@@ -550,7 +659,22 @@ public class DocumentTypePackAppService : VaultExtractAppService, IDocumentTypeP
                     DisplayOrder = f.DisplayOrder,
                     IsRequired = f.IsRequired,
                     IsSearchable = f.IsSearchable,
-                    IsUniqueKey = f.IsUniqueKey
+                    IsUniqueKey = f.IsUniqueKey,
+                    ValidationRules = f.ValidationRules
+                        .Where(rule => rule.Inputs.All(input => namesById.ContainsKey(input.FieldId)))
+                        .Select(rule => new DocumentTypePackValidationRuleDto
+                        {
+                            Description = rule.Description,
+                            Expression = rule.Expression,
+                            Inputs = rule.Inputs
+                                .Select(input => new DocumentTypePackValidationRuleInputDto
+                                {
+                                    Alias = input.Alias,
+                                    FieldName = namesById[input.FieldId]
+                                })
+                                .ToList()
+                        })
+                        .ToList()
                 })
                 .ToList()
         };

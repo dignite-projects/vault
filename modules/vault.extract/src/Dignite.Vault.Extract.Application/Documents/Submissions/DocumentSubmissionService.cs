@@ -10,6 +10,7 @@ using Dignite.Vault.Extract.Abstractions.Documents;
 using Dignite.Vault.Extract.Documents.Cabinets;
 using Dignite.Vault.Extract.Documents.Duplicates;
 using Dignite.Vault.Extract.Documents.Fields;
+using Dignite.Vault.Extract.Documents.Fields.Validation;
 using Dignite.Vault.Extract.Documents.Layout;
 using Dignite.Vault.Extract.Documents.Pipelines;
 using Dignite.Vault.Extract.Documents.Pipelines.Classification;
@@ -64,6 +65,7 @@ public class DocumentSubmissionService : ITransientDependency
     private readonly IFlexFieldIndexManager<Document> _flexFieldIndexManager;
     private readonly ReviewStateEvaluator _reviewEvaluator;
     private readonly DuplicateDetectionEvaluator _duplicateDetectionEvaluator;
+    private readonly FieldValidationRuleEvaluator _ruleEvaluator;
     private readonly IVaultExtractFieldTypeRegistry _fieldTypeExtensionRegistry;
     private readonly IDistributedEventBus _distributedEventBus;
     private readonly IBackgroundJobManager _backgroundJobManager;
@@ -88,6 +90,7 @@ public class DocumentSubmissionService : ITransientDependency
         IFlexFieldIndexManager<Document> flexFieldIndexManager,
         ReviewStateEvaluator reviewEvaluator,
         DuplicateDetectionEvaluator duplicateDetectionEvaluator,
+        FieldValidationRuleEvaluator ruleEvaluator,
         IVaultExtractFieldTypeRegistry fieldTypeExtensionRegistry,
         IDistributedEventBus distributedEventBus,
         IBackgroundJobManager backgroundJobManager,
@@ -111,6 +114,7 @@ public class DocumentSubmissionService : ITransientDependency
         _flexFieldIndexManager = flexFieldIndexManager;
         _reviewEvaluator = reviewEvaluator;
         _duplicateDetectionEvaluator = duplicateDetectionEvaluator;
+        _ruleEvaluator = ruleEvaluator;
         _fieldTypeExtensionRegistry = fieldTypeExtensionRegistry;
         _distributedEventBus = distributedEventBus;
         _backgroundJobManager = backgroundJobManager;
@@ -444,8 +448,8 @@ public class DocumentSubmissionService : ITransientDependency
 
     /// <summary>
     /// Writes the submitted values with the checks the extraction write applies to the values a model returned: the
-    /// missing required fields, the duplicate fingerprint and verdict, and each value's quoted passages located in the
-    /// stored text (at most as many per field as the extractor may quote).
+    /// missing required fields, the validation rules, the duplicate fingerprint and verdict, and each value's quoted
+    /// passages located in the stored text (at most as many per field as the extractor may quote).
     /// </summary>
     protected virtual async Task WriteFieldValuesAsync(
         Document document,
@@ -473,6 +477,10 @@ public class DocumentSubmissionService : ITransientDependency
         document.SetReviewReason(
             DocumentReviewReasons.MissingRequiredFields,
             _reviewEvaluator.MissingRequiredFieldsPresent(requiredIds, presentIds));
+
+        // A submitted value is held to the type's validation rules like an extracted one: a rule that does not hold blocks
+        // Ready until an operator corrects the value or accepts it.
+        document.ReplaceFieldValidationWarnings(_ruleEvaluator.Evaluate(document, definitions));
 
         document.SetFieldFingerprint(FlexFieldFingerprintCalculator.Compute(document, definitions, _fieldTypeExtensionRegistry));
         document.SetReviewReason(

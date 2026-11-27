@@ -711,7 +711,7 @@ public class DocumentTypePackAppService_Tests : VaultExtractEntityFrameworkCoreT
     /// the type it came from" failure <c>DocumentTypePackV1Upconverter</c>'s own doc comment warns about.
     /// </summary>
     [Fact]
-    public async Task V1_pack_re_exports_as_version_2_and_reimports_onto_the_same_fields()
+    public async Task V1_pack_re_exports_as_the_current_version_and_reimports_onto_the_same_fields()
     {
         await _packAppService.ImportAsync(new ImportDocumentTypePacksInput
         {
@@ -751,6 +751,107 @@ public class DocumentTypePackAppService_Tests : VaultExtractEntityFrameworkCoreT
             var fields = await _fieldDefinitionRepository.GetListAsync(type!.Id);
             fields.Count.ShouldBe(2); // matched by name, not duplicated under new field types
             fields.Single(f => f.Name == "summary").IsSearchable.ShouldBeFalse();
+        });
+    }
+
+    // ─── validation rules (pack version 3): inputs travel by field name ───
+
+    private static DocumentTypePackDto RuledPack(string typeCode, string inputFieldName = "openingBalance", string expression = "value[0].values.balance === opening") => new()
+    {
+        Version = DocumentTypePackConsts.CurrentVersion,
+        TypeCode = typeCode,
+        DisplayName = "Bank statement",
+        Fields = new List<DocumentTypePackFieldDto>
+        {
+            // The rule's field comes before the field its input names: inputs resolve after every field is written.
+            new()
+            {
+                Name = "transactions", DisplayName = "Transactions", FieldTypeName = TableFieldType.ControlName, IsSearchable = false,
+                Configuration = new TableConfiguration
+                {
+                    Columns = new List<InlineFieldDefinition> { new() { Name = "balance", DisplayName = "Balance", FieldTypeName = NumberFieldType.ControlName } }
+                }.ConfigurationDictionary,
+                ValidationRules = new List<DocumentTypePackValidationRuleDto>
+                {
+                    new()
+                    {
+                        Description = "第一行余额等于期初余额",
+                        Expression = expression,
+                        Inputs = new List<DocumentTypePackValidationRuleInputDto> { new() { Alias = "opening", FieldName = inputFieldName } }
+                    }
+                }
+            },
+            new() { Name = "openingBalance", DisplayName = "Opening balance", FieldTypeName = NumberFieldType.ControlName }
+        }
+    };
+
+    [Fact]
+    public async Task Validation_rules_import_by_field_name_and_export_the_same_way()
+    {
+        await _packAppService.ImportAsync(new ImportDocumentTypePacksInput { Packs = new List<DocumentTypePackDto> { RuledPack("host.ruled") } });
+
+        DocumentTypePackDto exported = null!;
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var type = await _documentTypeRepository.FindByTypeCodeAsync("host.ruled");
+            var fields = await _fieldDefinitionRepository.GetListAsync(type!.Id);
+            var opening = fields.Single(f => f.Name == "openingBalance");
+            fields.Single(f => f.Name == "transactions").ValidationRules.Single().Inputs.Single()
+                .ShouldBe(new FieldValidationRuleInput("opening", opening.Id));
+            exported = await _packAppService.ExportAsync(type.Id);
+        });
+
+        exported.Version.ShouldBe(3);
+        var rule = exported.Fields.Single(f => f.Name == "transactions").ValidationRules!.Single();
+        rule.Description.ShouldBe("第一行余额等于期初余额");
+        rule.Inputs.Single().FieldName.ShouldBe("openingBalance");
+        exported.Fields.Single(f => f.Name == "openingBalance").ValidationRules.ShouldBeEmpty();
+
+        var reimport = await _packAppService.ImportAsync(new ImportDocumentTypePacksInput { Packs = new List<DocumentTypePackDto> { exported } });
+        reimport.FieldsCreated.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_rule_input_naming_a_field_the_type_will_not_have_is_refused_before_any_write()
+    {
+        var ex = await Should.ThrowAsync<BusinessException>(() => _packAppService.ImportAsync(new ImportDocumentTypePacksInput
+        {
+            Packs = new List<DocumentTypePackDto> { SamplePack("host.before"), RuledPack("host.bad-input", inputFieldName: "nowhere") }
+        }));
+
+        ex.Code.ShouldBe(VaultExtractErrorCodes.FieldDefinition.InvalidValidationRuleInput);
+        await WithUnitOfWorkAsync(async () =>
+            (await _documentTypeRepository.FindByTypeCodeAsync("host.before")).ShouldBeNull());
+    }
+
+    [Fact]
+    public async Task A_rule_whose_expression_does_not_parse_is_refused_before_any_write()
+    {
+        var ex = await Should.ThrowAsync<BusinessException>(() => _packAppService.ImportAsync(new ImportDocumentTypePacksInput
+        {
+            Packs = new List<DocumentTypePackDto> { SamplePack("host.before2"), RuledPack("host.bad-expression", expression: "value[0].values.balance ===") }
+        }));
+
+        ex.Code.ShouldBe(VaultExtractErrorCodes.FieldDefinition.UnparsableValidationRule);
+        await WithUnitOfWorkAsync(async () =>
+            (await _documentTypeRepository.FindByTypeCodeAsync("host.before2")).ShouldBeNull());
+    }
+
+    [Fact]
+    public async Task A_pack_without_rules_leaves_an_existing_fields_rules_as_they_are()
+    {
+        await _packAppService.ImportAsync(new ImportDocumentTypePacksInput { Packs = new List<DocumentTypePackDto> { RuledPack("host.kept") } });
+        var withoutRules = RuledPack("host.kept");
+        withoutRules.Version = 2;
+        withoutRules.Fields.ForEach(f => f.ValidationRules = null);
+
+        var result = await _packAppService.ImportAsync(new ImportDocumentTypePacksInput { Packs = new List<DocumentTypePackDto> { withoutRules } });
+
+        result.FieldsUpdated.ShouldBe(2);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var type = await _documentTypeRepository.FindByTypeCodeAsync("host.kept");
+            (await _fieldDefinitionRepository.GetListAsync(type!.Id)).Single(f => f.Name == "transactions").ValidationRules.Count.ShouldBe(1);
         });
     }
 

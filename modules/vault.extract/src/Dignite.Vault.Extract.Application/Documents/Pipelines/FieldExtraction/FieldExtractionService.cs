@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dignite.Abp.FlexFields;
 using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents.Duplicates;
+using Dignite.Vault.Extract.Documents.Fields.Validation;
 using Dignite.Vault.Extract.Documents.Review;
 using Dignite.Vault.Extract.FlexFields;
 using Microsoft.Extensions.Logging;
@@ -66,6 +67,7 @@ public class FieldExtractionService : ITransientDependency
     /// to decide it inline.
     /// </summary>
     private readonly DuplicateDetectionEvaluator _duplicateDetectionEvaluator;
+    private readonly FieldValidationRuleEvaluator _ruleEvaluator;
     private readonly FieldExtractionWorkflow _workflow;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWorkManager _unitOfWorkManager;
@@ -85,6 +87,7 @@ public class FieldExtractionService : ITransientDependency
         IFlexFieldIndexManager<Document> indexManager,
         ReviewStateEvaluator reviewEvaluator,
         DuplicateDetectionEvaluator duplicateDetectionEvaluator,
+        FieldValidationRuleEvaluator ruleEvaluator,
         FieldExtractionWorkflow workflow,
         ICurrentTenant currentTenant,
         IUnitOfWorkManager unitOfWorkManager,
@@ -100,6 +103,7 @@ public class FieldExtractionService : ITransientDependency
         _indexManager = indexManager;
         _reviewEvaluator = reviewEvaluator;
         _duplicateDetectionEvaluator = duplicateDetectionEvaluator;
+        _ruleEvaluator = ruleEvaluator;
         _workflow = workflow;
         _currentTenant = currentTenant;
         _unitOfWorkManager = unitOfWorkManager;
@@ -298,8 +302,8 @@ public class FieldExtractionService : ITransientDependency
                     documentId);
             }
 
-            // #527 §1: the workflow returns both the field values and the field validation warnings, from one call, or, for
-            // a table too long for one answer, from that table's excerpts and then one call.
+            // The workflow returns the field values and where they were found, from one call, or, for a table too long for
+            // one answer, from that table's excerpts and one call for the other fields.
             var extractionResult = await _workflow.ExtractAsync(descriptors, markdown, _cancellationTokenProvider.Token);
             var extracted = extractionResult.Values;
 
@@ -340,8 +344,8 @@ public class FieldExtractionService : ITransientDependency
             var currentDefinitionsById = currentDefinitions.ToDictionary(d => d.Id);
 
             // A field whose value the answer did not finish (cut off at the output limit) has no answer, so the document
-            // keeps what it holds for it, the same way a declined run leaves every value untouched. Its source and its
-            // warning stay with it below.
+            // keeps what it holds for it, the same way a declined run leaves every value untouched. Its source stays with it
+            // below, and the validation rules judge the value it keeps.
             var unfinished = extractionResult.UnfinishedFields;
             var heldFieldNames = new HashSet<string>(StringComparer.Ordinal);
             var fieldValues = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -447,53 +451,11 @@ public class FieldExtractionService : ITransientDependency
 
             document.SetFieldSources(fieldSources);
 
-            // #527 §5/§7: persist the field validation warnings atomically with SetFlexFields below. The
-            // workflow keys warnings by field name and has already normalized them (§3); here each is resolved
-            // to the immutable FieldDefinitionId and passed through the SAME in-flight guards as the values — a warning
-            // whose field was deleted, renamed, or changed shape while the LLM was in flight is discarded, never creating
-            // stale review state. ReplaceFieldValidationWarnings couples the blocking FieldValidationWarning bit to the
-            // collection, so a clean re-extraction (no warnings) clears both and lets the document re-derive to Ready.
-            var descriptorsByName = descriptors.ToDictionary(d => d.Name, StringComparer.Ordinal);
-            var warnings = new List<FieldValidationWarning>();
-
-            // What a cut-off answer did not settle keeps the warning the document has: every warning when the answer's
-            // own warning list did not close, otherwise those of the fields whose values were not finished.
-            var unsettledFieldIds = extractionResult.ValidationWarningsUnfinished
-                ? currentDefinitionsById.Keys.ToHashSet()
-                : descriptors.Where(d => unfinished.Contains(d.Name)).Select(d => d.FieldId).ToHashSet();
-            foreach (var held in document.FieldValidationWarnings)
-            {
-                if (unsettledFieldIds.Contains(held.FieldDefinitionId) && currentDefinitionsById.ContainsKey(held.FieldDefinitionId))
-                {
-                    warnings.Add(new FieldValidationWarning(held.FieldDefinitionId, held.Message));
-                }
-            }
-
-            foreach (var w in extractionResult.ValidationWarnings)
-            {
-                // A warning about a value the answer did not finish judges a value the document does not get.
-                if (descriptorsByName.TryGetValue(w.FieldName, out var warned) && unsettledFieldIds.Contains(warned.FieldId))
-                {
-                    continue;
-                }
-
-                // The same in-flight guards the values pass through, so a warning whose field was removed,
-                // renamed, or retyped mid-call is discarded rather than left as stale review state.
-                if (!descriptorsByName.TryGetValue(w.FieldName, out var descriptor)
-                    || !currentDefinitionsById.TryGetValue(descriptor.FieldId, out var currentDefinition)
-                    || !string.Equals(currentDefinition.FieldTypeName, descriptor.FieldTypeName, StringComparison.Ordinal)
-                    || !string.Equals(currentDefinition.Name, descriptor.Name, StringComparison.Ordinal))
-                {
-                    _logger.LogInformation(
-                        "Field validation warning for '{FieldName}' on doc {DocumentId} was discarded: its field was removed, renamed, or changed shape during extraction.",
-                        w.FieldName, documentId);
-                    continue;
-                }
-
-                warnings.Add(new FieldValidationWarning(currentDefinition.Id, w.Message));
-            }
-
-            document.ReplaceFieldValidationWarnings(warnings);
+            // The warnings come from the type's validation rules, evaluated in code over the values just written (a value
+            // held for an unfinished field included). They replace the whole set, so a re-extraction whose values pass
+            // clears the blocking FieldValidationWarning bit and the document re-derives to Ready. The extraction model
+            // judges no rules: measured on a bank statement, it warned on correct values and missed broken ones.
+            document.ReplaceFieldValidationWarnings(_ruleEvaluator.Evaluate(document, currentDefinitions));
 
             // #491: this run reached the LLM, so an earlier declined run has been superseded. The decline is
             // superseded by a raised MaxFieldExtractionMarkdownLength, an operator Markdown correction (#555), or a

@@ -7,6 +7,7 @@ using Dignite.Abp.FlexFields;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Extract.FlexFields;
 using Dignite.Vault.Extract.Documents.Fields.Cleanup;
+using Dignite.Vault.Extract.Documents.Fields.Validation;
 using Dignite.Vault.Extract.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Volo.Abp;
@@ -196,6 +197,12 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
             input.IsSearchable,
             input.IsUniqueKey);
 
+        if (input.ValidationRules is { Count: > 0 })
+        {
+            entity.SetValidationRules(
+                await CheckValidationRulesAsync(entity.DocumentTypeId, entity.Id, entity.Name, input.ValidationRules));
+        }
+
         await _repository.InsertAsync(entity, autoSave: true);
         return ObjectMapper.Map<Field, FieldDefinitionDto>(entity);
     }
@@ -252,6 +259,12 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
         var type = await _documentTypeRepository.GetAsync(entity.DocumentTypeId);
         await EnsureSchemaPromptBudgetAsync(type, entity.Id, input.Description);
 
+        // Checked before the entity changes, so a refused rule leaves the field as it was. Null leaves the rules as they
+        // are: a client written before rules existed saves the field without them.
+        var validationRules = input.ValidationRules == null
+            ? null
+            : await CheckValidationRulesAsync(entity.DocumentTypeId, entity.Id, input.Name, input.ValidationRules);
+
         entity.SetName(input.Name);
         entity.SetDisplayName(input.DisplayName);
         entity.SetDescription(input.Description);
@@ -261,6 +274,11 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
         entity.SetIsRequired(input.IsRequired);
         entity.SetIsSearchable(input.IsSearchable);
         entity.SetIsUniqueKey(input.IsUniqueKey);
+        if (validationRules != null)
+        {
+            entity.SetValidationRules(validationRules);
+        }
+
         await _repository.UpdateAsync(entity, autoSave: true);
 
         if (renamed)
@@ -331,6 +349,17 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
         if (entity.TenantId != CurrentTenant.Id)
         {
             throw new EntityNotFoundException(typeof(Field), id);
+        }
+
+        // A rule reading this field would be skipped from then on: a check that silently stops checking. The rule is
+        // changed first, deliberately.
+        var readBy = (await _repository.GetListAsync(entity.DocumentTypeId)).FirstOrDefault(field => field.Id != entity.Id
+            && field.ValidationRules.Any(rule => rule.Inputs.Any(input => input.FieldId == entity.Id)));
+        if (readBy != null)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.FieldDefinition.ReadByValidationRule)
+                .WithData("Name", entity.Name)
+                .WithData("ReadBy", readBy.Name);
         }
 
         await _repository.DeleteAsync(entity);
@@ -413,6 +442,54 @@ public class FieldDefinitionAppService : VaultExtractAppService, IFieldDefinitio
             return ObjectMapper.Map<Field, FieldDefinitionDto>(entity);
         }
     }
+
+    /// <summary>
+    /// <paramref name="rules"/> as the field will hold them, once each is known to work there: every input is another
+    /// active field of the same document type (and layer, through the repository's filters), the rule's shape passes
+    /// <see cref="Field.CheckValidationRules"/>, and every expression parses. Changes nothing, so the caller can check
+    /// before it touches the entity.
+    /// </summary>
+    protected virtual async Task<IReadOnlyList<FieldValidationRule>> CheckValidationRulesAsync(
+        Guid documentTypeId,
+        Guid fieldId,
+        string fieldName,
+        IReadOnlyList<FieldValidationRuleDto> rules)
+    {
+        var siblingIds = (await _repository.GetListAsync(documentTypeId))
+            .Where(field => field.Id != fieldId)
+            .Select(field => field.Id)
+            .ToHashSet();
+
+        for (var i = 0; i < rules.Count; i++)
+        {
+            foreach (var input in rules[i]?.Inputs ?? new List<FieldValidationRuleInputDto>())
+            {
+                if (input != null && input.FieldId != fieldId && !siblingIds.Contains(input.FieldId))
+                {
+                    throw Field.InvalidInput(fieldName, i + 1, input.Alias);
+                }
+            }
+        }
+
+        var checkedRules = Field.CheckValidationRules(fieldName, fieldId, rules.Select(rule => rule == null
+            ? null!
+            : new FieldValidationRule(
+                rule.Description,
+                rule.Expression,
+                (rule.Inputs ?? new List<FieldValidationRuleInputDto>())
+                    .Select(input => input == null ? null! : new FieldValidationRuleInput(input.Alias, input.FieldId))
+                    .ToList())));
+
+        for (var i = 0; i < checkedRules.Count; i++)
+        {
+            RuleEvaluator.CheckExpression(fieldName, i + 1, checkedRules[i].Expression);
+        }
+
+        return checkedRules;
+    }
+
+    /// <summary>Checks that a rule's expression parses. Resolved lazily, so the constructor a subclass calls stays as it was.</summary>
+    protected FieldValidationRuleEvaluator RuleEvaluator => LazyServiceProvider.LazyGetRequiredService<FieldValidationRuleEvaluator>();
 
     protected virtual async Task EnsureSchemaPromptBudgetAsync(
         DocumentType type,

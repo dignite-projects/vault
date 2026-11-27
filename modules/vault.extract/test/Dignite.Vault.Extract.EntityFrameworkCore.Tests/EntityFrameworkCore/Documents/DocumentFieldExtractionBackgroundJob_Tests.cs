@@ -135,8 +135,7 @@ public class DocumentFieldExtractionBackgroundJob_Tests
             {
                 _unitOfWorkManager.Current.ShouldBeNull();
                 return new FieldExtractionWorkflowResult(
-                    new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement },
-                    Array.Empty<FieldValidationWarningResult>());
+                    new Dictionary<string, JsonElement?> { ["amount"] = JsonDocument.Parse("1500").RootElement });
             });
 
         // PipelineRunId=null: bulk-path shape. The job creates its own field-extraction run through StartAsync.
@@ -354,8 +353,7 @@ public class DocumentFieldExtractionBackgroundJob_Tests
                 {
                     ["line_items"] = JsonDocument.Parse(
                         """[{"values":{"item":"Widget","qty":3}},{"values":{"item":"Gadget","qty":1}}]""").RootElement
-                },
-                Array.Empty<FieldValidationWarningResult>()));
+                }));
 
         await _job.ExecuteAsync(new DocumentFieldExtractionJobArgs { DocumentId = documentId, PipelineRunId = null });
 
@@ -388,6 +386,72 @@ public class DocumentFieldExtractionBackgroundJob_Tests
             rendered[0].GetProperty("values").GetProperty("qty").GetDecimal().ShouldBe(3m);
             rendered[1].GetProperty("values").GetProperty("item").GetString().ShouldBe("Gadget");
             rendered[1].GetProperty("values").GetProperty("qty").GetDecimal().ShouldBe(1m);
+        });
+    }
+
+    /// <summary>
+    /// A field's validation rules through real EF: stored in the field's JSON column, read back by the run in its own unit
+    /// of work, judged over the rows the run writes, and the failing rule's warning persisted with the blocking reason. A
+    /// second extraction with rows that pass clears it.
+    /// </summary>
+    [Fact]
+    public async Task A_table_fields_validation_rule_is_judged_over_the_written_rows_and_its_warning_persisted()
+    {
+        var typeId = _guidGenerator.Create();
+        var fieldId = _guidGenerator.Create();
+        var documentId = _guidGenerator.Create();
+        var columns = new TableConfiguration
+        {
+            Columns = new List<InlineFieldDefinition>
+            {
+                new() { Name = "item", DisplayName = "Item", FieldTypeName = TextFieldType.ControlName, Required = true },
+                new() { Name = "qty", DisplayName = "Quantity", FieldTypeName = NumberFieldType.ControlName }
+            }
+        }.ConfigurationDictionary;
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await _documentTypeRepository.InsertAsync(new DocumentType(typeId, null, "type.ruled", "Type Ruled"), autoSave: true);
+            var field = new Field(
+                fieldId, null, typeId, "line_items", "Line items",
+                TableFieldType.ControlName, description: "extract line items", configuration: columns, isSearchable: false);
+            field.SetValidationRules(
+            [
+                new FieldValidationRule("数量の合計は 5", "value.reduce((n, r) => n + r.values.qty, 0) === 5", []),
+                new FieldValidationRule("行がある", "value.length > 0", [])
+            ]);
+            await _fieldRepository.InsertAsync(field, autoSave: true);
+
+            var doc = NewDocument(documentId);
+            doc.SetMarkdown("# Invoice\n\nWidget x3, Gadget x1");
+            doc.ApplyAutomaticClassificationResult(typeId, 0.99);
+            await _documentRepository.InsertAsync(doc, autoSave: true);
+        });
+
+        var rows = """[{"values":{"item":"Widget","qty":3}},{"values":{"item":"Gadget","qty":1}}]""";
+        _workflow
+            .ExtractAsync(Arg.Any<IReadOnlyList<FieldExtractionDescriptor>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new FieldExtractionWorkflowResult(
+                new Dictionary<string, JsonElement?> { ["line_items"] = JsonDocument.Parse(rows).RootElement }));
+
+        await _job.ExecuteAsync(new DocumentFieldExtractionJobArgs { DocumentId = documentId, PipelineRunId = null });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var doc = await _documentRepository.FindWithFieldValuesAsync(documentId);
+            doc!.FieldValidationWarnings.Single().FieldDefinitionId.ShouldBe(fieldId);
+            doc.FieldValidationWarnings.Single().Message.ShouldBe("数量の合計は 5");
+            doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeTrue();
+        });
+
+        rows = """[{"values":{"item":"Widget","qty":4}},{"values":{"item":"Gadget","qty":1}}]""";
+        await _job.ExecuteAsync(new DocumentFieldExtractionJobArgs { DocumentId = documentId, PipelineRunId = null });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var doc = await _documentRepository.FindWithFieldValuesAsync(documentId);
+            doc!.FieldValidationWarnings.ShouldBeEmpty();
+            doc.ReviewReasons.HasFlag(DocumentReviewReasons.FieldValidationWarning).ShouldBeFalse();
         });
     }
 

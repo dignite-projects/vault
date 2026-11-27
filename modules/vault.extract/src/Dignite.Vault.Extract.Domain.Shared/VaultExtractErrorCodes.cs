@@ -118,6 +118,31 @@ public static class VaultExtractErrorCodes
         public const string MultiValueChangeNotAllowed = "Extract:FieldDefinitionMultiValueChangeNotAllowed";
         public const string SchemaPromptBudgetExceeded = "Extract:FieldDefinitionSchemaPromptBudgetExceeded";
 
+        /// <summary>A field holds more validation rules than <c>FieldValidationRuleConsts.MaxRulesPerField</c>.</summary>
+        public const string TooManyValidationRules = "Extract:TooManyFieldValidationRules";
+
+        /// <summary>
+        /// A field's validation rule has a blank, multi-line or over-long description, or a blank or over-long
+        /// expression. The data carries the field and the rule's one-based position.
+        /// </summary>
+        public const string InvalidValidationRule = "Extract:InvalidFieldValidationRule";
+
+        /// <summary>
+        /// A validation rule's input is not usable: its alias is not an identifier, is <c>value</c> or is repeated; it
+        /// reads the rule's own field, a field another input reads, or no field of the same document type; or the rule
+        /// has too many inputs.
+        /// </summary>
+        public const string InvalidValidationRuleInput = "Extract:InvalidFieldValidationRuleInput";
+
+        /// <summary>A validation rule's expression does not parse as one JavaScript expression; the data carries the parser's message.</summary>
+        public const string UnparsableValidationRule = "Extract:UnparsableFieldValidationRule";
+
+        /// <summary>
+        /// Deleting a field another field's validation rule reads is refused: the rule would be skipped from then on,
+        /// a check that silently stops checking.
+        /// </summary>
+        public const string ReadByValidationRule = "Extract:FieldReadByValidationRule";
+
         /// <summary>
         /// The submitted <c>FieldTypeName</c> matches no registered field type (#559). A registration key
         /// rather than a closed enum is what buys v3 its extensibility, and this is the cost: the value is

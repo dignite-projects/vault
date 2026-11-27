@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Dignite.Abp.FlexFields;
@@ -114,6 +115,12 @@ public class Field : FullAuditedAggregateRoot<Guid>, IFlexField, IMultiTenant
     /// of <see cref="IFlexField"/> — a Vault Extract concern the kernel has no opinion about.
     /// </summary>
     public virtual bool IsUniqueKey { get; private set; }
+
+    /// <summary>
+    /// The checks this field's stored value must pass, evaluated in code wherever a document's values are written. Empty
+    /// for a field with none. Not part of <see cref="IFlexField"/>: validation is Vault Extract's concern, not the kernel's.
+    /// </summary>
+    public virtual IReadOnlyList<FieldValidationRule> ValidationRules { get; private set; } = Array.Empty<FieldValidationRule>();
 
     protected Field()
     {
@@ -259,4 +266,121 @@ public class Field : FullAuditedAggregateRoot<Guid>, IFlexField, IMultiTenant
     {
         IsUniqueKey = isUniqueKey;
     }
+
+    /// <summary>
+    /// Replaces the field's validation rules. Checks each rule's shape (see <see cref="CheckValidationRules"/>); whether an
+    /// expression parses and whether each input is a field of the same type are checked by the application layer, which
+    /// holds the expression engine and the type's other fields.
+    /// </summary>
+    public virtual void SetValidationRules(IEnumerable<FieldValidationRule>? rules)
+    {
+        ValidationRules = CheckValidationRules(Name, Id, rules);
+    }
+
+    /// <summary>
+    /// The shape every rule of a field must have: at most <see cref="FieldValidationRuleConsts.MaxRulesPerField"/>
+    /// rules; a one-line description and an expression within their lengths; at most
+    /// <see cref="FieldValidationRuleConsts.MaxInputsPerRule"/> inputs, each with an identifier for an alias (not
+    /// <c>value</c>, not repeated) and another field (not this one, not repeated). Returns the rules as checked; throws a
+    /// <c>BusinessException</c> naming the first rule that fails (<c>Extract:TooManyFieldValidationRules</c>,
+    /// <c>Extract:InvalidFieldValidationRule</c> or <c>Extract:InvalidFieldValidationRuleInput</c>). Static so an import
+    /// can check a pack's rules before it writes anything.
+    /// </summary>
+    /// <param name="fieldName">The field's name, for the error.</param>
+    /// <param name="fieldId">The field's id, which no input may name.</param>
+    /// <param name="rules">The rules.</param>
+    public static IReadOnlyList<FieldValidationRule> CheckValidationRules(
+        string fieldName,
+        Guid fieldId,
+        IEnumerable<FieldValidationRule>? rules)
+    {
+        var list = rules?.ToList() ?? new List<FieldValidationRule>();
+        if (list.Count > FieldValidationRuleConsts.MaxRulesPerField)
+        {
+            throw new BusinessException(VaultExtractErrorCodes.FieldDefinition.TooManyValidationRules)
+                .WithData("Name", fieldName)
+                .WithData("Max", FieldValidationRuleConsts.MaxRulesPerField);
+        }
+
+        var checkedRules = new List<FieldValidationRule>(list.Count);
+        for (var i = 0; i < list.Count; i++)
+        {
+            checkedRules.Add(CheckRule(fieldName, fieldId, list[i], i + 1));
+        }
+
+        return checkedRules;
+    }
+
+    private static FieldValidationRule CheckRule(string fieldName, Guid fieldId, FieldValidationRule? rule, int position)
+    {
+        if (rule == null)
+        {
+            throw InvalidRule(fieldName, position);
+        }
+
+        if (string.IsNullOrWhiteSpace(rule.Description)
+            || rule.Description.Length > FieldValidationRuleConsts.MaxDescriptionLength
+            || rule.Description.Any(char.IsControl))
+        {
+            throw InvalidRule(fieldName, position);
+        }
+
+        if (string.IsNullOrWhiteSpace(rule.Expression) || rule.Expression.Length > FieldValidationRuleConsts.MaxExpressionLength)
+        {
+            throw InvalidRule(fieldName, position);
+        }
+
+        var inputs = rule.Inputs ?? Array.Empty<FieldValidationRuleInput>();
+        if (inputs.Count > FieldValidationRuleConsts.MaxInputsPerRule)
+        {
+            throw InvalidInput(fieldName, position, null);
+        }
+
+        var aliases = new HashSet<string>(StringComparer.Ordinal);
+        var fieldIds = new HashSet<Guid>();
+        foreach (var input in inputs)
+        {
+            if (input == null || input.Alias == null || !AliasRegex.IsMatch(input.Alias)
+                || input.Alias == FieldValidationRuleConsts.ValueAlias)
+            {
+                throw InvalidInput(fieldName, position, input?.Alias);
+            }
+
+            if (!aliases.Add(input.Alias))
+            {
+                throw InvalidInput(fieldName, position, input.Alias);
+            }
+
+            if (input.FieldId == Guid.Empty || input.FieldId == fieldId)
+            {
+                throw InvalidInput(fieldName, position, input.Alias);
+            }
+
+            if (!fieldIds.Add(input.FieldId))
+            {
+                throw InvalidInput(fieldName, position, input.Alias);
+            }
+        }
+
+        return new FieldValidationRule(rule.Description, rule.Expression, inputs.ToList());
+    }
+
+    private static BusinessException InvalidRule(string fieldName, int position)
+        => new BusinessException(VaultExtractErrorCodes.FieldDefinition.InvalidValidationRule)
+            .WithData("Name", fieldName)
+            .WithData("Index", position)
+            .WithData("MaxDescription", FieldValidationRuleConsts.MaxDescriptionLength)
+            .WithData("MaxExpression", FieldValidationRuleConsts.MaxExpressionLength);
+
+    /// <summary>The error for a rule's unusable input, also thrown by the application layer for an input outside the type.</summary>
+    public static BusinessException InvalidInput(string fieldName, int position, string? alias)
+        => new BusinessException(VaultExtractErrorCodes.FieldDefinition.InvalidValidationRuleInput)
+            .WithData("Name", fieldName)
+            .WithData("Index", position)
+            .WithData("Alias", alias ?? string.Empty)
+            .WithData("MaxInputs", FieldValidationRuleConsts.MaxInputsPerRule);
+
+    private static readonly Regex AliasRegex = new(
+        FieldValidationRuleConsts.AliasPattern,
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 }

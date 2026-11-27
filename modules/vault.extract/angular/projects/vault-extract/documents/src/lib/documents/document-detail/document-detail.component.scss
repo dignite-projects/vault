@@ -104,3 +104,8 @@
     margin-bottom: 0;
   }
 }
+
+// One line per failed validation rule of a field.
+.field-validation-message {
+  white-space: pre-line;
+}

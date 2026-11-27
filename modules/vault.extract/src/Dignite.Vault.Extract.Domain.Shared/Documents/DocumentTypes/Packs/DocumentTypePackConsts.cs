@@ -11,9 +11,10 @@ public static class DocumentTypePackConsts
     /// <summary>
     /// Current pack schema version emitted by export. Version 2 is field architecture v3 (#559): a field
     /// carries <c>fieldTypeName</c> + <c>configuration</c> + <c>description</c> + <c>isSearchable</c> where
-    /// version 1 carried <c>dataType</c> + <c>allowMultiple</c> + <c>prompt</c>.
+    /// version 1 carried <c>dataType</c> + <c>allowMultiple</c> + <c>prompt</c>. Version 3 adds a field's
+    /// <c>validationRules</c>; a version-2 pack is the same shape without them.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// Oldest pack schema version import still accepts. A version-1 pack is upconverted on the way in by

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using Dignite.Abp.FlexFields.EntityFrameworkCore;
@@ -52,6 +53,28 @@ public static class VaultExtractDbContextModelCreatingExtensions
             (a, b) => JsonSerializer.Serialize(a, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(b, (JsonSerializerOptions?)null),
             v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null).GetHashCode(),
             v => JsonSerializer.Deserialize<DocumentFieldSources>(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!);
+
+    // A field's validation rules, as one JSON column: "[]" for none. The rows that existed before the column was added
+    // hold the migration's default, an empty string, which reads as none too.
+    private static readonly ValueConverter<IReadOnlyList<FieldValidationRule>, string> ValidationRulesConverter =
+        new(
+            v => SerializeValidationRules(v),
+            v => DeserializeValidationRules(v));
+
+    // Rules are records, replaced as a whole list on change; compared by content so EF sees an edit as one.
+    private static readonly ValueComparer<IReadOnlyList<FieldValidationRule>> ValidationRulesComparer =
+        new(
+            (a, b) => SerializeValidationRules(a) == SerializeValidationRules(b),
+            v => SerializeValidationRules(v).GetHashCode(),
+            v => DeserializeValidationRules(SerializeValidationRules(v)));
+
+    private static string SerializeValidationRules(IReadOnlyList<FieldValidationRule>? rules)
+        => JsonSerializer.Serialize(rules ?? Array.Empty<FieldValidationRule>(), (JsonSerializerOptions?)null);
+
+    private static IReadOnlyList<FieldValidationRule> DeserializeValidationRules(string? json)
+        => string.IsNullOrEmpty(json)
+            ? Array.Empty<FieldValidationRule>()
+            : JsonSerializer.Deserialize<List<FieldValidationRule>>(json, (JsonSerializerOptions?)null) ?? new List<FieldValidationRule>();
 
     public static void ConfigureVaultExtract(this ModelBuilder builder)
     {
@@ -350,6 +373,9 @@ public static class VaultExtractDbContextModelCreatingExtensions
             b.Property(x => x.IsRequired).IsRequired();
             b.Property(x => x.IsSearchable).IsRequired();
             b.Property(x => x.IsUniqueKey).IsRequired();
+            b.Property(x => x.ValidationRules)
+                .HasConversion(ValidationRulesConverter, ValidationRulesComparer)
+                .HasColumnName(nameof(Field.ValidationRules));
 
             // Internal association to parent document type (#207): FK -> DocumentType.Id, OnDelete Restrict.
             b.HasOne<DocumentType>()
