@@ -5,11 +5,13 @@ using System.Linq.Expressions;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Dignite.Vault.Extract.Ai;
 using Dignite.Vault.Extract.Documents.DocumentTypes;
 using Dignite.Vault.Extract.Documents.Fields;
 using Dignite.Vault.Extract.Documents.Pipelines;
 using Dignite.Vault.Extract.Permissions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -70,6 +72,9 @@ public class DocumentAccessTestModule : AbpModule
         context.Services.AddSingleton(Substitute.For<IBackgroundJobManager>());
         context.Services.AddSingleton(Substitute.For<IDistributedEventBus>());
         context.Services.AddSingleton(PipelineRunRepositoryFake.Create());
+
+        // The structured client the field validation rule drafting helper calls; each test scripts its answer.
+        context.Services.AddKeyedSingleton(VaultExtractConsts.StructuredChatClientKey, Substitute.For<IChatClient>());
     }
 }
 

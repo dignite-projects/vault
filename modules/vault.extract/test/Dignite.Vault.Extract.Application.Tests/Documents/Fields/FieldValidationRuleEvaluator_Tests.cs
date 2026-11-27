@@ -214,6 +214,10 @@ public class FieldValidationRuleEvaluator_Tests : VaultExtractApplicationTestBas
     [Theory]
     [InlineData("value >")]
     [InlineData("value > 0; value < 9")]   // a statement list, not one expression
+    [InlineData("true); (false")]          // closes the parenthesis it is put in to add a statement
+    [InlineData("0); var x = 1; (0")]
+    [InlineData("() => value > 0")]        // a function, whose value is never true or false
+    [InlineData("function () { return value > 0; }")]
     [InlineData("var x = 1")]
     public void An_expression_that_does_not_parse_as_one_expression_is_refused(string expression)
     {
@@ -221,6 +225,24 @@ public class FieldValidationRuleEvaluator_Tests : VaultExtractApplicationTestBas
 
         ex.Code.ShouldBe(VaultExtractErrorCodes.FieldDefinition.UnparsableValidationRule);
         ex.Data["Index"].ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData("() => value > 0", "(() => value > 0\n)()")]
+    [InlineData("function () { return value > 0; }", "(function () { return value > 0; }\n)()")]
+    [InlineData("() => { return value > 0; }() ", "(() => { return value > 0; }\n)()")]  // a call an arrow cannot take bare
+    [InlineData("(() => value > 0)()", "(() => value > 0)()")]                     // already called
+    [InlineData("(row) => row > 0", "(row) => row > 0")]       // takes a parameter: nothing to call it with
+    [InlineData("async () => true", "async () => true")]       // its call is a promise, not a result
+    [InlineData("value > 0", "value > 0")]
+    [InlineData("value >", "value >")]
+    public void Only_a_function_without_parameters_is_called(string expression, string called)
+    {
+        _evaluator.CallIfFunction(expression).ShouldBe(called);
+        if (called != expression)
+        {
+            Should.NotThrow(() => _evaluator.CheckExpression("amount", 1, called));
+        }
     }
 
     // ─── the shape the aggregate requires ───
@@ -314,8 +336,7 @@ public class FieldValidationRuleEvaluator_Tests : VaultExtractApplicationTestBas
     /// <summary>Table rows on August 2025 days, read through the same reader the extraction stores values with.</summary>
     private static object Rows(params (int Day, decimal Balance)[] rows)
     {
-        var json = JsonSerializer.Serialize(rows.Select(row => new
-        {
+        var json = JsonSerializer.Serialize(rows.Select(row => new {
             values = new { date = $"2025-08-{row.Day:00}", balance = row.Balance }
         }));
         FlexFieldValueReader.TryRead(

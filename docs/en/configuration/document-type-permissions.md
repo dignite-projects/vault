@@ -86,7 +86,7 @@ It matters most for the per-type arm: handing out a resource grant is gated by `
 
 | Rule | Module-wide | Per-type grant | Owner arm | Operations it gates |
 | --- | --- | --- | --- | --- |
-| **Read** | `Documents.ReadAll` | `Read` | **always** | `GetAsync`, `GetBlobAsync`, list and recycle-bin membership, export rows, `DocumentPipelineRunAppService.GetListAsync`, MCP `vault_extract_get_document` / `vault_extract_search_documents` / document resources |
+| **Read** | `Documents.ReadAll` | `Read` | **always** | `GetAsync`, `GetBlobAsync`, list and recycle-bin membership, export rows, `DocumentPipelineRunAppService.GetListAsync`, the document a field's validation rules are tried on (`IFieldValidationRuleDraftAppService.TestAsync`, which also needs `FieldDefinitions.Create` or `.Update`), MCP `vault_extract_get_document` / `vault_extract_search_documents` / document resources |
 | **Edit** | `Documents.ConfirmClassification` | `Edit` | **unless under review** | `ConfirmClassificationAsync` / `ReclassifyAsync` (whose **target** type is judged by *Declare a type*), `ReparseAsync` (likewise, on the empty subject), `ReextractFieldsAsync`, `UpdateExtractedFieldsAsync`, `UpdateMarkdownAsync`, `UpdateCabinetAsync` |
 | **Review** | `Documents.ConfirmClassification` | `Edit` | **never** | `AllowDuplicateAsync`, `ResolveFieldValidationWarningsAsync`, `ConfirmFieldEntryAsync`, `RejectReviewAsync` |
 | **Delete** | `Documents.Delete` | `Delete` | **always** | `DeleteAsync` (soft delete) |

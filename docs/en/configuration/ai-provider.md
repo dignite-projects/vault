@@ -212,7 +212,7 @@ The only capability the backend calls need is **structured JSON output** (`respo
 
 | Capability | Used by | Failure mode when weak |
 | --- | --- | --- |
-| Structured JSON output | Classification, field extraction, segmentation, cabinet suggestion, field drafting and prompt polishing, slug suggestion | Malformed JSON or a schema violation: classification goes to the review queue, the affected field values are dropped, a helper returns nothing and the UI falls back |
+| Structured JSON output | Classification, field extraction, segmentation, cabinet suggestion, field drafting, validation rule drafting and prompt polishing, slug suggestion | Malformed JSON or a schema violation: classification goes to the review queue, the affected field values are dropped, a helper returns nothing and the UI falls back |
 
 For production, prefer a model that is strict about schema compliance. A model that "almost gets JSON right" costs you silent gaps: rejected values are discarded and the document goes to manual review.
 
@@ -254,6 +254,7 @@ Every client is registered with `UseOpenTelemetry()` and `UseLogging()`. None us
 | `CabinetSuggestionWorkflow` | Structured | Background cabinet suggestion for a document uploaded without one ([cabinets](../documents/cabinets.md)) |
 | `FieldDraftSuggestionAppService` | Structured | Admin helper: drafts a field definition |
 | `FieldPromptPolishAppService` | Structured | Admin helper: rewrites a field's extraction prompt |
+| `FieldValidationRuleDraftAppService` | Structured | Admin helper: drafts a field's validation rules from words or from its description |
 | `DocumentParseBackgroundJob` (title generation) | Title generator | Generates a short title from the extracted Markdown |
 | `SlugSuggestionAppService` | Title generator | Admin helper: suggests an English URL slug (schema-bound) |
 | `VisionLlmOcrClient` | Vision | [Vision-LLM OCR](../text-extraction/ocr-vision-llm.md) |

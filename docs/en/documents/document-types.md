@@ -96,7 +96,7 @@ The field editor offers two LLM helpers. Both fail open: on a timeout or a provi
 | Draft a field | `IFieldDraftSuggestionAppService.DraftAsync` | Turns a plain-language request (up to 4,000 characters) into a draft: display name, name (for a new field), field type, configuration and the required flag |
 | Polish a prompt | `IFieldPromptPolishAppService.PolishAsync` | Rewrites a field's extraction instruction into clear Markdown |
 
-Both need `VaultExtract.FieldDefinitions.Create` or `.Update` and use the structured LLM client.
+Both need `VaultExtract.FieldDefinitions.Create` or `.Update` and use the structured LLM client. Validation rules have drafting helpers of their own: see [Drafting and Trying Rules](#drafting-and-trying-rules).
 
 ## How Fields Are Extracted
 
@@ -170,7 +170,7 @@ A bank statement's `transactions` table, with `openingBalance` and `closingBalan
 - **Sandbox**: each rule runs in a JavaScript engine of its own ([Jint](https://github.com/sebastienros/jint)), in strict mode, with at most 200,000 statements, 250 ms, 16 MB and 64 levels of calls, and nothing of the host within reach: no .NET types, network or files. Rules are written by each layer's administrators, so these limits are fixed, not configuration.
 - **Numbers** are JavaScript doubles: compare a sum with a tolerance, `Math.abs(a - b) < 0.005`.
 - **Inputs are bound by field id**: renaming the field an input reads keeps the rule working. Deleting a field that another field's rule reads is refused (`Extract:FieldReadByValidationRule`) until that rule changes, so no check stops checking unnoticed. The field API (`FieldDefinitionDto.validationRules`) gives an input's `fieldId`; a [type pack](#importing-and-exporting-types) gives its `fieldName`.
-- **Saving** a field checks that every expression parses as one expression and every input is another field of the same type. On `UpdateFieldDefinitionDto`, `validationRules: null` leaves the rules as they are and an empty list removes them, so a client that does not know about rules does not erase them.
+- **Saving** a field checks that every expression parses as one expression, not a function, and every input is another field of the same type. On `UpdateFieldDefinitionDto`, `validationRules: null` leaves the rules as they are and an empty list removes them, so a client that does not know about rules does not erase them.
 
 When the rules run:
 
@@ -184,7 +184,25 @@ Changing a rule does not re-check the documents that already exist: it applies a
 
 An operator who checks a value and accepts it as it stands dismisses its warning (`ResolveFieldValidationWarningsAsync`); the reason clears when none remain. A clean re-extraction, a type change or deleting the field also clears warnings.
 
-The extraction model is not asked to judge any rule, and a check written into a field's description no longer produces a warning. Measured on a 114-row bank statement whose values were all extracted correctly, the model warned on 4 of 19 runs (claiming, for example, that 100000 does not equal 100000) and caught 4 of 9 real mismatches; rephrasing the instructions or asking in a separate call did not bring it below that, and a separate call warned on 14 of 19. The same checks in code warned on none of 103 runs and caught every mismatch.
+The extraction model is not asked to judge any rule, and a check written into a field's description no longer produces a warning: draft rules from it with [Draft from the description](#drafting-and-trying-rules). Measured on a 114-row bank statement whose values were all extracted correctly, the model warned on 4 of 19 runs (claiming, for example, that 100000 does not equal 100000) and caught 4 of 9 real mismatches; rephrasing the instructions or asking in a separate call did not bring it below that, and a separate call warned on 14 of 19. The same checks in code warned on none of 103 runs and caught every mismatch.
+
+### Drafting and Trying Rules
+
+The structured LLM client drafts rules while a type is configured; when documents are processed no model is asked. A draft is a suggestion: try it on a document, then save it through the field API, which checks it again. This is how Google Document AI, Extend and Affinda let an administrator write rules in words.
+
+| Action | `IFieldValidationRuleDraftAppService` | What it does |
+| --- | --- | --- |
+| Draft a rule | `POST /api/vault-extract/field-validation-rule-draft/draft` (`DraftAsync`) | Writes one rule of a saved field (`fieldId`) from a requirement in words (`description`, at most 256 characters), which stays the rule's description |
+| Draft from the description | `POST /api/vault-extract/field-validation-rule-draft/draft-from-prompt` (`DraftFromPromptAsync`) | Writes a rule for each check the field's saved `Description` states, at most 10, and ignores the rest of the instruction. This is how checks written into a description become rules: draft, try, save, then remove the checks from the description |
+| Try rules | `POST /api/vault-extract/field-validation-rule-draft/test` (`TestAsync`) | Runs rules not yet saved (`rules`) over one document's stored values (`documentId`) as rules of the field, and returns each rule's `outcome` and `detail` in order. Calls no model and changes nothing |
+
+Both drafting actions return `items`: the drafts, in the shape `validationRules` takes, each input bound to its field's `fieldId`.
+
+- **What the model sees**: the type's fields (name, type, display name and the JSON schema of the value, which is the shape a rule reads) and the requirement or the field's description. No document content. The display names, the requirement and the description are passed as data the model is told not to follow.
+- **What comes back**: only a draft that passes the checks saving applies: its inputs name other fields of the type, its aliases are identifiers, its expression parses as one expression, and its description is one line. Two repairs come first: a function without parameters that the model wrote without calling it (`() => ...`), or called without the parentheses an arrow function needs (`() => { ... }()`), is called, and an input the expression never names, or the rule's own field declared as `value`, is dropped, since it would only skip the rule when its field is absent. On a timeout, a provider error, a description over the type's prompt budget or an unusable answer, `items` is empty.
+- **Outcomes**: `0` passed, `1` failed (`detail` is what the rule returned, if anything), `2` skipped (the value or an input is absent), `3` could not be evaluated (`detail` says why).
+- **Permissions**: all three need `VaultExtract.FieldDefinitions.Create` or `.Update`. Trying rules also needs read access to the document ([Per-Document-Type Permissions](../configuration/document-type-permissions.md)), and the document must be of the field's type (`Extract:FieldValidationRuleTestDocumentOfAnotherType`). The rules tried are checked as saving checks them, with the same error codes.
+- **Saved values**: drafting reads the field's saved definition, so save a new field, or a changed description or table column, before drafting its rules.
 
 ## Importing and Exporting Types
 
