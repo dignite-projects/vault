@@ -23,6 +23,10 @@ import {
   PackItemAction,
   packItemActionOptions,
 } from './proxy/documents/document-types/packs/pack-item-action.enum';
+import {
+  FieldValidationRuleOutcome,
+  fieldValidationRuleOutcomeOptions,
+} from './proxy/documents/fields/field-validation-rule-outcome.enum';
 import { PipelineRunStatus } from './proxy/documents/pipelines/pipeline-run-status.enum';
 import {
   ReclassificationScope,
@@ -111,5 +115,13 @@ describe('proxy enum contract (smoke)', () => {
     expect(PackItemAction.Updated).toBe(1);
     expect(PackItemAction.Skipped).toBe(2);
     expect(packItemActionOptions).toHaveLength(3);
+  });
+
+  it('FieldValidationRuleOutcome matches backend values', () => {
+    expect(FieldValidationRuleOutcome.Passed).toBe(0);
+    expect(FieldValidationRuleOutcome.Failed).toBe(1);
+    expect(FieldValidationRuleOutcome.Skipped).toBe(2);
+    expect(FieldValidationRuleOutcome.NotEvaluated).toBe(3);
+    expect(fieldValidationRuleOutcomeOptions).toHaveLength(4);
   });
 });

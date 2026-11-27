@@ -24,6 +24,7 @@ export interface DocumentTypePackFieldDto {
   isRequired?: boolean;
   isSearchable?: boolean;
   isUniqueKey?: boolean;
+  validationRules?: DocumentTypePackValidationRuleDto[] | null;
   prompt?: string | null;
   dataType?: FieldDataType | null;
   allowMultiple?: boolean;
@@ -45,6 +46,17 @@ export interface DocumentTypePackItemResultDto {
   fieldsCreated?: number;
   fieldsUpdated?: number;
   fieldsSkipped?: number;
+}
+
+export interface DocumentTypePackValidationRuleDto {
+  description: string;
+  expression: string;
+  inputs?: DocumentTypePackValidationRuleInputDto[];
+}
+
+export interface DocumentTypePackValidationRuleInputDto {
+  alias: string;
+  fieldName: string;
 }
 
 export interface ImportDocumentTypePacksInput {

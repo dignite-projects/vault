@@ -306,6 +306,17 @@
                 [form]="form"
               />
             </fieldset>
+
+            <fieldset class="mt-4 pt-3 border-top">
+              <legend class="fs-6 text-muted">{{ 'VaultExtract::FieldDefinition:ValidationRules' | abpLocalization }}</legend>
+              <lib-field-validation-rules
+                [rules]="form.controls.validationRules"
+                [field]="mode === 'create' ? null : mode"
+                [fields]="allFields()"
+                [documentTypeCode]="documentTypeCode()"
+                [description]="form.controls.description.value"
+              />
+            </fieldset>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" (click)="closeModal()">

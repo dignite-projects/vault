@@ -16,7 +16,7 @@ export interface CreateSubmissionUploadInput {
 
 export interface DocumentDto extends EntityDto<string> {
   tenantId?: string | null;
-  fileOrigin?: FileOriginDto;
+  fileOrigin?: FileOriginDto | null;
   cabinetId?: string | null;
   originDocumentId?: string | null;
   isContainer?: boolean;
@@ -49,7 +49,7 @@ export interface DocumentFieldFilter {
 
 export interface DocumentListItemDto extends EntityDto<string> {
   tenantId?: string | null;
-  fileOrigin?: FileOriginDto;
+  fileOrigin?: FileOriginDto | null;
   cabinetId?: string | null;
   originDocumentId?: string | null;
   isContainer?: boolean;

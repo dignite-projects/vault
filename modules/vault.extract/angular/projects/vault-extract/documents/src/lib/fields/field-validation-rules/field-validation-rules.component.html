@@ -1,0 +1,204 @@
+<div class="form-text mb-2">{{ 'VaultExtract::FieldDefinition:ValidationRules:Hint' | abpLocalization }}</div>
+
+<!-- Drafting with the model reads the field as saved, so it waits until the field exists. -->
+@if (isSaved()) {
+  <div class="d-flex flex-wrap gap-2 mb-2">
+    <input
+      type="text"
+      class="form-control form-control-sm flex-grow-1 w-auto"
+      [formControl]="requirement"
+      [maxLength]="maxDescription"
+      (keydown.enter)="$event.preventDefault(); draft()"
+      placeholder="{{ 'VaultExtract::FieldDefinition:ValidationRules:RequirementPlaceholder' | abpLocalization }}"
+      [attr.aria-label]="'VaultExtract::FieldDefinition:ValidationRules:RequirementPlaceholder' | abpLocalization"
+    />
+    <button type="button" class="btn btn-sm btn-outline-primary" (click)="draft()" [disabled]="!canDraft()">
+      @if (isDrafting()) {
+        <span class="spinner-border spinner-border-sm me-1"></span>
+      } @else {
+        <i class="fas fa-wand-magic-sparkles me-1"></i>
+      }
+      {{ 'VaultExtract::FieldDefinition:ValidationRules:Draft' | abpLocalization }}
+    </button>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-primary"
+      (click)="draftFromDescription()"
+      [disabled]="!canDraftFromDescription()"
+      title="{{ 'VaultExtract::FieldDefinition:ValidationRules:DraftFromDescriptionHint' | abpLocalization }}"
+    >
+      @if (isDraftingFromDescription()) {
+        <span class="spinner-border spinner-border-sm me-1"></span>
+      } @else {
+        <i class="fas fa-list-check me-1"></i>
+      }
+      {{ 'VaultExtract::FieldDefinition:ValidationRules:DraftFromDescription' | abpLocalization }}
+    </button>
+  </div>
+  @if (savedDescription() && descriptionUnsaved()) {
+    <div class="form-text mb-2">{{ 'VaultExtract::FieldDefinition:ValidationRules:DescriptionUnsaved' | abpLocalization }}</div>
+  }
+} @else {
+  <div class="form-text mb-2">{{ 'VaultExtract::FieldDefinition:ValidationRules:SaveFirst' | abpLocalization }}</div>
+}
+
+@if (drafted().size > 0) {
+  <div class="alert alert-info py-2 px-3 small d-flex align-items-center gap-2" role="alert">
+    <i class="fas fa-circle-info"></i>
+    <span>{{ 'VaultExtract::FieldDefinition:ValidationRules:DraftReviewNotice' | abpLocalization }}</span>
+  </div>
+}
+
+@for (rule of rules().controls; track rule; let i = $index) {
+  <div class="border rounded p-2 mb-2" [formGroup]="rule">
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="text-muted small">#{{ i + 1 }}</span>
+      @if (isDrafted(rule)) {
+        <span class="badge bg-info text-dark">{{ 'VaultExtract::FieldDefinition:ValidationRules:Drafted' | abpLocalization }}</span>
+      }
+      @if (resultOf(i); as result) {
+        @switch (result.outcome) {
+          @case (outcomes.Passed) {
+            <span class="badge bg-success">{{ 'VaultExtract::FieldDefinition:ValidationRules:Outcome:Passed' | abpLocalization }}</span>
+          }
+          @case (outcomes.Failed) {
+            <span class="badge bg-danger">{{ 'VaultExtract::FieldDefinition:ValidationRules:Outcome:Failed' | abpLocalization }}</span>
+          }
+          @case (outcomes.Skipped) {
+            <span class="badge bg-secondary">{{ 'VaultExtract::FieldDefinition:ValidationRules:Outcome:Skipped' | abpLocalization }}</span>
+          }
+          @case (outcomes.NotEvaluated) {
+            <span class="badge bg-warning text-dark">{{ 'VaultExtract::FieldDefinition:ValidationRules:Outcome:NotEvaluated' | abpLocalization }}</span>
+          }
+        }
+        @if (result.detail) {
+          <span class="small text-break">{{ result.detail }}</span>
+        }
+      }
+      <button
+        type="button"
+        class="btn btn-sm btn-link text-danger ms-auto p-0"
+        (click)="removeRule(i)"
+        title="{{ 'VaultExtract::FieldDefinition:ValidationRules:Remove' | abpLocalization }}"
+        [attr.aria-label]="'VaultExtract::FieldDefinition:ValidationRules:Remove' | abpLocalization"
+      >
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+
+    <label class="form-label small mb-1" [for]="'validation-rule-description-' + i">
+      {{ 'VaultExtract::FieldDefinition:ValidationRules:Description' | abpLocalization }}
+    </label>
+    <input
+      type="text"
+      class="form-control form-control-sm"
+      [id]="'validation-rule-description-' + i"
+      formControlName="description"
+      [maxLength]="maxDescription"
+      [class.is-invalid]="rule.controls.description.touched && rule.controls.description.invalid"
+      placeholder="{{ 'VaultExtract::FieldDefinition:ValidationRules:DescriptionHint' | abpLocalization }}"
+    />
+
+    <label class="form-label small mb-1 mt-2" [for]="'validation-rule-expression-' + i">
+      {{ 'VaultExtract::FieldDefinition:ValidationRules:Expression' | abpLocalization }}
+    </label>
+    <textarea
+      class="form-control form-control-sm font-monospace"
+      [id]="'validation-rule-expression-' + i"
+      rows="3"
+      spellcheck="false"
+      formControlName="expression"
+      [class.is-invalid]="rule.controls.expression.touched && rule.controls.expression.invalid"
+    ></textarea>
+
+    <div class="d-flex align-items-center gap-2 mt-2 mb-1">
+      <span class="form-label small mb-0">{{ 'VaultExtract::FieldDefinition:ValidationRules:Inputs' | abpLocalization }}</span>
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0"
+        (click)="addInput(rule)"
+        [disabled]="rule.controls.inputs.length >= maxInputs || otherFields().length === 0"
+      >
+        <i class="fas fa-plus me-1"></i>{{ 'VaultExtract::FieldDefinition:ValidationRules:AddInput' | abpLocalization }}
+      </button>
+    </div>
+    @for (input of rule.controls.inputs.controls; track input; let j = $index) {
+      <div class="d-flex align-items-center gap-2 mb-1" [formGroup]="input">
+        <input
+          type="text"
+          class="form-control form-control-sm font-monospace w-auto"
+          formControlName="alias"
+          spellcheck="false"
+          [class.is-invalid]="input.controls.alias.touched && input.controls.alias.invalid"
+          placeholder="{{ 'VaultExtract::FieldDefinition:ValidationRules:Alias' | abpLocalization }}"
+          [attr.aria-label]="'VaultExtract::FieldDefinition:ValidationRules:Alias' | abpLocalization"
+        />
+        <span class="text-muted">=</span>
+        <select
+          class="form-select form-select-sm w-auto"
+          formControlName="fieldId"
+          [class.is-invalid]="input.controls.fieldId.touched && input.controls.fieldId.invalid"
+          [attr.aria-label]="'VaultExtract::FieldDefinition:ValidationRules:InputField' | abpLocalization"
+        >
+          <option value="" disabled>{{ 'VaultExtract::FieldDefinition:ValidationRules:InputField' | abpLocalization }}</option>
+          @for (field of otherFields(); track field.id) {
+            <option [value]="field.id">{{ fieldLabel(field) }}</option>
+          }
+        </select>
+        <button
+          type="button"
+          class="btn btn-sm btn-link text-danger p-0"
+          (click)="removeInput(rule, j)"
+          title="{{ 'VaultExtract::FieldDefinition:ValidationRules:RemoveInput' | abpLocalization }}"
+          [attr.aria-label]="'VaultExtract::FieldDefinition:ValidationRules:RemoveInput' | abpLocalization"
+        >
+          <i class="fas fa-xmark"></i>
+        </button>
+      </div>
+    }
+    @if (rule.controls.inputs.errors?.['duplicateInput'] || (rule.controls.inputs.touched && rule.controls.inputs.invalid)) {
+      <div class="invalid-feedback d-block">{{ 'VaultExtract::FieldDefinition:ValidationRules:InputInvalid' | abpLocalization }}</div>
+    }
+  </div>
+} @empty {
+  <p class="text-muted small mb-2">{{ 'VaultExtract::FieldDefinition:ValidationRules:Empty' | abpLocalization }}</p>
+}
+
+<button type="button" class="btn btn-sm btn-outline-secondary" (click)="addRule()" [disabled]="atLimit()">
+  <i class="fas fa-plus me-1"></i>{{ 'VaultExtract::FieldDefinition:ValidationRules:Add' | abpLocalization }}
+</button>
+@if (atLimit()) {
+  <span class="form-text ms-2">{{ 'VaultExtract::FieldDefinition:ValidationRules:Limit' | abpLocalization: maxRules.toString() }}</span>
+}
+
+<!-- The dry run: the rules as they stand, over one document's stored values. -->
+@if (isSaved()) {
+  <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+    <label class="form-label small mb-0" for="validationRuleTestDocument">
+      {{ 'VaultExtract::FieldDefinition:ValidationRules:TestDocument' | abpLocalization }}
+    </label>
+    <select
+      id="validationRuleTestDocument"
+      class="form-select form-select-sm w-auto flex-grow-1"
+      [formControl]="testDocumentId"
+    >
+      <option value="">
+        {{ (documentsLoaded() && documents().length === 0
+          ? 'VaultExtract::FieldDefinition:ValidationRules:NoDocuments'
+          : 'VaultExtract::FieldDefinition:ValidationRules:TestDocumentPlaceholder') | abpLocalization }}
+      </option>
+      @for (document of documents(); track document.id) {
+        <option [value]="document.id">{{ documentLabel(document) }}</option>
+      }
+    </select>
+    <button type="button" class="btn btn-sm btn-outline-primary" (click)="test()" [disabled]="!canTest()">
+      @if (isTesting()) {
+        <span class="spinner-border spinner-border-sm me-1"></span>
+      } @else {
+        <i class="fas fa-play me-1"></i>
+      }
+      {{ 'VaultExtract::FieldDefinition:ValidationRules:Test' | abpLocalization }}
+    </button>
+  </div>
+  <div class="form-text">{{ 'VaultExtract::FieldDefinition:ValidationRules:TestHint' | abpLocalization }}</div>
+}
